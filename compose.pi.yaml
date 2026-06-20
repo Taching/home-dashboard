@@ -1,0 +1,6 @@
+# Raspberry Pi production override. Keep this separate so the UI can also run
+# on development machines that do not expose an I2C device.
+services:
+  backend:
+    devices:
+      - /dev/i2c-1:/dev/i2c-1

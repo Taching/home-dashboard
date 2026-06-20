@@ -1,0 +1,221 @@
+{
+  "builtTestProducts" : [
+
+  ],
+  "copyCommands" : {
+
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.chili-calendar-bridge-arm64-apple-macosx26.0-release.module" : {
+      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "fileList" : "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build/sources",
+      "importPath" : "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/Sources/chili-calendar-bridge/main.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "chili_calendar_bridge",
+      "moduleOutputPath" : "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/Modules/chili_calendar_bridge.swiftmodule",
+      "objects" : [
+        "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build/main.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-whole-module-optimization",
+        "-num-threads",
+        "10",
+        "-serialize-diagnostics",
+        "-O",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "chili_calendar_bridge_main",
+        "-parse-as-library",
+        "-swift-version",
+        "5",
+        "-I",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-L",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-plugin-path",
+        "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "apple_calendar_bridge"
+      ],
+      "outputFileMapPath" : "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build/main.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/Modules/chili_calendar_bridge.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/Sources/chili-calendar-bridge/main.swift"
+      ],
+      "tempsPath" : "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build",
+      "wholeModuleOptimization" : true
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "chili_calendar_bridge" : [
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "-module-name",
+      "chili_calendar_bridge",
+      "-package-name",
+      "apple_calendar_bridge",
+      "-c",
+      "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/Sources/chili-calendar-bridge/main.swift",
+      "-I",
+      "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-whole-module-optimization",
+      "-num-threads",
+      "10",
+      "-serialize-diagnostics",
+      "-O",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "chili_calendar_bridge_main",
+      "-parse-as-library",
+      "-swift-version",
+      "5",
+      "-I",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-L",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-plugin-path",
+      "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "apple_calendar_bridge",
+      "-driver-use-frontend-path",
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "chili_calendar_bridge" : [
+
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+
+  },
+  "traitConfiguration" : {
+    "default" : {
+
+    }
+  },
+  "writeCommands" : {
+    "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili-calendar-bridge.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build/main.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili-calendar-bridge.product/Objects.LinkFileList"
+    },
+    "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/Sources/chili-calendar-bridge/main.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build/sources"
+    },
+    "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt"
+    }
+  }
+}

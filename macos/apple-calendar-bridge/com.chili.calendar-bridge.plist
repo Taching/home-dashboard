@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chili.calendar-bridge</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/open</string>
+    <string>-n</string>
+    <string>-W</string>
+    <string>REPLACE_WITH_APP_PATH</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>DASHBOARD_URL</key>
+    <string>REPLACE_WITH_PI_URL</string>
+    <key>CALENDAR_BRIDGE_TOKEN</key>
+    <string>REPLACE_WITH_BRIDGE_TOKEN</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>300</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/chili-calendar-bridge.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/chili-calendar-bridge.error.log</string>
+</dict>
+</plist>

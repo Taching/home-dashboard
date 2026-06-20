@@ -1,0 +1,13 @@
+{
+  "": {
+    "dependencies": "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build/chili_calendar_bridge.d",
+    "object": "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build/chili_calendar_bridge.o",
+    "swift-dependencies": "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build/master.swiftdeps"
+  },
+  "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/Sources/chili-calendar-bridge/main.swift": {
+    "object": "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build/main.swift.o",
+    "swiftmodule": "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build/main.swiftdeps",
+    "diagnostics": "/Users/takatoshiwada/Work/github-tachingers/home-dashboard/macos/apple-calendar-bridge/.build/arm64-apple-macosx/release/chili_calendar_bridge.build/main.dia"
+  }
+}

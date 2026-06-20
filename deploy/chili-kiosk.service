@@ -1,0 +1,16 @@
+[Unit]
+Description=Chili Dashboard Chromium kiosk
+After=graphical-session.target chili-dashboard.service
+Wants=chili-dashboard.service
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/bin/chromium --kiosk --noerrdialogs --disable-session-crashed-bubble http://127.0.0.1:8080
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target
+

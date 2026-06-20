@@ -1,0 +1,15 @@
+[Unit]
+Description=Chili Home Dashboard containers
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/chili-dashboard
+ExecStart=/usr/bin/docker compose -f compose.yaml -f compose.pi.yaml up -d --build
+ExecStop=/usr/bin/docker compose -f compose.yaml -f compose.pi.yaml down
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -3,6 +3,7 @@ import unittest
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from zoneinfo import ZoneInfo
 
 from app.database.session import Base
 from app.domain.calendar_bridge import CalendarBridgeService, CalendarEvent
@@ -49,7 +50,9 @@ class CalendarBridgeServiceTests(unittest.TestCase):
             [CalendarEvent("new", "New", self.now, self.now + timedelta(hours=1))], self.now
         )
 
-        _, _, events = self.service.events_for_range(self.now.date(), 1)
+        _, _, events = self.service.events_for_range(
+            self.now.astimezone(ZoneInfo("Asia/Tokyo")).date(), 1
+        )
 
         self.assertEqual([event.external_id for event in events], ["new"])
 
@@ -59,7 +62,9 @@ class CalendarBridgeServiceTests(unittest.TestCase):
             self.now - timedelta(minutes=16),
         )
 
-        status, _, events = self.service.events_for_range(self.now.date(), 1)
+        status, _, events = self.service.events_for_range(
+            self.now.astimezone(ZoneInfo("Asia/Tokyo")).date(), 1
+        )
 
         self.assertEqual(status, "unavailable")
         self.assertEqual(len(events), 1)

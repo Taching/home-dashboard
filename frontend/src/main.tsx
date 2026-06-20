@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { EnvironmentalReadings } from './components/EnvironmentalReadings'
 import { Header } from './components/Header'
@@ -9,35 +9,14 @@ import { addDays, dayKey, PlanningRegion } from './components/PlanningRegion'
 import { SystemStrip } from './components/SystemStrip'
 import { TemperatureTrend } from './components/TemperatureTrend'
 import { useDashboardCommand } from './hooks/useDashboardCommand'
+import { useDashboardData } from './hooks/useDashboardData'
 import { useSpotifyPlayback } from './hooks/useSpotifyPlayback'
-import {
-  fetchCalendarEvents,
-  fetchDashboard,
-  fetchNotionToday,
-  fetchOpenClawMessages,
-  fetchReadings,
-  sendOpenClawMessage,
-  fetchSpotifyNowPlaying,
-} from './lib/api'
-import type { CalendarToday, Dashboard, Light, NotionToday, OpenClawConversation, Reading, SpotifyNowPlaying } from './types'
+import { sendOpenClawMessage } from './lib/api'
+import type { Light } from './types'
 import './styles.css'
 
-const initialState: Dashboard = {
-  temperature_c: null,
-  humidity_percent: null,
-  last_updated_at: null,
-  light: { last_command_state: 'unknown', last_command_at: null, available: false },
-  display: { state: 'visible' },
-  integrations: { sensor: 'pending', broadlink: 'pending', calendar: 'not_configured', notion: 'not_configured', spotify: 'not_configured', openclaw: 'not_configured' },
-}
-
-const initialCalendar: CalendarToday = { status: 'not_configured', synced_at: null, events: [] }
-const initialNotion: NotionToday = { status: 'not_configured', synced_at: null, tasks: [] }
-const initialSpotify: SpotifyNowPlaying = { status: 'not_configured', synced_at: null, track: null, artist: null, artwork_url: null, device_name: null, is_playing: false }
-const initialOpenClaw: OpenClawConversation = { status: 'not_configured', messages: [], message: null }
-
-function isStale(updatedAt: string | null) {
-  return updatedAt !== null && Date.now() - new Date(updatedAt).getTime() > 15 * 60_000
+function isStale(updatedAt: string | null, staleAfterSeconds: number) {
+  return updatedAt !== null && Date.now() - new Date(updatedAt).getTime() > staleAfterSeconds * 1000
 }
 
 function statusLabel(status: string, stale = false) {
@@ -55,45 +34,18 @@ function isTypingTarget(target: EventTarget | null) {
 }
 
 function App() {
-  const [dashboard, setDashboard] = useState<Dashboard>(initialState)
-  const [readings, setReadings] = useState<Reading[]>([])
-  const [calendar, setCalendar] = useState<CalendarToday>(initialCalendar)
-  const [notion, setNotion] = useState<NotionToday>(initialNotion)
-  const [spotify, setSpotify] = useState<SpotifyNowPlaying>(initialSpotify)
-  const [openclaw, setOpenClaw] = useState<OpenClawConversation>(initialOpenClaw)
+  const { dashboard, readings, calendar, notion, spotify, openclaw, refresh, refreshOpenClaw, updateDashboard } = useDashboardData()
   const [openclawPending, setOpenClawPending] = useState(false)
   const [openclawFeedback, setOpenClawFeedback] = useState<string | null>(null)
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null)
   const { execute, feedback, pendingIntent } = useDashboardCommand()
   const spotifyPlayback = useSpotifyPlayback(spotify.status === 'ready')
-  const stale = isStale(dashboard.last_updated_at)
+  const stale = isStale(dashboard.last_updated_at, dashboard.ui.sensor_stale_after_seconds)
   const today = dayKey(new Date())
-
-  const refresh = useCallback(async () => {
-    try {
-      const results = await Promise.allSettled([
-        fetchDashboard(), fetchReadings(), fetchCalendarEvents(today), fetchNotionToday(), fetchSpotifyNowPlaying(), fetchOpenClawMessages(),
-      ])
-      if (results[0].status === 'fulfilled') setDashboard(results[0].value)
-      if (results[1].status === 'fulfilled') setReadings(results[1].value)
-      if (results[2].status === 'fulfilled') {
-        const nextCalendar = results[2].value
-        setCalendar(nextCalendar)
-        setSelectedCalendarDate((current) => {
-          if (current || nextCalendar.status !== 'ready') return current
-          const nextScheduled = nextCalendar.events
-            .map((event) => dayKey(event.start_at))
-            .find((eventDate) => eventDate >= today)
-          return nextScheduled ?? today
-        })
-      }
-      if (results[3].status === 'fulfilled') setNotion(results[3].value)
-      if (results[4].status === 'fulfilled') setSpotify(results[4].value)
-      if (results[5].status === 'fulfilled') setOpenClaw(results[5].value)
-    } catch {
-      // Existing state remains visible while the next scheduled refresh retries.
-    }
-  }, [today])
+  const initialCalendarDate = calendar.status === 'ready'
+    ? calendar.events.map((event) => dayKey(event.start_at)).find((eventDate) => eventDate >= today) ?? today
+    : today
+  const activeCalendarDate = selectedCalendarDate ?? initialCalendarDate
 
   const toggleLight = useCallback(() => {
     const previousLight = dashboard.light
@@ -101,29 +53,16 @@ function App() {
     const intent = target === 'on' ? 'light.turn_on' : 'light.turn_off'
 
     void execute(intent, {
-      optimistic: () => setDashboard((current) => ({
+      optimistic: () => updateDashboard((current) => ({
         ...current,
         light: { ...current.light, last_command_state: target, last_command_at: new Date().toISOString() },
       })),
       onSuccess: (result) => {
-        if (result.light) setDashboard((current) => ({ ...current, light: result.light as Light }))
+        if (result.light) updateDashboard((current) => ({ ...current, light: result.light as Light }))
       },
-      onFailure: () => setDashboard((current) => ({ ...current, light: previousLight })),
+      onFailure: () => updateDashboard((current) => ({ ...current, light: previousLight })),
     })
-  }, [dashboard.light, execute])
-
-  useEffect(() => {
-    void refresh()
-    const interval = window.setInterval(() => void refresh(), 60_000)
-    return () => window.clearInterval(interval)
-  }, [refresh])
-
-  useEffect(() => {
-    const interval = window.setInterval(async () => {
-      try { setOpenClaw(await fetchOpenClawMessages()) } catch { /* retry on next interval */ }
-    }, 10_000)
-    return () => window.clearInterval(interval)
-  }, [])
+  }, [dashboard.light, execute, updateDashboard])
 
   const sendToOpenClaw = useCallback(async (message: string) => {
     setOpenClawPending(true)
@@ -132,13 +71,13 @@ function App() {
       const result = await sendOpenClawMessage(message)
       if (result.status !== 'success') throw new Error(result.message ?? 'Telegram delivery failed.')
       setOpenClawFeedback(null)
-      setOpenClaw(await fetchOpenClawMessages())
+      await refreshOpenClaw()
     } catch (error) {
       setOpenClawFeedback(error instanceof Error ? error.message : 'Telegram delivery failed.')
     } finally {
       setOpenClawPending(false)
     }
-  }, [])
+  }, [refreshOpenClaw])
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -151,10 +90,7 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [execute, refresh, toggleLight])
 
-  const sensorStatus = useMemo(
-    () => statusLabel(dashboard.integrations.sensor, stale),
-    [dashboard.integrations.sensor, stale],
-  )
+  const sensorStatus = statusLabel(dashboard.integrations.sensor, stale)
   const broadLinkStatus = statusLabel(dashboard.integrations.broadlink)
 
   return (
@@ -187,10 +123,10 @@ function App() {
         <PlanningRegion
           calendar={calendar}
           notion={notion}
-          selectedDate={selectedCalendarDate ?? today}
-          onPrevious={() => setSelectedCalendarDate((current) => addDays(current ?? today, -1))}
+          selectedDate={activeCalendarDate}
+          onPrevious={() => setSelectedCalendarDate((current) => addDays(current ?? activeCalendarDate, -1))}
           onToday={() => setSelectedCalendarDate(today)}
-          onNext={() => setSelectedCalendarDate((current) => addDays(current ?? today, 1))}
+          onNext={() => setSelectedCalendarDate((current) => addDays(current ?? activeCalendarDate, 1))}
         />
         <aside className="assistant-region" aria-label="Assistant and media">
           <OpenClawChat conversation={openclaw} pending={openclawPending} feedback={openclawFeedback} onSend={(message) => void sendToOpenClaw(message)} />

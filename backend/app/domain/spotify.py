@@ -24,6 +24,7 @@ class SpotifyService:
 
     def __init__(self) -> None:
         self._pending_states: set[str] = set()
+        self._now_playing_cache: tuple[datetime, dict[str, object]] | None = None
 
     @property
     def configured(self) -> bool:
@@ -73,7 +74,7 @@ class SpotifyService:
                 "redirect_uri": settings.spotify_redirect_uri,
             },
             auth=(settings.spotify_client_id, settings.spotify_client_secret),
-            timeout=15,
+            timeout=settings.spotify_request_timeout_seconds,
         )
         response.raise_for_status()
         payload = response.json()
@@ -90,12 +91,17 @@ class SpotifyService:
         if self.status() != "ready":
             return self._empty(self.status())
 
+        if self._now_playing_cache is not None:
+            cached_at, cached = self._now_playing_cache
+            if datetime.now(UTC) - cached_at < timedelta(seconds=settings.spotify_now_playing_cache_seconds):
+                return cached
+
         try:
             access_token = self._access_token()
             response = httpx.get(
                 self.playback_url,
                 headers={"Authorization": f"Bearer {access_token}"},
-                timeout=15,
+                timeout=settings.spotify_request_timeout_seconds,
             )
             if response.status_code == 204:
                 return self._empty("ready")
@@ -105,7 +111,7 @@ class SpotifyService:
             artists = ", ".join(artist["name"] for artist in item.get("artists", [])) or None
             images = item.get("album", {}).get("images", [])
             artwork = images[0]["url"] if images else None
-            return {
+            result = {
                 "status": "ready",
                 "synced_at": datetime.now(UTC),
                 "track": item.get("name"),
@@ -114,6 +120,8 @@ class SpotifyService:
                 "device_name": payload.get("device", {}).get("name"),
                 "is_playing": bool(payload.get("is_playing")),
             }
+            self._now_playing_cache = (datetime.now(UTC), result)
+            return result
         except Exception:
             return self._empty("unavailable")
 
@@ -125,9 +133,10 @@ class SpotifyService:
             self.playback_url,
             headers={"Authorization": f"Bearer {self._access_token()}"},
             json={"device_ids": [device_id], "play": True},
-            timeout=15,
+            timeout=settings.spotify_request_timeout_seconds,
         )
         response.raise_for_status()
+        self._now_playing_cache = None
 
     def register_device(self, device_id: str) -> None:
         with SessionLocal.begin() as session:
@@ -137,25 +146,27 @@ class SpotifyService:
 
     def play_artist(self, artist_name: str) -> str:
         access_token = self._access_token()
-        search = httpx.get(self.search_url, params={"q": artist_name, "type": "artist", "limit": 5}, headers={"Authorization": f"Bearer {access_token}"}, timeout=15)
+        search = httpx.get(self.search_url, params={"q": artist_name, "type": "artist", "limit": 5}, headers={"Authorization": f"Bearer {access_token}"}, timeout=settings.spotify_request_timeout_seconds)
         search.raise_for_status()
         artists = search.json().get("artists", {}).get("items", [])
         if not artists:
             raise RuntimeError("No matching Spotify artist found.")
         normalized = artist_name.casefold()
         artist = next((item for item in artists if item["name"].casefold() == normalized), artists[0])
-        response = httpx.put(f"{self.playback_url}/play", params={"device_id": self._registered_device()}, headers={"Authorization": f"Bearer {access_token}"}, json={"context_uri": artist["uri"]}, timeout=15)
+        response = httpx.put(f"{self.playback_url}/play", params={"device_id": self._registered_device()}, headers={"Authorization": f"Bearer {access_token}"}, json={"context_uri": artist["uri"]}, timeout=settings.spotify_request_timeout_seconds)
         response.raise_for_status()
+        self._now_playing_cache = None
         return artist["name"]
 
     def change_volume(self, direction: Literal["up", "down"], step: int = 10) -> int:
         access_token = self._access_token()
-        state = httpx.get(self.playback_url, headers={"Authorization": f"Bearer {access_token}"}, timeout=15)
+        state = httpx.get(self.playback_url, headers={"Authorization": f"Bearer {access_token}"}, timeout=settings.spotify_request_timeout_seconds)
         state.raise_for_status()
         current = int(state.json().get("device", {}).get("volume_percent", 50))
         target = max(0, min(100, current + (step if direction == "up" else -step)))
-        response = httpx.put(f"{self.playback_url}/volume", params={"device_id": self._registered_device(), "volume_percent": target}, headers={"Authorization": f"Bearer {access_token}"}, timeout=15)
+        response = httpx.put(f"{self.playback_url}/volume", params={"device_id": self._registered_device(), "volume_percent": target}, headers={"Authorization": f"Bearer {access_token}"}, timeout=settings.spotify_request_timeout_seconds)
         response.raise_for_status()
+        self._now_playing_cache = None
         return target
 
     def _access_token(self) -> str:
@@ -170,7 +181,7 @@ class SpotifyService:
                     "refresh_token": self.cipher.decrypt(token.encrypted_refresh_token.encode()).decode(),
                 },
                 auth=(settings.spotify_client_id, settings.spotify_client_secret),
-                timeout=15,
+                timeout=settings.spotify_request_timeout_seconds,
             )
             response.raise_for_status()
             payload = response.json()

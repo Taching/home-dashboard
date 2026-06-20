@@ -43,6 +43,15 @@ class CommandResponse(BaseModel):
 IntegrationStatus = Literal["not_configured", "ready", "unavailable"]
 
 
+class DashboardUiConfig(BaseModel):
+    timezone: str
+    sensor_stale_after_seconds: int
+    dashboard_refresh_interval_seconds: int
+    openclaw_refresh_interval_seconds: int
+    readings_history_hours: int
+    calendar_range_days: int
+
+
 class CalendarEventResponse(BaseModel):
     id: str
     title: str
@@ -152,6 +161,14 @@ async def dashboard(request: Request) -> dict[str, object]:
             "available": light.available,
         },
         "display": {"state": "visible"},
+        "ui": DashboardUiConfig(
+            timezone=settings.timezone,
+            sensor_stale_after_seconds=settings.sensor_stale_after_seconds,
+            dashboard_refresh_interval_seconds=settings.dashboard_refresh_interval_seconds,
+            openclaw_refresh_interval_seconds=settings.openclaw_refresh_interval_seconds,
+            readings_history_hours=settings.readings_history_hours,
+            calendar_range_days=settings.calendar_range_days,
+        ),
         "integrations": {
             "sensor": sensor.status(),
             "broadlink": "ready" if light.available else "unavailable",
@@ -254,8 +271,11 @@ async def send_openclaw_message(
     request: Request, body: OpenClawSendRequest
 ) -> OpenClawSendResponse:
     message = body.message.strip()
-    if not message or len(message) > 3_000:
-        raise HTTPException(status_code=400, detail="Message must contain 1 to 3000 characters.")
+    if not message or len(message) > settings.openclaw_message_max_length:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Message must contain 1 to {settings.openclaw_message_max_length} characters.",
+        )
     service = request.app.state.openclaw_service
     if not service.configured():
         return OpenClawSendResponse(status="failed", message="OpenClaw is not configured.")

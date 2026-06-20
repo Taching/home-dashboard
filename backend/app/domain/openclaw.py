@@ -56,7 +56,7 @@ class OpenClawService:
                     "sessionKey": settings.openclaw_session_key,
                     "deliver": True,
                     "bestEffortDeliver": False,
-                    "timeout": 30,
+                    "timeout": settings.openclaw_request_timeout_seconds,
                     "idempotencyKey": str(uuid4()),
                 },
             )
@@ -76,7 +76,11 @@ class OpenClawService:
         if not self.configured():
             raise OpenClawError("OpenClaw is not configured.")
         assert settings.openclaw_gateway_ws_url and settings.openclaw_gateway_token
-        with connect(settings.openclaw_gateway_ws_url, open_timeout=5, close_timeout=2) as socket:
+        with connect(
+            settings.openclaw_gateway_ws_url,
+            open_timeout=settings.openclaw_connect_timeout_seconds,
+            close_timeout=settings.openclaw_close_timeout_seconds,
+        ) as socket:
             challenge = json.loads(socket.recv())
             nonce = challenge.get("payload", {}).get("nonce")
             if not nonce:

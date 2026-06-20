@@ -13,7 +13,17 @@ export type Dashboard = {
   last_updated_at: string | null
   light: Light
   display: { state: string }
+  ui: DashboardUiConfig
   integrations: Record<string, string>
+}
+
+export type DashboardUiConfig = {
+  timezone: string
+  sensor_stale_after_seconds: number
+  dashboard_refresh_interval_seconds: number
+  openclaw_refresh_interval_seconds: number
+  readings_history_hours: number
+  calendar_range_days: number
 }
 
 export type Reading = {

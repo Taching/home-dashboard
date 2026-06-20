@@ -5,8 +5,17 @@ export function Header() {
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
-    const interval = window.setInterval(() => setNow(new Date()), 1_000)
-    return () => window.clearInterval(interval)
+    const update = () => setNow(new Date())
+    const delay = 60_000 - (Date.now() % 60_000)
+    let interval: number | undefined
+    const timeout = window.setTimeout(() => {
+      update()
+      interval = window.setInterval(update, 60_000)
+    }, delay)
+    return () => {
+      window.clearTimeout(timeout)
+      if (interval !== undefined) window.clearInterval(interval)
+    }
   }, [])
 
   return (

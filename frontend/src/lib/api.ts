@@ -15,32 +15,32 @@ async function requireJson<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>
 }
 
-export async function fetchDashboard() {
-  return requireJson<Dashboard>(await fetch('/api/v1/dashboard'))
+export async function fetchDashboard(signal?: AbortSignal) {
+  return requireJson<Dashboard>(await fetch('/api/v1/dashboard', { signal }))
 }
 
-export async function fetchReadings() {
+export async function fetchReadings(hours: number, signal?: AbortSignal) {
   const result = await requireJson<{ readings: Reading[] }>(
-    await fetch('/api/v1/readings?hours=24'),
+    await fetch(`/api/v1/readings?hours=${hours}`, { signal }),
   )
   return result.readings
 }
 
-export async function fetchCalendarEvents(start: string, days = 30) {
+export async function fetchCalendarEvents(start: string, days: number, signal?: AbortSignal) {
   const query = new URLSearchParams({ start, days: String(days) })
-  return requireJson<CalendarToday>(await fetch(`/api/v1/calendar/events?${query}`))
+  return requireJson<CalendarToday>(await fetch(`/api/v1/calendar/events?${query}`, { signal }))
 }
 
-export async function fetchNotionToday() {
-  return requireJson<NotionToday>(await fetch('/api/v1/notion/today'))
+export async function fetchNotionToday(signal?: AbortSignal) {
+  return requireJson<NotionToday>(await fetch('/api/v1/notion/today', { signal }))
 }
 
-export async function fetchSpotifyNowPlaying() {
-  return requireJson<SpotifyNowPlaying>(await fetch('/api/v1/spotify/now-playing'))
+export async function fetchSpotifyNowPlaying(signal?: AbortSignal) {
+  return requireJson<SpotifyNowPlaying>(await fetch('/api/v1/spotify/now-playing', { signal }))
 }
 
-export async function fetchOpenClawMessages() {
-  return requireJson<OpenClawConversation>(await fetch('/api/v1/openclaw/messages'))
+export async function fetchOpenClawMessages(signal?: AbortSignal) {
+  return requireJson<OpenClawConversation>(await fetch('/api/v1/openclaw/messages', { signal }))
 }
 
 export async function sendOpenClawMessage(message: string) {

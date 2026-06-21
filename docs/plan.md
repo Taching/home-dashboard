@@ -35,7 +35,7 @@ Voice worker (Phase 2) ─┘
 1. Build push-to-talk recording and transcription first.
 2. Add strict command parsing and command endpoint calls.
 3. Verify Bose Bluetooth output reconnects after reboot.
-4. Add Picovoice Porcupine with the custom Raspberry Pi `Hey Chili` model.
+4. Add local openWakeWord detection with the Raspberry Pi `Hey Jarvis` model.
 5. Add silence-based recording, OpenAI transcription, concise TTS responses, and a voice-state indicator.
 
 Allowed V1 intents: `light.turn_on`, `light.turn_off`, `sensor.get_temperature`, `sensor.get_humidity`, `display.show`, `display.hide`, `system.get_status`.
@@ -82,4 +82,3 @@ WS   /api/v1/events
 ```
 
 Each attempt creates a `device_events` record with its source, result, and safe diagnostic detail.
-

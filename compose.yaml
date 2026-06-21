@@ -9,6 +9,8 @@ services:
       DATABASE_URL: sqlite:////data/chili.db
     volumes:
       - ./data:/data
+    devices:
+      - /dev/snd:/dev/snd
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -24,11 +26,19 @@ services:
       - "127.0.0.1:8080:80"
     restart: unless-stopped
 
-  # Phase 2: enables the microphone and host audio device deliberately.
-  # voice:
-  #   build:
-  #     context: ./voice
-  #   env_file: .env
-  #   devices:
-  #     - /dev/snd:/dev/snd
-  #   restart: unless-stopped
+  voice:
+    build:
+      context: ./voice
+    env_file: .env
+    environment:
+      BACKEND_URL: http://backend:8000
+      AUDIO_DEVICE: plughw:2,0
+      VOICE_WAKEWORD_MODEL: hey_jarvis
+      VOICE_WAKEWORD_LABEL: Hey Jarvis
+    devices:
+      - /dev/snd:/dev/snd
+    depends_on:
+      backend:
+        condition: service_started
+    profiles: [voice]
+    restart: unless-stopped

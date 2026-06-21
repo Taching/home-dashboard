@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { EnvironmentalReadings } from './components/EnvironmentalReadings'
 import { Header } from './components/Header'
 import { LightControl } from './components/LightControl'
 import { MediaRegion } from './components/MediaRegion'
@@ -162,12 +161,6 @@ function App() {
       <Header />
       <div className="dashboard-workspace">
         <aside className="environment-region" aria-label="Environment and light">
-          <EnvironmentalReadings
-            temperature={dashboard.temperature_c}
-            humidity={dashboard.humidity_percent}
-            updatedAt={dashboard.last_updated_at}
-            stale={stale}
-          />
           <LightControl
             light={dashboard.light}
             pending={pendingIntent === 'light.turn_on' || pendingIntent === 'light.turn_off'}
@@ -208,7 +201,13 @@ function App() {
           />
         </aside>
       </div>
-      <SystemStrip sensorStatus={sensorStatus} broadLinkStatus={broadLinkStatus} feedback={feedback} />
+      <SystemStrip
+        sensorStatus={sensorStatus}
+        broadLinkStatus={broadLinkStatus}
+        temperature={dashboard.temperature_c}
+        humidity={dashboard.humidity_percent}
+        feedback={feedback}
+      />
     </main>
   )
 }

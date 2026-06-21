@@ -92,3 +92,12 @@ export type OpenClawSendResult = {
   reply: string | null
   message: string | null
 }
+
+export type VoiceState = 'offline' | 'idle' | 'listening' | 'thinking' | 'complete' | 'error'
+
+export type VoiceStatus = {
+  state: VoiceState
+  updated_at: string | null
+  transcript: string | null
+  message: string | null
+}

@@ -11,6 +11,9 @@ from app.domain.openclaw import OpenClawService
 from app.domain.calendar_bridge import CalendarBridgeService
 from app.domain.sensors import SensorService
 from app.domain.spotify import SpotifyService
+from app.domain.voice_state import VoiceStateService
+from app.domain.voice_commands import VoiceCommandInterpreter
+from app.domain.system_volume import PiVolumeService
 from app.jobs.sensor_polling import run_sensor_poller
 
 
@@ -25,6 +28,9 @@ async def lifespan(application: FastAPI):
     application.state.light_service = light_service
     application.state.calendar_bridge_service = CalendarBridgeService()
     application.state.spotify_service = SpotifyService()
+    application.state.voice_state_service = VoiceStateService()
+    application.state.voice_command_interpreter = VoiceCommandInterpreter()
+    application.state.pi_volume_service = PiVolumeService()
     application.state.openclaw_service = OpenClawService()
     poller = asyncio.create_task(run_sensor_poller(sensor_service))
     try:

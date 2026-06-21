@@ -1,4 +1,5 @@
 import logging
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from threading import Lock
@@ -20,25 +21,42 @@ class Reading:
 
 
 class SHT31Sensor:
-    """Lazy I2C adapter so development machines can run without Pi hardware."""
+    """SHT31 adapter that talks to the Pi's Linux I²C device directly."""
 
     def __init__(self) -> None:
-        self._sensor = None
+        self._bus = None
 
     def read(self) -> Reading:
-        if self._sensor is None:
-            import adafruit_sht31d
-            import board
+        if self._bus is None:
+            from smbus2 import SMBus
 
-            self._sensor = adafruit_sht31d.SHT31D(
-                board.I2C(), address=settings.sensor_i2c_address
-            )
+            self._bus = SMBus(1)
+
+        # Single shot, high-repeatability measurement without clock stretching.
+        # The SHT31 needs up to 15 ms before its six-byte result is ready.
+        self._bus.write_i2c_block_data(settings.sensor_i2c_address, 0x24, [0x00])
+        time.sleep(0.015)
+        payload = self._bus.read_i2c_block_data(settings.sensor_i2c_address, 0x00, 6)
+        if not (_valid_crc(payload[:2], payload[2]) and _valid_crc(payload[3:5], payload[5])):
+            raise RuntimeError("SHT31 returned a reading with an invalid CRC")
+
+        raw_temperature = (payload[0] << 8) | payload[1]
+        raw_humidity = (payload[3] << 8) | payload[4]
 
         return Reading(
             recorded_at=datetime.now(UTC),
-            temperature_c=round(float(self._sensor.temperature), 1),
-            humidity_percent=round(float(self._sensor.relative_humidity), 1),
+            temperature_c=round(-45 + 175 * raw_temperature / 65535, 1),
+            humidity_percent=round(100 * raw_humidity / 65535, 1),
         )
+
+
+def _valid_crc(data: list[int], expected: int) -> bool:
+    crc = 0xFF
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x131) & 0xFF if crc & 0x80 else (crc << 1) & 0xFF
+    return crc == expected
 
 
 class SensorService:

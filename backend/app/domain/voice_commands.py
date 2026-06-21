@@ -1,21 +1,94 @@
+"""Constrained AI interpretation for the locally allowlisted voice commands."""
+
 from dataclasses import dataclass
-import re
+import json
 from typing import Literal
+
+import httpx
+
+from app.core.settings import settings
+
+VoiceAction = Literal[
+    "spotify.play_artist", "spotify.pause", "system.volume_up", "system.volume_down",
+    "system.volume_set", "light.turn_on", "light.turn_off", "no_match",
+]
+
+VOICE_COMMANDS = [
+    {"id": "spotify.play_artist", "label": "Play or change artist", "examples": ["play Spotify Yuuri", "change artist to YOASOBI"]},
+    {"id": "spotify.pause", "label": "Stop music", "examples": ["stop the music", "pause Spotify"]},
+    {"id": "system.volume_up", "label": "Increase Pi volume", "examples": ["turn it up", "make it louder"]},
+    {"id": "system.volume_down", "label": "Decrease Pi volume", "examples": ["lower volume", "make it quieter"]},
+    {"id": "system.volume_set", "label": "Set Pi volume", "examples": ["set volume to 50 percent"]},
+    {"id": "light.turn_on", "label": "Turn lights on", "examples": ["turn on the lights"]},
+    {"id": "light.turn_off", "label": "Turn lights off", "examples": ["turn off the lights"]},
+]
+
+_ACTIONS = {item["id"] for item in VOICE_COMMANDS} | {"no_match"}
+_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": sorted(_ACTIONS)},
+        "artist": {"type": ["string", "null"]},
+        "volume_percent": {"type": ["integer", "null"]},
+    },
+    "required": ["action", "artist", "volume_percent"],
+    "additionalProperties": False,
+}
 
 
 @dataclass(frozen=True)
 class VoiceCommand:
-    action: Literal["spotify.play_artist", "spotify.volume_up", "spotify.volume_down"]
-    argument: str | None = None
+    action: VoiceAction
+    artist: str | None = None
+    volume_percent: int | None = None
 
 
-def parse_voice_command(transcript: str) -> VoiceCommand | None:
-    text = " ".join(transcript.lower().strip().split())
-    artist = re.fullmatch(r"(?:play|start) (?:spotify )?(.+)", text)
-    if artist and artist.group(1):
-        return VoiceCommand("spotify.play_artist", artist.group(1))
-    if text in {"volume up", "increase volume", "turn it up", "make it louder"}:
-        return VoiceCommand("spotify.volume_up")
-    if text in {"volume down", "decrease volume", "turn it down", "make it quieter"}:
-        return VoiceCommand("spotify.volume_down")
-    return None
+class VoiceCommandInterpreter:
+    def __init__(self, api_key: str | None = None, model: str | None = None):
+        self._api_key = api_key if api_key is not None else settings.openai_api_key
+        self._model = model if model is not None else settings.voice_command_model
+
+    def interpret(self, transcript: str) -> VoiceCommand:
+        if not self._api_key:
+            raise RuntimeError("Voice command interpretation is not configured.")
+        response = httpx.post(
+            "https://api.openai.com/v1/responses",
+            headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
+            json={
+                "model": self._model,
+                "store": False,
+                "input": [
+                    {"role": "system", "content": "Classify the user's voice command into the supplied schema. Use no_match unless it clearly maps to one allowed action. Volume always means Raspberry Pi OS volume, never Spotify volume."},
+                    {"role": "user", "content": transcript},
+                ],
+                "text": {"format": {"type": "json_schema", "name": "voice_command", "strict": True, "schema": _SCHEMA}},
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        raw = payload.get("output_text") or self._output_text(payload)
+        return self._validate(json.loads(raw))
+
+    @staticmethod
+    def _output_text(payload: dict) -> str:
+        for output in payload.get("output", []):
+            for content in output.get("content", []):
+                if content.get("type") == "output_text":
+                    return str(content.get("text", ""))
+        raise ValueError("Voice command model returned no text.")
+
+    @staticmethod
+    def _validate(payload: object) -> VoiceCommand:
+        if not isinstance(payload, dict) or payload.get("action") not in _ACTIONS:
+            return VoiceCommand("no_match")
+        action = payload["action"]
+        artist = payload.get("artist")
+        volume = payload.get("volume_percent")
+        if action == "spotify.play_artist" and isinstance(artist, str) and artist.strip():
+            return VoiceCommand(action, artist=artist.strip())
+        if action == "system.volume_set" and isinstance(volume, int) and 0 <= volume <= 100:
+            return VoiceCommand(action, volume_percent=volume)
+        if action in {"spotify.pause", "system.volume_up", "system.volume_down", "light.turn_on", "light.turn_off", "no_match"}:
+            return VoiceCommand(action)
+        return VoiceCommand("no_match")

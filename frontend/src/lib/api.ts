@@ -8,6 +8,7 @@ import type {
   SpotifyNowPlaying,
   OpenClawConversation,
   OpenClawSendResult,
+  VoiceStatus,
 } from '../types'
 
 async function requireJson<T>(response: Response): Promise<T> {
@@ -41,6 +42,10 @@ export async function fetchSpotifyNowPlaying() {
 
 export async function fetchOpenClawMessages() {
   return requireJson<OpenClawConversation>(await fetch('/api/v1/openclaw/messages'))
+}
+
+export async function fetchVoiceStatus() {
+  return requireJson<VoiceStatus>(await fetch('/api/v1/voice/status'))
 }
 
 export async function sendOpenClawMessage(message: string) {

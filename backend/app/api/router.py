@@ -1,15 +1,17 @@
 from datetime import UTC, date, datetime
 import hmac
+import logging
 from typing import Literal
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.settings import settings
 
 api_router = APIRouter()
+logger = logging.getLogger(__name__)
 
 ALLOWED_INTENTS = {
     "light.turn_on",
@@ -104,6 +106,19 @@ class SpotifyTransferRequest(BaseModel):
 
 class VoiceTranscriptRequest(BaseModel):
     text: str
+
+
+class VoiceStateRequest(BaseModel):
+    state: Literal["idle", "listening", "thinking", "complete", "error"]
+    transcript: str | None = Field(default=None, max_length=500)
+    message: str | None = Field(default=None, max_length=200)
+
+
+class VoiceStateResponse(BaseModel):
+    state: Literal["offline", "idle", "listening", "thinking", "complete", "error"]
+    updated_at: datetime | None
+    transcript: str | None
+    message: str | None
 
 
 class OpenClawMessageResponse(BaseModel):
@@ -370,17 +385,62 @@ async def command(request: CommandRequest, api_request: Request) -> CommandRespo
 
 @api_router.post("/voice/transcripts")
 async def voice_transcript(request: Request, body: VoiceTranscriptRequest) -> dict[str, str]:
-    from app.domain.voice_commands import parse_voice_command
-
-    command = parse_voice_command(body.text)
-    if command is None:
-        return {"status": "failed", "message": "I don't know that command yet."}
     try:
+        command = request.app.state.voice_command_interpreter.interpret(body.text)
+        if command.action == "no_match":
+            return {"status": "failed", "message": "I don't know that command yet."}
         if command.action == "spotify.play_artist":
-            artist = request.app.state.spotify_service.play_artist(command.argument or "")
+            artist = request.app.state.spotify_service.play_artist(command.artist or "")
             return {"status": "success", "message": f"Playing {artist}."}
-        direction = "up" if command.action == "spotify.volume_up" else "down"
-        volume = request.app.state.spotify_service.change_volume(direction)
-        return {"status": "success", "message": f"Volume {volume} percent."}
-    except Exception:
+        if command.action == "spotify.pause":
+            request.app.state.spotify_service.pause()
+            return {"status": "success", "message": "Music stopped."}
+        if command.action in {"system.volume_up", "system.volume_down"}:
+            volume = request.app.state.pi_volume_service.adjust("up" if command.action == "system.volume_up" else "down")
+            return {"status": "success", "message": f"Raspberry Pi volume {volume} percent."}
+        if command.action == "system.volume_set":
+            volume = request.app.state.pi_volume_service.set(command.volume_percent or 0)
+            return {"status": "success", "message": f"Raspberry Pi volume {volume} percent."}
+        result = request.app.state.light_service.set_state(
+            "on" if command.action == "light.turn_on" else "off", "voice"
+        )
+        return {"status": result.status, "message": result.message}
+    except RuntimeError as error:
+        logger.info("Voice Spotify command failed: %s", error)
+        return {"status": "failed", "message": str(error)}
+    except (httpx.HTTPError, ValueError):
+        logger.exception("Voice Spotify command failed")
         return {"status": "failed", "message": "Spotify could not complete that command."}
+    except Exception:
+        logger.exception("Unexpected voice command failure")
+        return {"status": "failed", "message": "The voice command could not complete."}
+
+
+@api_router.get("/voice/commands")
+async def voice_commands() -> dict[str, object]:
+    from app.domain.voice_commands import VOICE_COMMANDS
+
+    return {"commands": VOICE_COMMANDS}
+
+
+@api_router.get("/voice/status", response_model=VoiceStateResponse)
+async def voice_status(request: Request) -> VoiceStateResponse:
+    snapshot = request.app.state.voice_state_service.current()
+    return VoiceStateResponse(
+        state=snapshot.state,
+        updated_at=snapshot.updated_at,
+        transcript=snapshot.transcript,
+        message=snapshot.message,
+    )
+
+
+@api_router.post("/voice/status", response_model=VoiceStateResponse)
+async def update_voice_status(request: Request, body: VoiceStateRequest) -> VoiceStateResponse:
+    request.app.state.voice_state_service.set_state(body.state, body.transcript, body.message)
+    snapshot = request.app.state.voice_state_service.current()
+    return VoiceStateResponse(
+        state=snapshot.state,
+        updated_at=snapshot.updated_at,
+        transcript=snapshot.transcript,
+        message=snapshot.message,
+    )

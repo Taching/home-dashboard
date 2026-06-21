@@ -20,6 +20,7 @@ class SpotifyService:
     authorize_url = "https://accounts.spotify.com/authorize"
     token_url = "https://accounts.spotify.com/api/token"
     playback_url = "https://api.spotify.com/v1/me/player"
+    devices_url = "https://api.spotify.com/v1/me/player/devices"
     search_url = "https://api.spotify.com/v1/search"
 
     def __init__(self) -> None:
@@ -148,13 +149,38 @@ class SpotifyService:
         response.raise_for_status()
         return artist["name"]
 
+    def pause(self) -> None:
+        response = httpx.put(
+            f"{self.playback_url}/pause",
+            params={"device_id": self._registered_device()},
+            headers={"Authorization": f"Bearer {self._access_token()}"},
+            timeout=15,
+        )
+        response.raise_for_status()
+
     def change_volume(self, direction: Literal["up", "down"], step: int = 10) -> int:
         access_token = self._access_token()
-        state = httpx.get(self.playback_url, headers={"Authorization": f"Bearer {access_token}"}, timeout=15)
-        state.raise_for_status()
-        current = int(state.json().get("device", {}).get("volume_percent", 50))
+        device_id = self._registered_device()
+        devices = httpx.get(
+            self.devices_url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=15,
+        )
+        devices.raise_for_status()
+        device = next(
+            (item for item in devices.json().get("devices", []) if item.get("id") == device_id),
+            None,
+        )
+        if device is None or device.get("volume_percent") is None:
+            raise RuntimeError("Chili Spotify player is not available.")
+        current = int(device["volume_percent"])
         target = max(0, min(100, current + (step if direction == "up" else -step)))
-        response = httpx.put(f"{self.playback_url}/volume", params={"device_id": self._registered_device(), "volume_percent": target}, headers={"Authorization": f"Bearer {access_token}"}, timeout=15)
+        response = httpx.put(
+            f"{self.playback_url}/volume",
+            params={"device_id": device_id, "volume_percent": target},
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=15,
+        )
         response.raise_for_status()
         return target
 

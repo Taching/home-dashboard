@@ -8,5 +8,5 @@ dist/
 data/*.db
 data/*.db-*
 data/learned-codes/
+voice/models/*.tflite
 .DS_Store
-

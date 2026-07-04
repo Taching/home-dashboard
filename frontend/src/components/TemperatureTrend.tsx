@@ -1,6 +1,7 @@
 import type { Reading } from '../types'
 
 const TIME_ZONE = 'Asia/Tokyo'
+const DISPLAY_HOURS = 6
 
 function hourKey(value: string) {
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -16,13 +17,14 @@ export function TemperatureTrend({ readings }: { readings: Reading[] }) {
       .slice()
       .sort((first, second) => new Date(first.recorded_at).getTime() - new Date(second.recorded_at).getTime())
       .reduce((groups, reading) => groups.set(hourKey(reading.recorded_at), reading), new Map<string, Reading>()),
-  ).slice(-8)
+  ).slice(-DISPLAY_HOURS)
 
   if (hourly.length === 0) {
     return <p className="empty-trend">Hourly readings appear after the first sensor record.</p>
   }
 
   const latest = hourly[hourly.length - 1][1]
+  const history = hourly.slice(0, -1)
 
   return (
     <div className="hourly-readings" aria-label="Recent hourly temperature and humidity readings">
@@ -30,9 +32,10 @@ export function TemperatureTrend({ readings }: { readings: Reading[] }) {
         <strong>{latest.temperature_c.toFixed(1)}<small>°C</small></strong>
         <span>{latest.humidity_percent.toFixed(0)}% humidity</span>
       </div>
+      {history.length > 0 && (
       <ol>
-        {hourly.map(([label, reading], index) => {
-          const previous = hourly[index - 1]?.[1]
+        {history.map(([label, reading], index) => {
+          const previous = index === 0 ? undefined : history[index - 1]?.[1]
           const delta = previous ? reading.temperature_c - previous.temperature_c : 0
           return (
             <li key={label}>
@@ -46,6 +49,7 @@ export function TemperatureTrend({ readings }: { readings: Reading[] }) {
           )
         })}
       </ol>
+      )}
     </div>
   )
 }

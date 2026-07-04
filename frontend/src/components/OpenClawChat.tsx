@@ -56,10 +56,13 @@ export function OpenClawChat({ conversation, pending, feedback, onSend, onRefres
       ) : (
         <>
           <div className="openclaw-transcript" ref={transcript} aria-live="polite">
-            {conversation.messages.length === 0 ? <p>Open your Telegram chat with Chili to begin.</p> : conversation.messages.map((message) => (
-              <p key={message.id} className={`openclaw-message is-${message.role}`}>
-                <span>{message.role === 'user' ? 'You' : 'Chili'}</span>{message.text}
-              </p>
+            {conversation.messages.length === 0 ? (
+              <p className="openclaw-empty-hint">Say “Hey Chili” or type below. Messages sync with your Telegram chat.</p>
+            ) : conversation.messages.map((message) => (
+              <article key={message.id} className={`openclaw-message is-${message.role}`}>
+                <span className="openclaw-message-label">{message.role === 'user' ? 'You' : 'Chili'}</span>
+                <p className="openclaw-message-body">{message.text}</p>
+              </article>
             ))}
           </div>
           <form className="openclaw-form" onSubmit={submit}>

@@ -198,28 +198,11 @@ function App() {
                 <p className="eyebrow">TEMPERATURE</p>
                 <h2 id="history-title">Hourly readings</h2>
               </div>
-              <p>{readings.length} readings</p>
+              <p>Last 6 hours</p>
             </div>
             <TemperatureTrend readings={readings} />
           </section>
           <SystemHealthPanel system={dashboard.system} />
-        </aside>
-        <PlanningRegion
-          calendar={calendar}
-          notion={notion}
-          selectedDate={selectedCalendarDate ?? today}
-          onPrevious={() => setSelectedCalendarDate((current) => addDays(current ?? today, -1))}
-          onToday={() => setSelectedCalendarDate(today)}
-          onNext={() => setSelectedCalendarDate((current) => addDays(current ?? today, 1))}
-        />
-        <aside className="assistant-region" aria-label="Assistant and media">
-          <OpenClawChat
-            conversation={openclaw}
-            pending={openclawPending}
-            feedback={openclawFeedback}
-            onSend={(message) => void sendToOpenClaw(message)}
-            onRefresh={() => void fetchOpenClawMessages().then(setOpenClaw).catch(() => setOpenClaw({ status: 'unavailable', messages: [], message: 'OpenClaw is unavailable.' }))}
-          />
           <MediaRegion
             spotify={spotify}
             playerReady={spotifyPlayback.ready}
@@ -231,6 +214,23 @@ function App() {
             onTogglePlayback={() => void spotifyPlayback.togglePlayback()}
             onPrevious={() => void spotifyPlayback.previousTrack()}
             onNext={() => void spotifyPlayback.nextTrack()}
+          />
+        </aside>
+        <PlanningRegion
+          calendar={calendar}
+          notion={notion}
+          selectedDate={selectedCalendarDate ?? today}
+          onPrevious={() => setSelectedCalendarDate((current) => addDays(current ?? today, -1))}
+          onToday={() => setSelectedCalendarDate(today)}
+          onNext={() => setSelectedCalendarDate((current) => addDays(current ?? today, 1))}
+        />
+        <aside className="assistant-region" aria-label="Assistant">
+          <OpenClawChat
+            conversation={openclaw}
+            pending={openclawPending}
+            feedback={openclawFeedback}
+            onSend={(message) => void sendToOpenClaw(message)}
+            onRefresh={() => void fetchOpenClawMessages().then(setOpenClaw).catch(() => setOpenClaw({ status: 'unavailable', messages: [], message: 'OpenClaw is unavailable.' }))}
           />
         </aside>
       </div>

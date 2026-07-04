@@ -19,6 +19,13 @@ export function MediaRegion({ spotify, playerReady, playerActive, playerPaused, 
 
   return (
     <section className="media-region spotify-widget" aria-label="Spotify now playing">
+      <div className="spotify-heading">
+        <div>
+          <p className="eyebrow">MEDIA</p>
+          <h3>Spotify</h3>
+        </div>
+        <p>{spotify.status === 'ready' ? (playerActive ? 'Playing here' : 'Ready') : spotify.status === 'not_configured' ? 'Setup needed' : 'Unavailable'}</p>
+      </div>
       <div className={`spotify-player${activeTrack ? '' : ' is-empty'}`}>
         {activeTrack ? (
           <div className="now-playing">

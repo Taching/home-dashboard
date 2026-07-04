@@ -1,6 +1,6 @@
 import unittest
 
-from app.domain.voice_commands import VOICE_COMMANDS, VoiceCommand, VoiceCommandInterpreter
+from app.domain.voice_commands import VOICE_COMMANDS, VoiceCommand, VoiceCommandInterpreter, match_voice_command_fast_path
 
 
 class VoiceCommandTests(unittest.TestCase):
@@ -45,6 +45,20 @@ class VoiceCommandTests(unittest.TestCase):
             VoiceCommandInterpreter._validate({"action": "shell.execute", "artist": None, "volume_percent": None, "message": None}),
             VoiceCommand("no_match"),
         )
+
+    def test_fast_path_matches_common_commands(self):
+        self.assertEqual(match_voice_command_fast_path("pause"), VoiceCommand("spotify.pause"))
+        self.assertEqual(match_voice_command_fast_path("turn on the lights"), VoiceCommand("light.turn_on"))
+        self.assertEqual(match_voice_command_fast_path("volume up"), VoiceCommand("system.volume_up"))
+        self.assertEqual(
+            match_voice_command_fast_path("set volume to 40 percent"),
+            VoiceCommand("system.volume_set", volume_percent=40),
+        )
+        self.assertEqual(
+            match_voice_command_fast_path("play Spotify Yuuri"),
+            VoiceCommand("spotify.play_artist", artist="Yuuri"),
+        )
+        self.assertIsNone(match_voice_command_fast_path("ask Chili what's on my calendar"))
 
 
 if __name__ == "__main__":

@@ -19,12 +19,13 @@ logger = logging.getLogger("voice")
 SAMPLE_RATE = 16_000
 SAMPLE_WIDTH = 2
 CHANNELS = 1
-COMMAND_SECONDS = float(os.environ.get("VOICE_COMMAND_MAX_SECONDS", "6"))
-COMMAND_MIN_SECONDS = 1
-COMMAND_SILENCE_SECONDS = float(os.environ.get("VOICE_COMMAND_SILENCE_SECONDS", "0.9"))
-SILENCE_RMS_THRESHOLD = 450
-COOLDOWN_SECONDS = 3
-WAKEWORD_REARM_SECONDS = float(os.environ.get("VOICE_WAKEWORD_REARM_SECONDS", "1.0"))
+COMMAND_SECONDS = float(os.environ.get("VOICE_COMMAND_MAX_SECONDS", "5"))
+COMMAND_MIN_SECONDS = float(os.environ.get("VOICE_COMMAND_MIN_SECONDS", "1.0"))
+COMMAND_SILENCE_SECONDS = float(os.environ.get("VOICE_COMMAND_SILENCE_SECONDS", "0.8"))
+SILENCE_RMS_THRESHOLD = float(os.environ.get("VOICE_SILENCE_RMS_THRESHOLD", "380"))
+COOLDOWN_SECONDS = float(os.environ.get("VOICE_COOLDOWN_SECONDS", "1.5"))
+POST_WAKE_SKIP_SECONDS = float(os.environ.get("VOICE_POST_WAKE_SKIP_SECONDS", "0.3"))
+WAKEWORD_REARM_SECONDS = float(os.environ.get("VOICE_WAKEWORD_REARM_SECONDS", "0.5"))
 # openWakeWord consumes 80 ms frames at 16 kHz.
 WAKEWORD_FRAME_SAMPLES = 1_280
 
@@ -151,7 +152,7 @@ def main() -> None:
     wakeword_model = os.environ.get("VOICE_WAKEWORD_MODEL", "/models/hey_chili.tflite")
     wakeword_label = os.environ.get("VOICE_WAKEWORD_LABEL", "Hey Chili")
     backend_url = os.environ.get("BACKEND_URL", "http://backend:8000").rstrip("/")
-    threshold = float(os.environ.get("VOICE_WAKEWORD_THRESHOLD", "0.5"))
+    threshold = float(os.environ.get("VOICE_WAKEWORD_THRESHOLD", "0.4"))
     rearm_seconds = float(os.environ.get("VOICE_WAKEWORD_REARM_SECONDS", str(WAKEWORD_REARM_SECONDS)))
     transcription_model = os.environ.get("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe")
     detector = Model(wakeword_models=[wakeword_model], inference_framework="tflite")
@@ -177,6 +178,9 @@ def main() -> None:
             stage = "recording"
             try:
                 update_status("listening", backend_url)
+                skip_frames = round(POST_WAKE_SKIP_SECONDS * SAMPLE_RATE / WAKEWORD_FRAME_SAMPLES)
+                for _ in range(skip_frames):
+                    read_exact(capture.stdout, frame_bytes)
                 audio = record_command(capture.stdout)
                 stage = "transcription"
                 update_status("thinking", backend_url)

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import json
+import re
 from typing import Literal
 
 import httpx
@@ -46,12 +47,52 @@ class VoiceCommand:
     message: str | None = None
 
 
+_SIMPLE_COMMANDS = (
+    (re.compile(r"^(?:pause|stop)(?:\s+(?:the\s+)?music|\s+spotify)?\.?$", re.I), "spotify.pause"),
+    (re.compile(r"^(?:turn|switch)\s+on(?:\s+the\s+)?lights?\.?$", re.I), "light.turn_on"),
+    (re.compile(r"^(?:turn|switch)\s+off(?:\s+the\s+)?lights?\.?$", re.I), "light.turn_off"),
+    (re.compile(r"^(?:volume\s+up|turn\s+it\s+up|louder|make\s+it\s+louder)\.?$", re.I), "system.volume_up"),
+    (re.compile(r"^(?:volume\s+down|turn\s+it\s+down|quieter|make\s+it\s+quieter|lower(?:\s+the\s+)?volume)\.?$", re.I), "system.volume_down"),
+)
+_VOLUME_SET = re.compile(r"^set\s+volume\s+to\s+(\d{1,3})\s*(?:percent|%)?\.?$", re.I)
+_PLAY_ARTIST = re.compile(r"^play(?:\s+spotify)?\s+(.+)$", re.I)
+
+
+def match_voice_command_fast_path(transcript: str) -> VoiceCommand | None:
+    text = transcript.strip()
+    if not text:
+        return None
+    for pattern, action in _SIMPLE_COMMANDS:
+        if pattern.fullmatch(text):
+            return VoiceCommand(action)
+    volume_match = _VOLUME_SET.fullmatch(text)
+    if volume_match:
+        return VoiceCommandInterpreter._validate({
+            "action": "system.volume_set",
+            "artist": None,
+            "volume_percent": int(volume_match.group(1)),
+            "message": None,
+        })
+    artist_match = _PLAY_ARTIST.fullmatch(text)
+    if artist_match:
+        return VoiceCommandInterpreter._validate({
+            "action": "spotify.play_artist",
+            "artist": artist_match.group(1).strip(),
+            "volume_percent": None,
+            "message": None,
+        })
+    return None
+
+
 class VoiceCommandInterpreter:
     def __init__(self, api_key: str | None = None, model: str | None = None):
         self._api_key = api_key if api_key is not None else settings.openai_api_key
         self._model = model if model is not None else settings.voice_command_model
 
     def interpret(self, transcript: str) -> VoiceCommand:
+        fast_path = match_voice_command_fast_path(transcript)
+        if fast_path is not None:
+            return fast_path
         if not self._api_key:
             raise RuntimeError("Voice command interpretation is not configured.")
         response = httpx.post(

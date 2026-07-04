@@ -37,9 +37,10 @@ export function Header() {
       .then(applyVoiceStatus)
       .catch(() => applyVoiceStatus({ state: 'offline', updated_at: null, transcript: null, message: null }))
     refreshVoice()
-    const interval = window.setInterval(refreshVoice, 1_000)
+    const pollMs = voiceStatus.state === 'idle' || voiceStatus.state === 'offline' ? 1_000 : 300
+    const interval = window.setInterval(refreshVoice, pollMs)
     return () => window.clearInterval(interval)
-  }, [])
+  }, [voiceStatus.state])
 
   return (
     <header className="dashboard-header">

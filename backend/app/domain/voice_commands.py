@@ -10,7 +10,7 @@ from app.core.settings import settings
 
 VoiceAction = Literal[
     "spotify.play_artist", "spotify.pause", "system.volume_up", "system.volume_down",
-    "system.volume_set", "light.turn_on", "light.turn_off", "no_match",
+    "system.volume_set", "light.turn_on", "light.turn_off", "openclaw.send_message", "no_match",
 ]
 
 VOICE_COMMANDS = [
@@ -21,6 +21,7 @@ VOICE_COMMANDS = [
     {"id": "system.volume_set", "label": "Set Pi volume", "examples": ["set volume to 50 percent"]},
     {"id": "light.turn_on", "label": "Turn lights on", "examples": ["turn on the lights"]},
     {"id": "light.turn_off", "label": "Turn lights off", "examples": ["turn off the lights"]},
+    {"id": "openclaw.send_message", "label": "Send a message to Chili", "examples": ["ask Chili what's on my calendar", "tell OpenClaw to summarize today"]},
 ]
 
 _ACTIONS = {item["id"] for item in VOICE_COMMANDS} | {"no_match"}
@@ -30,8 +31,9 @@ _SCHEMA = {
         "action": {"type": "string", "enum": sorted(_ACTIONS)},
         "artist": {"type": ["string", "null"]},
         "volume_percent": {"type": ["integer", "null"]},
+        "message": {"type": ["string", "null"]},
     },
-    "required": ["action", "artist", "volume_percent"],
+    "required": ["action", "artist", "volume_percent", "message"],
     "additionalProperties": False,
 }
 
@@ -41,6 +43,7 @@ class VoiceCommand:
     action: VoiceAction
     artist: str | None = None
     volume_percent: int | None = None
+    message: str | None = None
 
 
 class VoiceCommandInterpreter:
@@ -58,7 +61,7 @@ class VoiceCommandInterpreter:
                 "model": self._model,
                 "store": False,
                 "input": [
-                    {"role": "system", "content": "Classify the user's voice command into the supplied schema. Use no_match unless it clearly maps to one allowed action. Volume always means Raspberry Pi OS volume, never Spotify volume."},
+                    {"role": "system", "content": "Classify the user's voice command into the supplied schema. Use no_match unless it clearly maps to one allowed action. Volume always means Raspberry Pi OS volume, never Spotify volume. Use openclaw.send_message only when the user asks to ask, tell, message, or send something to Chili/OpenClaw; put only the message content for Chili/OpenClaw in message."},
                     {"role": "user", "content": transcript},
                 ],
                 "text": {"format": {"type": "json_schema", "name": "voice_command", "strict": True, "schema": _SCHEMA}},
@@ -85,10 +88,13 @@ class VoiceCommandInterpreter:
         action = payload["action"]
         artist = payload.get("artist")
         volume = payload.get("volume_percent")
+        message = payload.get("message")
         if action == "spotify.play_artist" and isinstance(artist, str) and artist.strip():
             return VoiceCommand(action, artist=artist.strip())
         if action == "system.volume_set" and isinstance(volume, int) and 0 <= volume <= 100:
             return VoiceCommand(action, volume_percent=volume)
+        if action == "openclaw.send_message" and isinstance(message, str) and message.strip():
+            return VoiceCommand(action, message=message.strip())
         if action in {"spotify.pause", "system.volume_up", "system.volume_down", "light.turn_on", "light.turn_off", "no_match"}:
             return VoiceCommand(action)
         return VoiceCommand("no_match")

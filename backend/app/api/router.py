@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, date, datetime
 import hmac
 import logging
@@ -5,7 +6,7 @@ from typing import Literal
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.settings import settings
@@ -147,6 +148,25 @@ class OpenClawSendResponse(BaseModel):
     message: str | None = None
 
 
+def _openclaw_conversation(service) -> OpenClawConversationResponse:
+    if not service.configured():
+        return OpenClawConversationResponse(status="not_configured")
+    try:
+        messages = service.history()
+    except Exception:
+        return OpenClawConversationResponse(status="unavailable", message="OpenClaw is unavailable.")
+    return OpenClawConversationResponse(
+        status="ready",
+        messages=[OpenClawMessageResponse(**message.__dict__) for message in messages],
+    )
+
+
+def _model_json(model: BaseModel) -> str:
+    if hasattr(model, "model_dump_json"):
+        return model.model_dump_json()
+    return model.json()
+
+
 @api_router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -158,6 +178,7 @@ async def dashboard(request: Request) -> dict[str, object]:
     light = request.app.state.light_service.snapshot()
     spotify_status = request.app.state.spotify_service.status()
     openclaw_status = request.app.state.openclaw_service.status()
+    system_status = request.app.state.system_status_service.snapshot()
     reading = sensor.current()
     return {
         "temperature_c": reading.temperature_c if reading else None,
@@ -167,6 +188,17 @@ async def dashboard(request: Request) -> dict[str, object]:
             "last_command_state": light.last_command_state,
             "last_command_at": light.last_command_at,
             "available": light.available,
+        },
+        "system": {
+            "cpu_temperature_c": system_status.cpu_temperature_c,
+            "load_1m": system_status.load_1m,
+            "load_percent": system_status.load_percent,
+            "memory_used_percent": system_status.memory_used_percent,
+            "memory_used_mb": system_status.memory_used_mb,
+            "memory_total_mb": system_status.memory_total_mb,
+            "storage_used_percent": system_status.storage_used_percent,
+            "storage_free_gb": system_status.storage_free_gb,
+            "storage_total_gb": system_status.storage_total_gb,
         },
         "display": {"state": "visible"},
         "integrations": {
@@ -267,16 +299,31 @@ async def notion_today(request: Request) -> NotionTodayResponse:
 
 @api_router.get("/openclaw/messages", response_model=OpenClawConversationResponse)
 async def openclaw_messages(request: Request) -> OpenClawConversationResponse:
-    service = request.app.state.openclaw_service
-    if not service.configured():
-        return OpenClawConversationResponse(status="not_configured")
-    try:
-        messages = service.history()
-    except Exception:
-        return OpenClawConversationResponse(status="unavailable", message="OpenClaw is unavailable.")
-    return OpenClawConversationResponse(
-        status="ready",
-        messages=[OpenClawMessageResponse(**message.__dict__) for message in messages],
+    return _openclaw_conversation(request.app.state.openclaw_service)
+
+
+@api_router.get("/openclaw/messages/stream")
+async def openclaw_message_stream(request: Request) -> StreamingResponse:
+    async def events():
+        last_payload: str | None = None
+        while not await request.is_disconnected():
+            payload = await asyncio.to_thread(_openclaw_conversation, request.app.state.openclaw_service)
+            serialized = _model_json(payload)
+            if serialized != last_payload:
+                yield f"event: conversation\ndata: {serialized}\n\n"
+                last_payload = serialized
+            else:
+                yield ": keepalive\n\n"
+            await asyncio.sleep(2)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -417,6 +464,9 @@ async def voice_transcript(request: Request, body: VoiceTranscriptRequest) -> di
         if command.action == "system.volume_set":
             volume = request.app.state.pi_volume_service.set(command.volume_percent or 0)
             return {"status": "success", "message": f"Raspberry Pi volume {volume} percent."}
+        if command.action == "openclaw.send_message":
+            request.app.state.openclaw_service.send(command.message or "")
+            return {"status": "success", "message": "Sent to Chili."}
         result = request.app.state.light_service.set_state(
             "on" if command.action == "light.turn_on" else "off", "voice"
         )

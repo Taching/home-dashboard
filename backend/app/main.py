@@ -6,12 +6,14 @@ from fastapi import FastAPI
 from app.api.router import api_router
 from app.core.settings import settings
 from app.database.session import initialise_database
+from app.domain.dashboard_context import DashboardContextProvider
 from app.domain.lights import LightService
 from app.domain.openclaw import OpenClawService
 from app.domain.calendar_bridge import CalendarBridgeService
 from app.domain.notion import NotionService
 from app.domain.sensors import SensorService
 from app.domain.spotify import SpotifyService
+from app.domain.system_status import SystemStatusService
 from app.domain.voice_state import VoiceStateService
 from app.domain.voice_commands import VoiceCommandInterpreter
 from app.domain.system_volume import PiVolumeService
@@ -33,7 +35,16 @@ async def lifespan(application: FastAPI):
     application.state.voice_state_service = VoiceStateService()
     application.state.voice_command_interpreter = VoiceCommandInterpreter()
     application.state.pi_volume_service = PiVolumeService()
-    application.state.openclaw_service = OpenClawService()
+    application.state.system_status_service = SystemStatusService()
+    application.state.openclaw_service = OpenClawService(
+        DashboardContextProvider(
+            sensor_service=sensor_service,
+            light_service=light_service,
+            calendar_service=application.state.calendar_bridge_service,
+            notion_service=application.state.notion_service,
+            spotify_service=application.state.spotify_service,
+        )
+    )
     poller = asyncio.create_task(run_sensor_poller(sensor_service))
     try:
         yield

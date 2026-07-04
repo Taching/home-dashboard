@@ -12,8 +12,21 @@ export type Dashboard = {
   humidity_percent: number | null
   last_updated_at: string | null
   light: Light
+  system: SystemStatus
   display: { state: string }
   integrations: Record<string, string>
+}
+
+export type SystemStatus = {
+  cpu_temperature_c: number | null
+  load_1m: number | null
+  load_percent: number | null
+  memory_used_percent: number | null
+  memory_used_mb: number | null
+  memory_total_mb: number | null
+  storage_used_percent: number | null
+  storage_free_gb: number | null
+  storage_total_gb: number | null
 }
 
 export type Reading = {

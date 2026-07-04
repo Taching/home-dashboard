@@ -6,6 +6,7 @@ import { MediaRegion } from './components/MediaRegion'
 import { OpenClawChat } from './components/OpenClawChat'
 import { addDays, dayKey, PlanningRegion } from './components/PlanningRegion'
 import { SystemStrip } from './components/SystemStrip'
+import { SystemHealthPanel } from './components/SystemHealthPanel'
 import { TemperatureTrend } from './components/TemperatureTrend'
 import { useDashboardCommand } from './hooks/useDashboardCommand'
 import { useSpotifyPlayback } from './hooks/useSpotifyPlayback'
@@ -15,6 +16,7 @@ import {
   fetchNotionToday,
   fetchOpenClawMessages,
   fetchReadings,
+  openOpenClawMessageStream,
   sendOpenClawMessage,
   fetchSpotifyNowPlaying,
 } from './lib/api'
@@ -26,6 +28,17 @@ const initialState: Dashboard = {
   humidity_percent: null,
   last_updated_at: null,
   light: { last_command_state: 'unknown', last_command_at: null, available: false },
+  system: {
+    cpu_temperature_c: null,
+    load_1m: null,
+    load_percent: null,
+    memory_used_percent: null,
+    memory_used_mb: null,
+    memory_total_mb: null,
+    storage_used_percent: null,
+    storage_free_gb: null,
+    storage_total_gb: null,
+  },
   display: { state: 'visible' },
   integrations: { sensor: 'pending', broadlink: 'pending', calendar: 'not_configured', notion: 'not_configured', spotify: 'not_configured', openclaw: 'not_configured' },
 }
@@ -126,10 +139,15 @@ function App() {
   }, [refresh])
 
   useEffect(() => {
-    const interval = window.setInterval(async () => {
-      try { setOpenClaw(await fetchOpenClawMessages()) } catch { /* retry on next interval */ }
-    }, 10_000)
-    return () => window.clearInterval(interval)
+    if (typeof EventSource === 'undefined') {
+      const interval = window.setInterval(async () => {
+        try { setOpenClaw(await fetchOpenClawMessages()) } catch { /* retry on next interval */ }
+      }, 5_000)
+      return () => window.clearInterval(interval)
+    }
+
+    const stream = openOpenClawMessageStream(setOpenClaw)
+    return () => stream.close()
   }, [])
 
   const sendToOpenClaw = useCallback(async (message: string) => {
@@ -184,6 +202,7 @@ function App() {
             </div>
             <TemperatureTrend readings={readings} />
           </section>
+          <SystemHealthPanel system={dashboard.system} />
         </aside>
         <PlanningRegion
           calendar={calendar}
@@ -194,7 +213,13 @@ function App() {
           onNext={() => setSelectedCalendarDate((current) => addDays(current ?? today, 1))}
         />
         <aside className="assistant-region" aria-label="Assistant and media">
-          <OpenClawChat conversation={openclaw} pending={openclawPending} feedback={openclawFeedback} onSend={(message) => void sendToOpenClaw(message)} />
+          <OpenClawChat
+            conversation={openclaw}
+            pending={openclawPending}
+            feedback={openclawFeedback}
+            onSend={(message) => void sendToOpenClaw(message)}
+            onRefresh={() => void fetchOpenClawMessages().then(setOpenClaw).catch(() => setOpenClaw({ status: 'unavailable', messages: [], message: 'OpenClaw is unavailable.' }))}
+          />
           <MediaRegion
             spotify={spotify}
             playerReady={spotifyPlayback.ready}

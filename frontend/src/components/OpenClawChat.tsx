@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
+import openClawLogo from '../assets/openclaw-logo.svg'
 import type { OpenClawConversation } from '../types'
 
 type Props = {
@@ -6,9 +7,10 @@ type Props = {
   pending: boolean
   feedback: string | null
   onSend: (message: string) => void
+  onRefresh: () => void
 }
 
-export function OpenClawChat({ conversation, pending, feedback, onSend }: Props) {
+export function OpenClawChat({ conversation, pending, feedback, onSend, onRefresh }: Props) {
   const [draft, setDraft] = useState('')
   const transcript = useRef<HTMLDivElement>(null)
 
@@ -26,18 +28,31 @@ export function OpenClawChat({ conversation, pending, feedback, onSend }: Props)
   }
 
   return (
-    <section className="openclaw-chat" aria-label="Ask Chili">
-      <div className="region-heading">
-        <div>
-          <p className="eyebrow">ASSISTANT</p>
-          <h2>Ask Chili</h2>
+    <section className={`openclaw-chat is-${conversation.status}`} aria-label="Ask Chili">
+      <div className="openclaw-heading">
+        <div className="openclaw-title">
+          <span className="openclaw-brand">
+            <img src={openClawLogo} alt="OpenClaw" />
+          </span>
+          <div>
+            <p className="eyebrow">ASSISTANT</p>
+            <h2>Ask Chili</h2>
+          </div>
         </div>
         <p className={`openclaw-status is-${conversation.status}`}>{conversation.status === 'ready' ? 'Shared with Telegram' : conversation.status === 'not_configured' ? 'Setup needed' : 'Unavailable'}</p>
       </div>
       {conversation.status === 'not_configured' ? (
-        <p className="setup-state">Configure OpenClaw on the Pi to connect this shared chat.</p>
+        <div className="panel-empty-state">
+          <strong>OpenClaw not connected</strong>
+          <p>Configure the Pi gateway and Telegram bridge to enable this shared chat.</p>
+          <button type="button" onClick={onRefresh}>Check connection</button>
+        </div>
       ) : conversation.status === 'unavailable' ? (
-        <p className="setup-state is-error">{conversation.message ?? 'OpenClaw is unavailable'}</p>
+        <div className="panel-empty-state is-error">
+          <strong>OpenClaw unavailable</strong>
+          <p>{conversation.message ?? 'OpenClaw is unavailable.'}</p>
+          <button type="button" onClick={onRefresh}>Retry</button>
+        </div>
       ) : (
         <>
           <div className="openclaw-transcript" ref={transcript} aria-live="polite">

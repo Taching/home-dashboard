@@ -48,11 +48,16 @@ function eventTime(event: CalendarEvent) {
   }).format(new Date(event.start_at))
 }
 
-function taskTime(value: string | null) {
+function taskDueLabel(value: string | null) {
   if (!value) return null
+  const due = new Date(value)
+  const now = new Date()
+  if (dayKey(due) === dayKey(now) && due.getUTCHours() === 0 && due.getUTCMinutes() === 0) {
+    return 'Today'
+  }
   return new Intl.DateTimeFormat('en-GB', {
     timeZone: TIME_ZONE, hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(new Date(value))
+  }).format(due)
 }
 
 function priorityClass(priority: string | null) {
@@ -232,7 +237,7 @@ export function PlanningRegion({
                   <span>{task.title}</span>
                   <small>
                     {task.priority && <strong className={`priority-badge ${priorityClass(task.priority)}`}>{task.priority}</strong>}
-                    <span>{task.is_overdue ? 'Overdue' : taskTime(task.due_at)}</span>
+                    <span>{task.is_overdue ? 'Overdue' : taskDueLabel(task.due_at)}</span>
                   </small>
                 </div>
               </li>

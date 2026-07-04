@@ -29,13 +29,14 @@ class Settings(BaseSettings):
     notion_data_source_id: str | None = None
     notion_database_id: str | None = None
     notion_title_property: str = "Name"
-    notion_due_property: str = "Due"
+    notion_due_property: str = "Due Date"
     notion_done_property: str = "Done"
     notion_status_property: str = "Status"
     notion_done_statuses: str = "Done,Complete,Completed"
     openclaw_gateway_ws_url: str | None = None
     openclaw_gateway_token: str | None = None
     openclaw_session_key: str = "agent:main:main"
+    openclaw_prefer_telegram_session: bool = True
 
 
 settings = Settings()

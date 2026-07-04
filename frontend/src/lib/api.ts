@@ -44,6 +44,18 @@ export async function fetchOpenClawMessages() {
   return requireJson<OpenClawConversation>(await fetch('/api/v1/openclaw/messages'))
 }
 
+export function openOpenClawMessageStream(
+  onConversation: (conversation: OpenClawConversation) => void,
+  onError?: () => void,
+) {
+  const stream = new EventSource('/api/v1/openclaw/messages/stream')
+  stream.addEventListener('conversation', (event) => {
+    onConversation(JSON.parse((event as MessageEvent).data) as OpenClawConversation)
+  })
+  stream.onerror = () => onError?.()
+  return stream
+}
+
 export async function fetchVoiceStatus() {
   return requireJson<VoiceStatus>(await fetch('/api/v1/voice/status'))
 }

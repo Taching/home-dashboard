@@ -9,6 +9,7 @@ from app.database.session import initialise_database
 from app.domain.lights import LightService
 from app.domain.openclaw import OpenClawService
 from app.domain.calendar_bridge import CalendarBridgeService
+from app.domain.notion import NotionService
 from app.domain.sensors import SensorService
 from app.domain.spotify import SpotifyService
 from app.domain.voice_state import VoiceStateService
@@ -27,6 +28,7 @@ async def lifespan(application: FastAPI):
     light_service.restore_latest()
     application.state.light_service = light_service
     application.state.calendar_bridge_service = CalendarBridgeService()
+    application.state.notion_service = NotionService()
     application.state.spotify_service = SpotifyService()
     application.state.voice_state_service = VoiceStateService()
     application.state.voice_command_interpreter = VoiceCommandInterpreter()

@@ -55,6 +55,22 @@ function taskTime(value: string | null) {
   }).format(new Date(value))
 }
 
+function priorityClass(priority: string | null) {
+  const value = priority?.toLowerCase() ?? ''
+  if (value.includes('high') || value.includes('urgent')) return 'is-high'
+  if (value.includes('medium') || value.includes('normal')) return 'is-medium'
+  if (value.includes('low')) return 'is-low'
+  return ''
+}
+
+function statusClass(status: string | null) {
+  const value = status?.toLowerCase() ?? ''
+  if (value.includes('progress') || value.includes('doing')) return 'is-progress'
+  if (value.includes('blocked') || value.includes('waiting')) return 'is-blocked'
+  if (value.includes('todo') || value.includes('to do') || value.includes('backlog')) return 'is-todo'
+  return ''
+}
+
 function layoutEvents(events: CalendarEvent[], selectedDate: string): PositionedEvent[] {
   const dayStart = dateAtStartOfDay(selectedDate).getTime()
   const visible = events
@@ -211,10 +227,14 @@ export function PlanningRegion({
           <ul className="task-list">
             {notion.tasks.slice(0, 8).map((task) => (
               <li className={task.is_overdue ? 'is-overdue' : ''} key={task.id}>
-                <span>{task.title}</span>
-                {(task.is_overdue || taskTime(task.due_at)) && (
-                  <small>{task.is_overdue ? 'Overdue' : taskTime(task.due_at)}</small>
-                )}
+                {task.status && <em className={`status-badge ${statusClass(task.status)}`}>{task.status}</em>}
+                <div className="task-copy">
+                  <span>{task.title}</span>
+                  <small>
+                    {task.priority && <strong className={`priority-badge ${priorityClass(task.priority)}`}>{task.priority}</strong>}
+                    <span>{task.is_overdue ? 'Overdue' : taskTime(task.due_at)}</span>
+                  </small>
+                </div>
               </li>
             ))}
           </ul>

@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     pi_volume_control: str = "PCM"
     pi_volume_step_percent: int = 10
     apple_calendar_bridge_token: str | None = None
+    notion_token: str | None = None
+    notion_data_source_id: str | None = None
+    notion_database_id: str | None = None
+    notion_title_property: str = "Name"
+    notion_due_property: str = "Due"
+    notion_done_property: str = "Done"
+    notion_status_property: str = "Status"
+    notion_done_statuses: str = "Done,Complete,Completed"
     openclaw_gateway_ws_url: str | None = None
     openclaw_gateway_token: str | None = None
     openclaw_session_key: str = "agent:main:main"

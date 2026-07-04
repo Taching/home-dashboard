@@ -158,12 +158,23 @@ button { font: inherit; }
 .task-section { min-height: 0; padding-left: .55rem; }
 .task-section .region-heading { align-items: start; display: grid; gap: .25rem; }
 .task-section .region-heading > p { justify-self: start; }
-.task-list { display: grid; gap: .45rem; margin-top: .75rem; }
-.task-list li { position: relative; display: grid; gap: .18rem; padding-left: .82rem; color: #c7d3e8; font-size: .76rem; line-height: 1.25; }
-.task-list li::before { position: absolute; left: 0; top: .38rem; width: .32rem; height: .32rem; border: 1px solid #5dd6ff; border-radius: 50%; content: ''; }
-.task-list li span { overflow: hidden; text-overflow: ellipsis; }
-.task-list li small { color: #96a5c2; font-size: .62rem; }
+.task-list { display: grid; gap: .5rem; margin-top: .75rem; }
+.task-list li { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .58rem; min-height: 2.65rem; padding: .48rem .56rem; border-radius: .55rem; color: #dce7f5; background: linear-gradient(135deg, color-mix(in srgb, #111a30 72%, transparent), color-mix(in srgb, #17233d 76%, transparent)); box-shadow: inset 0 0 0 1px color-mix(in srgb, #3b4c6c 38%, transparent), 0 .18rem .55rem rgba(0,0,0,.12); font-size: .76rem; line-height: 1.25; }
+.task-list li::before { display: none; }
+.task-copy { min-width: 0; display: grid; gap: .2rem; }
+.task-list li span { overflow: hidden; color: #edf5ff; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
+.task-list li small { display: flex; align-items: center; gap: .38rem; min-width: 0; color: #9eacc3; font-size: .62rem; }
+.task-list li small span { color: inherit; font-size: inherit; font-weight: 650; }
 .task-list li.is-overdue small { color: #ff8e90; }
+.priority-badge, .status-badge { border-radius: 999px; font-style: normal; font-weight: 820; letter-spacing: .04em; line-height: 1; text-align: center; text-transform: uppercase; }
+.priority-badge { padding: .14rem .36rem; color: #c7d3e8; background: #263554; font-size: .54rem; }
+.priority-badge.is-high { color: #ffd8c2; background: color-mix(in srgb, #e76f51 34%, #263554); }
+.priority-badge.is-medium { color: #bdefff; background: color-mix(in srgb, #5dd6ff 28%, #263554); }
+.priority-badge.is-low { color: #bdf4dd; background: color-mix(in srgb, #79e6bd 24%, #263554); }
+.status-badge { min-width: 3.3rem; padding: .28rem .42rem; color: #dce7f5; background: #33425e; box-shadow: inset 0 0 0 1px color-mix(in srgb, #96a5c2 24%, transparent); font-size: .58rem; }
+.status-badge.is-todo { color: #e9f2ff; background: linear-gradient(135deg, #4f5f80, #35435e); }
+.status-badge.is-progress { color: #07121e; background: linear-gradient(135deg, #f4d35e, #f8e49a); }
+.status-badge.is-blocked { color: #fff3f3; background: linear-gradient(135deg, #b55362, #d16a78); }
 
 .spotify-player { display: grid; justify-items: center; gap: .72rem; text-align: center; }
 .spotify-player.is-empty { align-content: center; min-height: 7.4rem; }

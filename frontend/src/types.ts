@@ -55,6 +55,8 @@ export type NotionTask = {
   title: string
   due_at: string | null
   is_overdue: boolean
+  status: string | null
+  priority: string | null
 }
 
 export type NotionToday = {

@@ -78,6 +78,8 @@ class NotionTaskResponse(BaseModel):
     title: str
     due_at: datetime | None = None
     is_overdue: bool = False
+    status: str | None = None
+    priority: str | None = None
 
 
 class NotionTodayResponse(BaseModel):
@@ -171,7 +173,7 @@ async def dashboard(request: Request) -> dict[str, object]:
             "sensor": sensor.status(),
             "broadlink": "ready" if light.available else "unavailable",
             "calendar": request.app.state.calendar_bridge_service.today()[0],
-            "notion": "not_configured",
+            "notion": request.app.state.notion_service.status(),
             "spotify": spotify_status,
             "openclaw": openclaw_status,
         },
@@ -244,9 +246,23 @@ async def sync_apple_calendar(
 
 
 @api_router.get("/notion/today", response_model=NotionTodayResponse)
-async def notion_today() -> NotionTodayResponse:
-    # The Notion integration populates this response in its own phase.
-    return NotionTodayResponse(status="not_configured")
+async def notion_today(request: Request) -> NotionTodayResponse:
+    status, synced_at, tasks = request.app.state.notion_service.today()
+    return NotionTodayResponse(
+        status=status,
+        synced_at=synced_at,
+        tasks=[
+            NotionTaskResponse(
+                id=task.id,
+                title=task.title,
+                due_at=task.due_at,
+                is_overdue=task.is_overdue,
+                status=task.status,
+                priority=task.priority,
+            )
+            for task in tasks
+        ],
+    )
 
 
 @api_router.get("/openclaw/messages", response_model=OpenClawConversationResponse)

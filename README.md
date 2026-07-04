@@ -38,6 +38,29 @@ OPENCLAW_SESSION_KEY=agent:main:main
 
 Restart the dashboard with `docker compose up --build -d`. The token is read by the backend only; it is never sent to the browser. The OpenClaw Gateway must accept the dashboard backend as an authenticated local operator client.
 
+## Notion tasks
+
+The task rail reads incomplete Notion tasks due today or overdue. Create a
+Notion internal integration, share the task database or data source with that
+integration, then add the connection values to `.env`:
+
+```env
+NOTION_TOKEN=<internal integration secret>
+NOTION_DATA_SOURCE_ID=<preferred current Notion data source id>
+# or, for older database URLs:
+NOTION_DATABASE_ID=<database id>
+NOTION_TITLE_PROPERTY=Name
+NOTION_DUE_PROPERTY=Due Date
+NOTION_DONE_PROPERTY=Done
+NOTION_STATUS_PROPERTY=Status
+NOTION_DONE_STATUSES=Done,Complete,Completed
+```
+
+The default property names expect a title named `Name`, a date named
+`Due Date`, and either a checkbox named `Done` or a status named `Status`.
+Adjust the names if your database uses different labels, then rebuild/restart
+the backend.
+
 ## Voice commands
 
 The voice worker listens locally for **Hey Chili** using the bundled

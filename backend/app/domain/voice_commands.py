@@ -2,12 +2,15 @@
 
 from dataclasses import dataclass
 import json
+import logging
 import re
 from typing import Literal
 
 import httpx
 
 from app.core.settings import settings
+
+logger = logging.getLogger(__name__)
 
 VoiceAction = Literal[
     "spotify.play_artist", "spotify.pause", "system.volume_up", "system.volume_down",
@@ -47,6 +50,12 @@ class VoiceCommand:
     message: str | None = None
 
 
+@dataclass(frozen=True)
+class VoiceInterpretation:
+    command: VoiceCommand
+    source: Literal["fast_path", "gpt"]
+
+
 _SIMPLE_COMMANDS = (
     (re.compile(r"^(?:pause|stop)(?:\s+(?:the\s+)?music|\s+spotify)?\.?$", re.I), "spotify.pause"),
     (re.compile(r"^(?:turn|switch)\s+on(?:\s+the\s+)?lights?\.?$", re.I), "light.turn_on"),
@@ -84,17 +93,34 @@ def match_voice_command_fast_path(transcript: str) -> VoiceCommand | None:
     return None
 
 
+def _log_preview(text: str, limit: int = 160) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= limit:
+        return compact
+    return f"{compact[: limit - 1]}…"
+
+
 class VoiceCommandInterpreter:
     def __init__(self, api_key: str | None = None, model: str | None = None):
         self._api_key = api_key if api_key is not None else settings.openai_api_key
         self._model = model if model is not None else settings.voice_command_model
 
-    def interpret(self, transcript: str) -> VoiceCommand:
+    def interpret(self, transcript: str) -> VoiceInterpretation:
         fast_path = match_voice_command_fast_path(transcript)
         if fast_path is not None:
-            return fast_path
+            logger.info(
+                "← voice command fast-path action=%s transcript=%s",
+                fast_path.action,
+                _log_preview(transcript),
+            )
+            return VoiceInterpretation(fast_path, "fast_path")
         if not self._api_key:
             raise RuntimeError("Voice command interpretation is not configured.")
+        logger.info(
+            "→ openai POST /v1/responses model=%s transcript=%s",
+            self._model,
+            _log_preview(transcript),
+        )
         response = httpx.post(
             "https://api.openai.com/v1/responses",
             headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
@@ -112,7 +138,9 @@ class VoiceCommandInterpreter:
         response.raise_for_status()
         payload = response.json()
         raw = payload.get("output_text") or self._output_text(payload)
-        return self._validate(json.loads(raw))
+        command = self._validate(json.loads(raw))
+        logger.info("← openai responses action=%s", command.action)
+        return VoiceInterpretation(command, "gpt")
 
     @staticmethod
     def _output_text(payload: dict) -> str:

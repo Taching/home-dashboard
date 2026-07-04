@@ -4,12 +4,18 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.router import api_router
-from app.domain.voice_commands import VoiceCommand
+from app.domain.voice_commands import VoiceCommand, VoiceInterpretation
+from app.domain.activity_feed import ActivityFeedService
+from app.domain.voice_log import VoiceLogService
+from app.domain.voice_state import VoiceStateService
 
 
 class FakeInterpreter:
-    def interpret(self, transcript: str) -> VoiceCommand:
-        return VoiceCommand("openclaw.send_message", message="What's next today?")
+    def interpret(self, transcript: str) -> VoiceInterpretation:
+        return VoiceInterpretation(
+            VoiceCommand("openclaw.send_message", message="What's next today?"),
+            "gpt",
+        )
 
 
 class FakeOpenClaw:
@@ -26,6 +32,9 @@ class VoiceOpenClawApiTests(unittest.TestCase):
         app = FastAPI()
         app.include_router(api_router, prefix="/api/v1")
         app.state.voice_command_interpreter = FakeInterpreter()
+        app.state.voice_state_service = VoiceStateService()
+        app.state.activity_feed_service = ActivityFeedService()
+        app.state.voice_log_service = VoiceLogService()
         app.state.openclaw_service = FakeOpenClaw()
 
         response = TestClient(app).post(

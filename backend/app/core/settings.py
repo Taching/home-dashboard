@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     app_name: str = "Chili Home Dashboard"
     database_url: str = "sqlite:////data/chili.db"
     timezone: str = "Asia/Tokyo"
+    weather_latitude: float | None = 35.6581
+    weather_longitude: float | None = 139.7514
+    weather_location_name: str = "Minato, Tokyo"
     sensor_poll_interval_seconds: int = 300
     sensor_enabled: bool = True
     sensor_i2c_address: int = 0x44

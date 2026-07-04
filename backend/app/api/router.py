@@ -10,6 +10,7 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.settings import settings
+from app.api.activity_log import log_activity, preview
 
 api_router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -124,6 +125,38 @@ class SpotifyTransferRequest(BaseModel):
 
 class VoiceTranscriptRequest(BaseModel):
     text: str
+    audio_seconds: float | None = Field(default=None, ge=0, le=120)
+    wake_score: float | None = Field(default=None, ge=0, le=1)
+
+
+class VoiceLogRequest(BaseModel):
+    transcript: str | None = Field(default=None, max_length=500)
+    action: str | None = Field(default=None, max_length=64)
+    interpret_source: Literal["fast_path", "gpt"] | None = None
+    artist: str | None = Field(default=None, max_length=200)
+    volume_percent: int | None = Field(default=None, ge=0, le=100)
+    intent_message: str | None = Field(default=None, max_length=500)
+    status: Literal["success", "failed", "no_match"]
+    response_message: str | None = Field(default=None, max_length=500)
+    audio_seconds: float | None = Field(default=None, ge=0, le=120)
+    wake_score: float | None = Field(default=None, ge=0, le=1)
+    failure_stage: str | None = Field(default=None, max_length=32)
+
+
+class VoiceLogResponse(BaseModel):
+    id: int
+    occurred_at: datetime
+    transcript: str | None
+    action: str | None
+    interpret_source: str | None
+    artist: str | None
+    volume_percent: int | None
+    intent_message: str | None
+    status: str
+    response_message: str | None
+    audio_seconds: float | None
+    wake_score: float | None
+    failure_stage: str | None
 
 
 class VoiceStateRequest(BaseModel):
@@ -137,6 +170,40 @@ class VoiceStateResponse(BaseModel):
     updated_at: datetime | None
     transcript: str | None
     message: str | None
+
+
+class VoiceEventRequest(BaseModel):
+    direction: Literal["in", "out", "info"]
+    service: str = Field(max_length=32)
+    detail: str = Field(max_length=240)
+
+
+class VoiceEventResponse(BaseModel):
+    at: datetime
+    direction: Literal["in", "out", "info"]
+    service: str
+    detail: str
+
+
+ActivityEventResponse = VoiceEventResponse
+
+
+def _activity_responses(request: Request, limit: int) -> list[VoiceEventResponse]:
+    hidden = {"openclaw", "sensor"}
+    events = [
+        event
+        for event in request.app.state.activity_feed_service.recent_events(80)
+        if event.service not in hidden
+    ][-limit:]
+    return [
+        VoiceEventResponse(
+            at=event.at,
+            direction=event.direction,
+            service=event.service,
+            detail=event.detail,
+        )
+        for event in events
+    ]
 
 
 class OpenClawMessageResponse(BaseModel):
@@ -161,6 +228,24 @@ class OpenClawSendResponse(BaseModel):
     delivery_status: str | None = None
     reply: str | None = None
     message: str | None = None
+
+
+class WeatherDayResponse(BaseModel):
+    date: date
+    label: str
+    high_c: float
+    low_c: float
+    condition: str
+    icon: Literal["sunny", "evening", "cloudy", "fog", "rain", "snow", "storm"]
+    current_c: float | None = None
+
+
+class WeatherForecastResponse(BaseModel):
+    status: IntegrationStatus
+    location: str
+    synced_at: datetime | None = None
+    today: WeatherDayResponse | None = None
+    tomorrow: WeatherDayResponse | None = None
 
 
 def _water_pump_response(snapshot) -> WaterPumpResponse:
@@ -202,6 +287,34 @@ def _model_json(model: BaseModel) -> str:
 @api_router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+def _weather_response(forecast) -> WeatherForecastResponse:
+    def day(day) -> WeatherDayResponse | None:
+        if day is None:
+            return None
+        return WeatherDayResponse(
+            date=day.date,
+            label=day.label,
+            high_c=day.high_c,
+            low_c=day.low_c,
+            condition=day.condition,
+            icon=day.icon,
+            current_c=day.current_c,
+        )
+
+    return WeatherForecastResponse(
+        status=forecast.status,
+        location=forecast.location,
+        synced_at=forecast.synced_at,
+        today=day(forecast.today),
+        tomorrow=day(forecast.tomorrow),
+    )
+
+
+@api_router.get("/weather", response_model=WeatherForecastResponse)
+async def weather_forecast(request: Request) -> WeatherForecastResponse:
+    return _weather_response(request.app.state.weather_service.forecast())
 
 
 @api_router.get("/dashboard")
@@ -267,9 +380,17 @@ async def calendar_events(
     start: date = Query(...),
     days: int = Query(default=30, ge=1, le=30),
 ) -> CalendarTodayResponse:
-    return _calendar_response(
+    response = _calendar_response(
         *request.app.state.calendar_bridge_service.events_for_range(start, days)
     )
+    log_activity(
+        request,
+        "out",
+        "calendar",
+        f"{len(response.events)} events ({response.status})",
+        dedupe_key=f"{start}:{days}:{response.status}:{len(response.events)}",
+    )
+    return response
 
 
 def _calendar_response(
@@ -319,11 +440,24 @@ async def sync_apple_calendar(
         ],
         body.synced_at,
     )
+    log_activity(
+        request,
+        "in",
+        "calendar",
+        f"bridge sync {len(body.events)} events",
+    )
 
 
 @api_router.get("/notion/today", response_model=NotionTodayResponse)
 async def notion_today(request: Request) -> NotionTodayResponse:
     status, synced_at, tasks = request.app.state.notion_service.today()
+    log_activity(
+        request,
+        "out",
+        "notion",
+        f"sync {len(tasks)} open tasks" if status == "ready" else f"status={status}",
+        dedupe_key=f"{status}:{len(tasks)}",
+    )
     return NotionTodayResponse(
         status=status,
         synced_at=synced_at,
@@ -390,7 +524,20 @@ async def send_openclaw_message(
 
 @api_router.get("/spotify/now-playing", response_model=SpotifyNowPlayingResponse)
 async def spotify_now_playing(request: Request) -> SpotifyNowPlayingResponse:
-    return SpotifyNowPlayingResponse(**request.app.state.spotify_service.now_playing())
+    payload = request.app.state.spotify_service.now_playing()
+    if payload.get("status") == "ready" and payload.get("track"):
+        playing = "playing" if payload.get("is_playing") else "paused"
+        detail = f"{payload['track']} · {payload.get('artist') or 'unknown'} ({playing})"
+        log_activity(request, "out", "spotify", detail, dedupe_key=f"{payload['track']}:{playing}")
+    elif payload.get("status") != "ready":
+        log_activity(
+            request,
+            "out",
+            "spotify",
+            f"status={payload.get('status')}",
+            dedupe_key=str(payload.get("status")),
+        )
+    return SpotifyNowPlayingResponse(**payload)
 
 
 @api_router.get("/spotify/web-playback-token", response_model=SpotifyWebPlaybackTokenResponse)
@@ -407,6 +554,7 @@ async def spotify_web_playback_token(request: Request) -> SpotifyWebPlaybackToke
 async def spotify_transfer(request: Request, body: SpotifyTransferRequest) -> dict[str, str]:
     try:
         request.app.state.spotify_service.transfer_playback(body.device_id)
+        log_activity(request, "in", "spotify", f"transfer playback device={body.device_id[:8]}…")
     except Exception as error:
         raise HTTPException(status_code=503, detail="Spotify playback transfer failed.") from error
     return {"status": "success"}
@@ -415,6 +563,7 @@ async def spotify_transfer(request: Request, body: SpotifyTransferRequest) -> di
 @api_router.post("/spotify/device")
 async def spotify_device(request: Request, body: SpotifyTransferRequest) -> dict[str, str]:
     request.app.state.spotify_service.register_device(body.device_id)
+    log_activity(request, "in", "spotify", f"register web player device={body.device_id[:8]}…")
     return {"status": "success"}
 
 
@@ -439,6 +588,7 @@ async def spotify_callback(
         raise HTTPException(status_code=400, detail="Spotify did not return an authorization code.")
     try:
         request.app.state.spotify_service.complete_authorization(code, state)
+        log_activity(request, "info", "spotify", "account connected")
     except (RuntimeError, httpx.HTTPError) as error:
         raise HTTPException(status_code=502, detail="Spotify authorization failed.") from error
     return RedirectResponse("/?spotify=connected")
@@ -467,13 +617,20 @@ async def command(request: CommandRequest, api_request: Request) -> CommandRespo
     if request.intent not in ALLOWED_INTENTS:
         raise HTTPException(status_code=400, detail="Unsupported command intent")
 
+    log_activity(
+        api_request,
+        "in",
+        "dashboard",
+        f"command {request.intent} source={request.source}",
+    )
+
     light = api_request.app.state.light_service
     water_pump = api_request.app.state.water_pump_service
     if request.intent in {"light.turn_on", "light.turn_off"}:
         result = light.set_state(
             "on" if request.intent == "light.turn_on" else "off", request.source
         )
-        return CommandResponse(
+        response = CommandResponse(
             status=result.status,
             intent=request.intent,
             message=result.message,
@@ -483,30 +640,38 @@ async def command(request: CommandRequest, api_request: Request) -> CommandRespo
                 available=result.light.available,
             ),
         )
+        log_activity(api_request, "out", "dashboard", f"{request.intent} status={response.status}")
+        return response
 
     if request.intent == "water.run":
         result = await water_pump.start_pulse(request.source)
-        return CommandResponse(
+        response = CommandResponse(
             status=result.status,
             intent=request.intent,
             message=result.message,
             water_pump=_water_pump_response(result.water_pump),
         )
+        log_activity(api_request, "out", "dashboard", f"{request.intent} status={response.status}")
+        return response
 
     if request.intent == "water.stop":
         result = await water_pump.stop(request.source)
-        return CommandResponse(
+        response = CommandResponse(
             status="success" if result.status != "failed" else "failed",
             intent=request.intent,
             message=result.message,
             water_pump=_water_pump_response(result.water_pump),
         )
+        log_activity(api_request, "out", "dashboard", f"{request.intent} status={response.status}")
+        return response
 
-    return CommandResponse(
+    response = CommandResponse(
         status="failed",
         intent=request.intent,
         message="This dashboard command is not configured yet.",
     )
+    log_activity(api_request, "out", "dashboard", f"{request.intent} status=failed")
+    return response
 
 
 @api_router.post("/automation/water", response_model=AutomationWaterResponse)
@@ -520,6 +685,12 @@ async def automation_water(
     water_pump = request.app.state.water_pump_service
     openclaw = request.app.state.openclaw_service
     result = await water_pump.run_pulse("openclaw")
+    log_activity(
+        request,
+        "in",
+        "dashboard",
+        f"automation water status={result.status}",
+    )
 
     if result.status == "failed" and openclaw.configured():
         try:
@@ -532,38 +703,144 @@ async def automation_water(
 
 @api_router.post("/voice/transcripts")
 async def voice_transcript(request: Request, body: VoiceTranscriptRequest) -> dict[str, str]:
+    voice_log = request.app.state.voice_log_service
+    transcript = body.text.strip()
+    log_activity(request, "in", "backend", f"transcript: {transcript}")
+    interpretation = None
     try:
-        command = request.app.state.voice_command_interpreter.interpret(body.text)
+        interpretation = request.app.state.voice_command_interpreter.interpret(body.text)
+        command = interpretation.command
+        log_activity(request, "out", "openai", f"action={command.action}")
+
+        def respond(status: str, message: str, *, log_status: str | None = None) -> dict[str, str]:
+            log_activity(request, "out", "backend", f"action={command.action} status={status}")
+            voice_log.record(
+                transcript=transcript,
+                command=command,
+                interpret_source=interpretation.source,
+                status=log_status or ("no_match" if command.action == "no_match" else status),
+                response_message=message,
+                audio_seconds=body.audio_seconds,
+                wake_score=body.wake_score,
+            )
+            return {"status": status, "message": message}
+
         if command.action == "no_match":
-            return {"status": "failed", "message": "I don't know that command yet."}
+            return respond("failed", "I don't know that command yet.", log_status="no_match")
         if command.action == "spotify.play_artist":
             artist = request.app.state.spotify_service.play_artist(command.artist or "")
-            return {"status": "success", "message": f"Playing {artist}."}
+            return respond("success", f"Playing {artist}.")
         if command.action == "spotify.pause":
             request.app.state.spotify_service.pause()
-            return {"status": "success", "message": "Music stopped."}
+            return respond("success", "Music stopped.")
         if command.action in {"system.volume_up", "system.volume_down"}:
             volume = request.app.state.pi_volume_service.adjust("up" if command.action == "system.volume_up" else "down")
-            return {"status": "success", "message": f"Raspberry Pi volume {volume} percent."}
+            return respond("success", f"Raspberry Pi volume {volume} percent.")
         if command.action == "system.volume_set":
             volume = request.app.state.pi_volume_service.set(command.volume_percent or 0)
-            return {"status": "success", "message": f"Raspberry Pi volume {volume} percent."}
+            return respond("success", f"Raspberry Pi volume {volume} percent.")
         if command.action == "openclaw.send_message":
             request.app.state.openclaw_service.send(command.message or "")
-            return {"status": "success", "message": "Sent to Chili."}
+            return respond("success", "Sent to Chili.")
         result = request.app.state.light_service.set_state(
             "on" if command.action == "light.turn_on" else "off", "voice"
         )
-        return {"status": result.status, "message": result.message}
+        return respond(result.status, result.message)
     except RuntimeError as error:
         logger.info("Voice Spotify command failed: %s", error)
+        log_activity(request, "out", "backend", f"status=failed detail={error}")
+        voice_log.record(
+            transcript=transcript,
+            command=interpretation.command if interpretation else None,
+            interpret_source=interpretation.source if interpretation else None,
+            status="failed",
+            response_message=str(error),
+            audio_seconds=body.audio_seconds,
+            wake_score=body.wake_score,
+            failure_stage="execute",
+        )
         return {"status": "failed", "message": str(error)}
     except (httpx.HTTPError, ValueError):
         logger.exception("Voice Spotify command failed")
+        log_activity(request, "out", "backend", "status=failed detail=spotify")
+        voice_log.record(
+            transcript=transcript,
+            command=interpretation.command if interpretation else None,
+            interpret_source=interpretation.source if interpretation else None,
+            status="failed",
+            response_message="Spotify could not complete that command.",
+            audio_seconds=body.audio_seconds,
+            wake_score=body.wake_score,
+            failure_stage="execute",
+        )
         return {"status": "failed", "message": "Spotify could not complete that command."}
     except Exception:
         logger.exception("Unexpected voice command failure")
+        log_activity(request, "out", "backend", "status=failed detail=unexpected")
+        voice_log.record(
+            transcript=transcript,
+            command=interpretation.command if interpretation else None,
+            interpret_source=interpretation.source if interpretation else None,
+            status="failed",
+            response_message="The voice command could not complete.",
+            audio_seconds=body.audio_seconds,
+            wake_score=body.wake_score,
+            failure_stage="execute",
+        )
         return {"status": "failed", "message": "The voice command could not complete."}
+
+
+def _voice_log_response(entry) -> VoiceLogResponse:
+    return VoiceLogResponse(
+        id=entry.id,
+        occurred_at=entry.occurred_at,
+        transcript=entry.transcript,
+        action=entry.action,
+        interpret_source=entry.interpret_source,
+        artist=entry.artist,
+        volume_percent=entry.volume_percent,
+        intent_message=entry.intent_message,
+        status=entry.status,
+        response_message=entry.response_message,
+        audio_seconds=entry.audio_seconds,
+        wake_score=entry.wake_score,
+        failure_stage=entry.failure_stage,
+    )
+
+
+@api_router.post("/voice/logs", response_model=VoiceLogResponse)
+async def create_voice_log(request: Request, body: VoiceLogRequest) -> VoiceLogResponse:
+    from app.domain.voice_commands import VoiceCommand
+
+    command = None
+    if body.action:
+        command = VoiceCommand(
+            body.action,
+            artist=body.artist,
+            volume_percent=body.volume_percent,
+            message=body.intent_message,
+        )
+    entry = request.app.state.voice_log_service.record(
+        transcript=body.transcript,
+        command=command,
+        interpret_source=body.interpret_source,
+        status=body.status,
+        response_message=body.response_message,
+        audio_seconds=body.audio_seconds,
+        wake_score=body.wake_score,
+        failure_stage=body.failure_stage,
+    )
+    return _voice_log_response(entry)
+
+
+@api_router.get("/voice/logs", response_model=list[VoiceLogResponse])
+async def list_voice_logs(
+    request: Request,
+    days: int = Query(default=30, ge=1, le=365),
+    limit: int = Query(default=200, ge=1, le=1000),
+) -> list[VoiceLogResponse]:
+    entries = request.app.state.voice_log_service.recent(days=days, limit=limit)
+    return [_voice_log_response(entry) for entry in entries]
 
 
 @api_router.get("/voice/commands")
@@ -581,6 +858,29 @@ async def voice_status(request: Request) -> VoiceStateResponse:
         updated_at=snapshot.updated_at,
         transcript=snapshot.transcript,
         message=snapshot.message,
+    )
+
+
+@api_router.get("/voice/events", response_model=list[VoiceEventResponse])
+async def voice_events(request: Request, limit: int = Query(default=30, ge=1, le=80)) -> list[VoiceEventResponse]:
+    return _activity_responses(request, limit)
+
+
+@api_router.get("/activity/events", response_model=list[ActivityEventResponse])
+async def activity_events(request: Request, limit: int = Query(default=40, ge=1, le=80)) -> list[ActivityEventResponse]:
+    return _activity_responses(request, limit)
+
+
+@api_router.post("/voice/events", response_model=VoiceEventResponse)
+async def create_voice_event(request: Request, body: VoiceEventRequest) -> VoiceEventResponse:
+    feed = request.app.state.activity_feed_service
+    feed.add_event(body.direction, body.service, body.detail)
+    event = feed.recent_events(1)[-1]
+    return VoiceEventResponse(
+        at=event.at,
+        direction=event.direction,
+        service=event.service,
+        detail=event.detail,
     )
 
 

@@ -34,6 +34,24 @@ class WaterPumpRun(Base):
     result: Mapped[str] = mapped_column(String(64))
 
 
+class VoiceCommandLog(Base):
+    __tablename__ = "voice_command_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    transcript: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    action: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    interpret_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    artist: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    volume_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    intent_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(String(16))
+    response_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    audio_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    wake_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    failure_stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
 class SpotifyToken(Base):
     __tablename__ = "spotify_tokens"
 

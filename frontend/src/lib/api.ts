@@ -8,7 +8,9 @@ import type {
   SpotifyNowPlaying,
   OpenClawConversation,
   OpenClawSendResult,
+  ActivityEvent,
   VoiceStatus,
+  WeatherForecast,
 } from '../types'
 
 async function requireJson<T>(response: Response): Promise<T> {
@@ -58,6 +60,19 @@ export function openOpenClawMessageStream(
 
 export async function fetchVoiceStatus() {
   return requireJson<VoiceStatus>(await fetch('/api/v1/voice/status'))
+}
+
+export async function fetchActivityEvents(limit = 40) {
+  const query = new URLSearchParams({ limit: String(limit) })
+  return requireJson<ActivityEvent[]>(await fetch(`/api/v1/activity/events?${query}`))
+}
+
+export async function fetchVoiceEvents(limit = 40) {
+  return fetchActivityEvents(limit)
+}
+
+export async function fetchWeather() {
+  return requireJson<WeatherForecast>(await fetch('/api/v1/weather'))
 }
 
 export async function sendOpenClawMessage(message: string) {

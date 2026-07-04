@@ -130,3 +130,34 @@ export type VoiceStatus = {
   transcript: string | null
   message: string | null
 }
+
+export type VoiceEventDirection = 'in' | 'out' | 'info'
+
+export type ActivityEvent = {
+  at: string
+  direction: VoiceEventDirection
+  service: string
+  detail: string
+}
+
+export type VoiceEvent = ActivityEvent
+
+export type WeatherIcon = 'sunny' | 'evening' | 'cloudy' | 'fog' | 'rain' | 'snow' | 'storm'
+
+export type WeatherDay = {
+  date: string
+  label: string
+  high_c: number
+  low_c: number
+  condition: string
+  icon: WeatherIcon
+  current_c?: number | null
+}
+
+export type WeatherForecast = {
+  status: IntegrationStatus
+  location: string
+  synced_at: string | null
+  today: WeatherDay | null
+  tomorrow: WeatherDay | null
+}

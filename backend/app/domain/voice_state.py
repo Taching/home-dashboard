@@ -1,3 +1,4 @@
+from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from threading import Lock

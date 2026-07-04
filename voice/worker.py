@@ -15,6 +15,57 @@ from wakeword import WakeWordGate
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("voice")
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+def log_preview(text: str, limit: int = 160) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= limit:
+        return compact
+    return f"{compact[: limit - 1]}…"
+
+
+def record_event(
+    backend_url: str,
+    direction: str,
+    service: str,
+    detail: str,
+) -> None:
+    try:
+        with httpx.Client(timeout=2) as client:
+            client.post(
+                f"{backend_url}/api/v1/voice/events",
+                json={"direction": direction, "service": service, "detail": detail},
+            ).raise_for_status()
+    except httpx.HTTPError:
+        logger.debug("Could not record voice monitor event")
+
+
+def log_session(
+    backend_url: str,
+    *,
+    status: str,
+    response_message: str | None = None,
+    transcript: str | None = None,
+    audio_seconds: float | None = None,
+    wake_score: float | None = None,
+    failure_stage: str | None = None,
+) -> None:
+    try:
+        with httpx.Client(timeout=2) as client:
+            client.post(
+                f"{backend_url}/api/v1/voice/logs",
+                json={
+                    "transcript": transcript,
+                    "status": status,
+                    "response_message": response_message,
+                    "audio_seconds": audio_seconds,
+                    "wake_score": wake_score,
+                    "failure_stage": failure_stage,
+                },
+            ).raise_for_status()
+    except httpx.HTTPError:
+        logger.debug("Could not persist voice session log")
 
 SAMPLE_RATE = 16_000
 SAMPLE_WIDTH = 2
@@ -140,7 +191,11 @@ def write_wav(audio: bytes) -> Path:
     return path
 
 
-def transcribe(audio: bytes, api_key: str, model: str) -> str:
+def transcribe(audio: bytes, api_key: str, model: str, backend_url: str) -> str:
+    duration_s = len(audio) / (SAMPLE_RATE * SAMPLE_WIDTH)
+    detail = f"POST /v1/audio/transcriptions model={model} audio={duration_s:.1f}s"
+    logger.info("→ openai %s", detail)
+    record_event(backend_url, "in", "openai", detail)
     path = write_wav(audio)
     try:
         with path.open("rb") as recording, httpx.Client(timeout=45) as client:
@@ -151,16 +206,50 @@ def transcribe(audio: bytes, api_key: str, model: str) -> str:
                 files={"file": ("command.wav", recording, "audio/wav")},
             )
         response.raise_for_status()
-        return str(response.json().get("text", "")).strip()
+        transcript = str(response.json().get("text", "")).strip()
+        response_detail = f"transcription: {log_preview(transcript or '(empty)')}"
+        logger.info("← openai %s", response_detail)
+        record_event(backend_url, "out", "openai", response_detail)
+        return transcript
+    except httpx.HTTPStatusError as error:
+        body = log_preview(error.response.text)
+        logger.error("← openai transcription failed status=%s body=%s", error.response.status_code, body)
+        record_event(backend_url, "out", "openai", f"transcription failed status={error.response.status_code}")
+        raise
     finally:
         path.unlink(missing_ok=True)
 
 
-def dispatch(transcript: str, backend_url: str) -> dict[str, str]:
+def dispatch(
+    transcript: str,
+    backend_url: str,
+    audio_seconds: float | None = None,
+    wake_score: float | None = None,
+) -> dict[str, str]:
+    detail = f"POST /api/v1/voice/transcripts text={log_preview(transcript)}"
+    logger.info("→ backend %s", detail)
+    record_event(backend_url, "in", "backend", detail)
+    payload: dict[str, object] = {"text": transcript}
+    if audio_seconds is not None:
+        payload["audio_seconds"] = round(audio_seconds, 2)
+    if wake_score is not None:
+        payload["wake_score"] = round(wake_score, 3)
     with httpx.Client(timeout=20) as client:
-        response = client.post(f"{backend_url}/api/v1/voice/transcripts", json={"text": transcript})
+        response = client.post(f"{backend_url}/api/v1/voice/transcripts", json=payload)
     response.raise_for_status()
-    return response.json()
+    result = response.json()
+    logger.info(
+        "← backend voice result status=%s message=%s",
+        result.get("status", "unknown"),
+        log_preview(str(result.get("message") or "")),
+    )
+    record_event(
+        backend_url,
+        "out",
+        "backend",
+        f"status={result.get('status', 'unknown')} message={log_preview(str(result.get('message') or ''))}",
+    )
+    return result
 
 
 def update_status(
@@ -181,9 +270,25 @@ def update_status(
         return False
 
 
-def report_failure(backend_url: str, message: str, transcript: str | None = None) -> None:
+def report_failure(
+    backend_url: str,
+    message: str,
+    transcript: str | None = None,
+    audio_seconds: float | None = None,
+    wake_score: float | None = None,
+    failure_stage: str | None = None,
+) -> None:
     """Publish a short, user-safe failure without stopping the listener."""
     update_status("error", backend_url, transcript, message[:200])
+    log_session(
+        backend_url,
+        status="failed",
+        response_message=message[:200],
+        transcript=transcript,
+        audio_seconds=audio_seconds,
+        wake_score=wake_score,
+        failure_stage=failure_stage,
+    )
 
 
 def main() -> None:
@@ -203,7 +308,7 @@ def main() -> None:
     frame_bytes = WAKEWORD_FRAME_SAMPLES * SAMPLE_WIDTH
     while not update_status("idle", backend_url):
         time.sleep(1)
-    logger.info("Listening on %s for %s", device, wakeword_label)
+    logger.info("Listening on %s for %s (transcription model: %s)", device, wakeword_label, transcription_model)
 
     try:
         while True:
@@ -215,8 +320,11 @@ def main() -> None:
                 continue
 
             logger.info("Wake word detected (score %.2f); recording command", score)
+            record_event(backend_url, "info", "voice", f"wake word detected score={score:.2f}")
             transcript: str | None = None
             stage = "recording"
+            wake_score = score
+            audio_seconds: float | None = None
             try:
                 update_status("listening", backend_url)
                 skip_frames = round(POST_WAKE_SKIP_SECONDS * SAMPLE_RATE / WAKEWORD_FRAME_SAMPLES)
@@ -224,31 +332,60 @@ def main() -> None:
                     read_exact(capture.stdout, frame_bytes)
                 audio = record_command(capture.stdout)
                 duration_s = len(audio) / (SAMPLE_RATE * SAMPLE_WIDTH)
+                audio_seconds = duration_s
                 logger.info("Recorded %.1fs of command audio", duration_s)
+                record_event(backend_url, "info", "voice", f"recorded {duration_s:.1f}s audio")
                 stage = "transcription"
                 update_status("thinking", backend_url)
-                transcript = transcribe(audio, api_key, transcription_model)
+                transcript = transcribe(audio, api_key, transcription_model, backend_url)
                 if not transcript:
                     logger.info("No speech transcribed after wake word")
-                    report_failure(backend_url, "I didn't hear a command.")
+                    report_failure(
+                        backend_url,
+                        "I didn't hear a command.",
+                        audio_seconds=audio_seconds,
+                        wake_score=wake_score,
+                        failure_stage="transcription",
+                    )
                     continue
 
                 stage = "command dispatch"
                 update_status("thinking", backend_url, transcript)
-                result = dispatch(transcript, backend_url)
+                result = dispatch(transcript, backend_url, audio_seconds=audio_seconds, wake_score=wake_score)
                 status = result.get("status", "failed")
                 message = result.get("message") or "The voice command could not complete."
-                logger.info("Command dispatched: %s", status)
+                logger.info("Voice command finished: status=%s", status)
                 update_status("complete" if status == "success" else "error", backend_url, transcript, message)
             except httpx.TimeoutException:
                 logger.warning("Voice %s timed out", stage)
-                report_failure(backend_url, f"Voice {stage} timed out. Please try again.", transcript)
+                report_failure(
+                    backend_url,
+                    f"Voice {stage} timed out. Please try again.",
+                    transcript,
+                    audio_seconds=audio_seconds,
+                    wake_score=wake_score,
+                    failure_stage=stage,
+                )
             except httpx.HTTPError:
                 logger.exception("Voice %s request failed", stage)
-                report_failure(backend_url, f"Voice {stage} failed. Please try again.", transcript)
+                report_failure(
+                    backend_url,
+                    f"Voice {stage} failed. Please try again.",
+                    transcript,
+                    audio_seconds=audio_seconds,
+                    wake_score=wake_score,
+                    failure_stage=stage,
+                )
             except Exception:
                 logger.exception("Voice %s failed", stage)
-                report_failure(backend_url, "The voice command could not complete.", transcript)
+                report_failure(
+                    backend_url,
+                    "The voice command could not complete.",
+                    transcript,
+                    audio_seconds=audio_seconds,
+                    wake_score=wake_score,
+                    failure_stage=stage,
+                )
     finally:
         capture.terminate()
         try:

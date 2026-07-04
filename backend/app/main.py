@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from app.api.router import api_router
 from app.core.settings import settings
 from app.database.session import initialise_database
+from app.domain.activity_feed import ActivityFeedService
 from app.domain.dashboard_context import DashboardContextProvider
 from app.domain.lights import LightService
 from app.domain.openclaw import OpenClawService
@@ -15,6 +16,8 @@ from app.domain.sensors import SensorService
 from app.domain.spotify import SpotifyService
 from app.domain.bluetooth_audio import BluetoothAudioService
 from app.domain.system_status import SystemStatusService
+from app.domain.weather import WeatherService
+from app.domain.voice_log import VoiceLogService
 from app.domain.voice_state import VoiceStateService
 from app.domain.voice_commands import VoiceCommandInterpreter
 from app.domain.system_volume import PiVolumeService
@@ -34,7 +37,10 @@ async def lifespan(application: FastAPI):
     application.state.calendar_bridge_service = CalendarBridgeService()
     application.state.notion_service = NotionService()
     application.state.spotify_service = SpotifyService()
+    application.state.activity_feed_service = ActivityFeedService()
     application.state.voice_state_service = VoiceStateService()
+    application.state.weather_service = WeatherService()
+    application.state.voice_log_service = VoiceLogService()
     application.state.voice_command_interpreter = VoiceCommandInterpreter()
     application.state.pi_volume_service = PiVolumeService()
     application.state.system_status_service = SystemStatusService()

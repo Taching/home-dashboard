@@ -2,25 +2,26 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Header } from './components/Header'
 import { DeviceControls } from './components/DeviceControls'
+import { VoicePipelinePanel } from './components/VoicePipelinePanel'
 import { MediaRegion } from './components/MediaRegion'
 import { OpenClawChat } from './components/OpenClawChat'
 import { addDays, dayKey, PlanningRegion } from './components/PlanningRegion'
 import { SystemStrip } from './components/SystemStrip'
 import { SystemHealthPanel } from './components/SystemHealthPanel'
-import { TemperatureTrend } from './components/TemperatureTrend'
 import { useDashboardCommand } from './hooks/useDashboardCommand'
 import { useSpotifyPlayback } from './hooks/useSpotifyPlayback'
+import { useVoiceMonitor } from './hooks/useVoiceMonitor'
 import {
   fetchCalendarEvents,
   fetchDashboard,
   fetchNotionToday,
   fetchOpenClawMessages,
-  fetchReadings,
   openOpenClawMessageStream,
   sendOpenClawMessage,
   fetchSpotifyNowPlaying,
+  fetchWeather,
 } from './lib/api'
-import type { CalendarToday, Dashboard, Light, NotionToday, OpenClawConversation, Reading, SpotifyNowPlaying, WaterPump } from './types'
+import type { CalendarToday, Dashboard, Light, NotionToday, OpenClawConversation, SpotifyNowPlaying, WaterPump, WeatherForecast } from './types'
 import './styles.css'
 
 const initialState: Dashboard = {
@@ -51,17 +52,7 @@ const initialCalendar: CalendarToday = { status: 'not_configured', synced_at: nu
 const initialNotion: NotionToday = { status: 'not_configured', synced_at: null, tasks: [] }
 const initialSpotify: SpotifyNowPlaying = { status: 'not_configured', synced_at: null, track: null, artist: null, artwork_url: null, device_name: null, is_playing: false }
 const initialOpenClaw: OpenClawConversation = { status: 'not_configured', messages: [], message: null }
-
-function isStale(updatedAt: string | null) {
-  return updatedAt !== null && Date.now() - new Date(updatedAt).getTime() > 15 * 60_000
-}
-
-function statusLabel(status: string, stale = false) {
-  if (stale) return 'Stale'
-  if (status === 'ready') return 'Live'
-  if (status === 'unavailable') return 'Unavailable'
-  return 'Pending'
-}
+const initialWeather: WeatherForecast = { status: 'not_configured', location: '', synced_at: null, today: null, tomorrow: null }
 
 function isTypingTarget(target: EventTarget | null) {
   return target instanceof HTMLInputElement
@@ -79,29 +70,28 @@ function isPresentationMode() {
 
 function App() {
   const [dashboard, setDashboard] = useState<Dashboard>(initialState)
-  const [readings, setReadings] = useState<Reading[]>([])
   const [calendar, setCalendar] = useState<CalendarToday>(initialCalendar)
   const [notion, setNotion] = useState<NotionToday>(initialNotion)
   const [spotify, setSpotify] = useState<SpotifyNowPlaying>(initialSpotify)
   const [openclaw, setOpenClaw] = useState<OpenClawConversation>(initialOpenClaw)
+  const [weather, setWeather] = useState<WeatherForecast>(initialWeather)
   const [openclawPending, setOpenClawPending] = useState(false)
   const [openclawFeedback, setOpenClawFeedback] = useState<string | null>(null)
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null)
   const { execute, feedback, pendingIntent } = useDashboardCommand()
+  const { voiceStatus, activityEvents } = useVoiceMonitor()
   const spotifyPlayback = useSpotifyPlayback(spotify.status === 'ready')
-  const stale = isStale(dashboard.last_updated_at)
   const today = dayKey(new Date())
   const chromeless = useMemo(isPresentationMode, [])
 
   const refresh = useCallback(async () => {
     try {
       const results = await Promise.allSettled([
-        fetchDashboard(), fetchReadings(), fetchCalendarEvents(today), fetchNotionToday(), fetchSpotifyNowPlaying(), fetchOpenClawMessages(),
+        fetchDashboard(), fetchCalendarEvents(today), fetchNotionToday(), fetchSpotifyNowPlaying(), fetchOpenClawMessages(),
       ])
       if (results[0].status === 'fulfilled') setDashboard(results[0].value)
-      if (results[1].status === 'fulfilled') setReadings(results[1].value)
-      if (results[2].status === 'fulfilled') {
-        const nextCalendar = results[2].value
+      if (results[1].status === 'fulfilled') {
+        const nextCalendar = results[1].value
         setCalendar(nextCalendar)
         setSelectedCalendarDate((current) => {
           if (current || nextCalendar.status !== 'ready') return current
@@ -111,9 +101,9 @@ function App() {
           return nextScheduled ?? today
         })
       }
-      if (results[3].status === 'fulfilled') setNotion(results[3].value)
-      if (results[4].status === 'fulfilled') setSpotify(results[4].value)
-      if (results[5].status === 'fulfilled') setOpenClaw(results[5].value)
+      if (results[2].status === 'fulfilled') setNotion(results[2].value)
+      if (results[3].status === 'fulfilled') setSpotify(results[3].value)
+      if (results[4].status === 'fulfilled') setOpenClaw(results[4].value)
     } catch {
       // Existing state remains visible while the next scheduled refresh retries.
     }
@@ -174,6 +164,14 @@ function App() {
   }, [refresh, dashboard.water_pump.state])
 
   useEffect(() => {
+    void fetchWeather().then(setWeather).catch(() => undefined)
+    const interval = window.setInterval(() => {
+      void fetchWeather().then(setWeather).catch(() => undefined)
+    }, 30 * 60_000)
+    return () => window.clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
     if (typeof EventSource === 'undefined') {
       const interval = window.setInterval(async () => {
         try { setOpenClaw(await fetchOpenClawMessages()) } catch { /* retry on next interval */ }
@@ -211,17 +209,19 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [execute, refresh, toggleLight])
 
-  const sensorStatus = useMemo(
-    () => statusLabel(dashboard.integrations.sensor, stale),
-    [dashboard.integrations.sensor, stale],
-  )
-  const broadLinkStatus = statusLabel(dashboard.integrations.broadlink)
-
   return (
     <main className={`dashboard-shell${chromeless ? ' is-chromeless' : ''}`}>
-      {!chromeless && <Header />}
+      {!chromeless && (
+        <Header
+          voiceStatus={voiceStatus}
+          temperature={dashboard.temperature_c}
+          humidity={dashboard.humidity_percent}
+          weather={weather}
+        />
+      )}
       <div className="dashboard-workspace">
         <aside className="environment-region" aria-label="Environment and light">
+          <VoicePipelinePanel status={voiceStatus} events={activityEvents} />
           <DeviceControls
             light={dashboard.light}
             pump={dashboard.water_pump}
@@ -230,9 +230,6 @@ function App() {
             onToggleLight={toggleLight}
             onTogglePump={togglePlantPump}
           />
-          <section className="history" aria-label="Hourly temperature readings">
-            <TemperatureTrend readings={readings} />
-          </section>
           <SystemHealthPanel system={dashboard.system} />
           <MediaRegion
             spotify={spotify}
@@ -265,13 +262,7 @@ function App() {
           />
         </aside>
       </div>
-      <SystemStrip
-        sensorStatus={sensorStatus}
-        broadLinkStatus={broadLinkStatus}
-        temperature={dashboard.temperature_c}
-        humidity={dashboard.humidity_percent}
-        feedback={feedback}
-      />
+      <SystemStrip feedback={feedback} />
     </main>
   )
 }

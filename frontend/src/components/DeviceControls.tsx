@@ -41,15 +41,6 @@ function pumpAction(pump: WaterPump) {
   return pump.state === 'running' ? 'Stop plant pump' : 'Water plants for 20 seconds'
 }
 
-function statusLine(light: Light, pump: WaterPump) {
-  const lightStatus = light.available ? 'Light ready' : 'Light unavailable'
-  let pumpStatus = 'Pump unavailable'
-  if (pump.available) {
-    pumpStatus = pump.state === 'running' ? 'Watering' : 'Pump ready'
-  }
-  return `${lightStatus} · ${pumpStatus}`
-}
-
 export function DeviceControls({
   light,
   pump,
@@ -83,7 +74,6 @@ export function DeviceControls({
           ariaLabel={pumpAction(pump)}
         />
       </div>
-      <p className="device-controls-status">{statusLine(light, pump)}</p>
     </section>
   )
 }

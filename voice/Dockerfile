@@ -12,6 +12,8 @@ RUN apt-get update \
 WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
+COPY download_openwakeword_resources.py ./
+RUN python download_openwakeword_resources.py
 COPY worker.py wakeword.py ./
 
 CMD ["python", "worker.py"]

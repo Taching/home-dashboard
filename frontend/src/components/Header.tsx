@@ -5,7 +5,7 @@ import type { VoiceState, VoiceStatus } from '../types'
 
 const voiceLabels: Record<VoiceState, string> = {
   offline: 'Voice offline',
-  idle: 'Say Hey Jarvis',
+  idle: 'Say Hey Chili',
   listening: 'Listening…',
   thinking: 'Thinking…',
   complete: 'Done',

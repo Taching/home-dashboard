@@ -12,7 +12,6 @@ RUN apt-get update \
 WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-RUN python -c "from openwakeword.utils import download_models; download_models(['hey_jarvis_v0.1'])"
 COPY worker.py wakeword.py ./
 
 CMD ["python", "worker.py"]

@@ -148,8 +148,8 @@ def report_failure(backend_url: str, message: str, transcript: str | None = None
 def main() -> None:
     api_key = required("OPENAI_API_KEY")
     device = os.environ.get("VOICE_AUDIO_DEVICE", os.environ.get("AUDIO_DEVICE", "plughw:2,0"))
-    wakeword_model = os.environ.get("VOICE_WAKEWORD_MODEL", "hey_jarvis")
-    wakeword_label = os.environ.get("VOICE_WAKEWORD_LABEL", "Hey Jarvis")
+    wakeword_model = os.environ.get("VOICE_WAKEWORD_MODEL", "/models/hey_chili.tflite")
+    wakeword_label = os.environ.get("VOICE_WAKEWORD_LABEL", "Hey Chili")
     backend_url = os.environ.get("BACKEND_URL", "http://backend:8000").rstrip("/")
     threshold = float(os.environ.get("VOICE_WAKEWORD_THRESHOLD", "0.5"))
     rearm_seconds = float(os.environ.get("VOICE_WAKEWORD_REARM_SECONDS", str(WAKEWORD_REARM_SECONDS)))

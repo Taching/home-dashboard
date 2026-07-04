@@ -13,7 +13,6 @@ export function SystemStrip({ sensorStatus, broadLinkStatus, temperature, humidi
       <p className="environment-summary">Room {temperature ?? '—'}°C · {humidity ?? '—'}%</p>
       <p>BroadLink <span className={`status status-${broadLinkStatus.toLowerCase()}`}>{broadLinkStatus}</span></p>
       <p className="command-feedback" aria-live="polite">{feedback}</p>
-      <p className="shortcuts">L light · R refresh · S screen</p>
     </section>
   )
 }

@@ -178,7 +178,7 @@ function App() {
             <div className="history-heading">
               <div>
                 <p className="eyebrow">TEMPERATURE</p>
-                <h2 id="history-title">Last 24 hours</h2>
+                <h2 id="history-title">Hourly readings</h2>
               </div>
               <p>{readings.length} readings</p>
             </div>

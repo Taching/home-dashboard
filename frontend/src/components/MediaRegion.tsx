@@ -26,22 +26,27 @@ export function MediaRegion({ spotify, playerReady, playerActive, playerPaused, 
         </div>
         {activeTrack && <p>{playerActive ? (playerPaused ? 'Paused' : 'Playing') : spotify.is_playing ? 'Playing' : 'Paused'}</p>}
       </div>
-      {activeTrack ? (
-        <div className="now-playing">
-          {activeTrack.artworkUrl ? <img src={activeTrack.artworkUrl} alt="" /> : <div className="artwork-fallback" aria-hidden="true">♪</div>}
-          <div>
-            <strong>{activeTrack.track}</strong>
-            <p>{activeTrack.artist}</p>
-            <small>{playerActive ? 'Chili Dashboard' : spotify.device_name}</small>
+      <div className={`spotify-player${activeTrack ? '' : ' is-empty'}`}>
+        {activeTrack ? (
+          <div className="now-playing">
+            {activeTrack.artworkUrl ? <img src={activeTrack.artworkUrl} alt="" /> : <div className="artwork-fallback" aria-hidden="true">♪</div>}
+            <div>
+              <strong>{activeTrack.track}</strong>
+              <p>{activeTrack.artist}</p>
+              <small>{playerActive ? 'Chili Dashboard' : spotify.device_name}</small>
+            </div>
           </div>
-        </div>
-      ) : (
-        spotify.status === 'not_configured'
-          ? <a className="setup-link" href="/api/v1/spotify/connect">Connect Spotify</a>
-          : spotify.status === 'ready'
-            ? <p className="setup-state">Nothing is playing</p>
-            : <p className="setup-state is-error">Spotify is unavailable</p>
-      )}
+        ) : (
+          <>
+            <div className="artwork-fallback" aria-hidden="true">♪</div>
+            {spotify.status === 'not_configured'
+              ? <a className="setup-link" href="/api/v1/spotify/connect">Connect Spotify</a>
+              : spotify.status === 'ready'
+                ? <p className="setup-state">Nothing playing</p>
+                : <p className="setup-state is-error">Spotify unavailable</p>}
+          </>
+        )}
+      </div>
       {spotify.status === 'ready' && (
         <div className="player-actions">
           <div className="transport-controls" aria-label="Spotify playback controls">
@@ -56,7 +61,7 @@ export function MediaRegion({ spotify, playerReady, playerActive, playerPaused, 
             <button type="button" className="transport-icon" disabled title="Repeat will be added next" aria-label="Repeat"><span aria-hidden="true">↻</span></button>
           </div>
           <p className="device-state">{playerActive ? 'Playing on Chili Dashboard' : playerReady ? 'Chili Dashboard is ready' : 'Starting player…'}</p>
-          <a href="/api/v1/spotify/connect">Reconnect Spotify</a>
+          <a className="media-secondary" href="/api/v1/spotify/connect">Reconnect</a>
           {playerError && <p className="setup-state is-error">{playerError}</p>}
         </div>
       )}

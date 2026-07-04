@@ -48,6 +48,13 @@ function eventTime(event: CalendarEvent) {
   }).format(new Date(event.start_at))
 }
 
+function taskTime(value: string | null) {
+  if (!value) return null
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: TIME_ZONE, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(value))
+}
+
 function layoutEvents(events: CalendarEvent[], selectedDate: string): PositionedEvent[] {
   const dayStart = dateAtStartOfDay(selectedDate).getTime()
   const visible = events
@@ -196,13 +203,20 @@ export function PlanningRegion({
         <div className="region-heading">
           <div>
             <p className="eyebrow">TASKS</p>
-            <h2>Notion</h2>
+            <h2>Today</h2>
           </div>
-          <p>{notion.tasks.length} today</p>
+          <p>Notion · {notion.tasks.length}</p>
         </div>
         {notion.status !== 'ready' || notion.tasks.length === 0 ? <SetupState service="Notion" status={notion.status} /> : (
           <ul className="task-list">
-            {notion.tasks.slice(0, 5).map((task) => <li key={task.id}>{task.title}</li>)}
+            {notion.tasks.slice(0, 8).map((task) => (
+              <li className={task.is_overdue ? 'is-overdue' : ''} key={task.id}>
+                <span>{task.title}</span>
+                {(task.is_overdue || taskTime(task.due_at)) && (
+                  <small>{task.is_overdue ? 'Overdue' : taskTime(task.due_at)}</small>
+                )}
+              </li>
+            ))}
           </ul>
         )}
       </div>

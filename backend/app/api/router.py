@@ -97,6 +97,7 @@ class NotionTaskResponse(BaseModel):
     is_overdue: bool = False
     status: str | None = None
     priority: str | None = None
+    task_type: str | None = None
 
 
 class NotionTodayResponse(BaseModel):
@@ -499,6 +500,7 @@ async def notion_today(request: Request) -> NotionTodayResponse:
                 is_overdue=task.is_overdue,
                 status=task.status,
                 priority=task.priority,
+                task_type=task.task_type,
             )
             for task in tasks
         ],

@@ -1,4 +1,5 @@
 import type { CalendarEvent, CalendarToday, NotionToday } from '../types'
+import { TaskPriorityBars } from './TaskPriorityBars'
 
 const TIME_ZONE = 'Asia/Tokyo'
 const START_HOUR = 7
@@ -96,20 +97,31 @@ function groupTasksByDue(tasks: NotionToday['tasks']) {
     }))
 }
 
-function priorityClass(priority: string | null) {
-  const value = priority?.toLowerCase() ?? ''
-  if (value.includes('high') || value.includes('urgent')) return 'is-high'
-  if (value.includes('medium') || value.includes('normal')) return 'is-medium'
-  if (value.includes('low')) return 'is-low'
-  return ''
+function taskTypeClass(taskType: string | null) {
+  const value = taskType?.trim().toLowerCase() ?? ''
+  if (!value) return 'is-unsorted'
+  if (value.includes('personal') || value.includes('home') || value.includes('life')) return 'is-personal'
+  return 'is-work'
 }
 
-function statusClass(status: string | null) {
-  const value = status?.toLowerCase() ?? ''
-  if (value.includes('progress') || value.includes('doing')) return 'is-progress'
-  if (value.includes('blocked') || value.includes('waiting')) return 'is-blocked'
-  if (value.includes('todo') || value.includes('to do') || value.includes('backlog')) return 'is-todo'
-  return ''
+function taskTypeLabel(taskType: string | null) {
+  const kind = taskTypeClass(taskType)
+  if (kind === 'is-personal') return 'Personal'
+  if (kind === 'is-work') return 'Work'
+  return 'Task'
+}
+
+function taskSummary(tasks: NotionToday['tasks']) {
+  let work = 0
+  let personal = 0
+  let overdue = 0
+  for (const task of tasks) {
+    if (task.is_overdue) overdue += 1
+    const kind = taskTypeClass(task.task_type)
+    if (kind === 'is-work') work += 1
+    else if (kind === 'is-personal') personal += 1
+  }
+  return { total: tasks.length, work, personal, overdue }
 }
 
 function layoutEvents(events: CalendarEvent[], selectedDate: string): PositionedEvent[] {
@@ -155,10 +167,10 @@ function layoutEvents(events: CalendarEvent[], selectedDate: string): Positioned
   return completed
 }
 
-function SetupState({ service, status }: { service: string, status: string }) {
+function SetupState({ service, status, emptyLabel }: { service: string, status: string, emptyLabel?: string }) {
   if (status === 'not_configured') return <p className="setup-state">Connect {service}</p>
   if (status === 'unavailable') return <p className="setup-state is-error">{service} is unavailable</p>
-  return <p className="setup-state">No events on this day</p>
+  return <p className="setup-state">{emptyLabel ?? 'No events on this day'}</p>
 }
 
 function CalendarSchedule({
@@ -236,6 +248,66 @@ function CalendarSchedule({
   )
 }
 
+function TaskSection({ notion }: { notion: NotionToday }) {
+  if (notion.status !== 'ready') {
+    return (
+      <section className="task-section" aria-label="Tasks">
+        <SetupState service="Notion" status={notion.status} emptyLabel="No open tasks" />
+      </section>
+    )
+  }
+
+  const tasks = notion.tasks.slice(0, 8)
+  const summary = taskSummary(tasks)
+
+  return (
+    <section className="task-section" aria-label="Tasks">
+      <div className="task-heading">
+        <div>
+          <p className="eyebrow">TASKS</p>
+          {summary.overdue > 0 && (
+            <p className="task-summary">
+              <span className="is-overdue">{summary.overdue} overdue</span>
+            </p>
+          )}
+        </div>
+        <div className="task-type-pills" aria-label="Task types">
+          <span className="task-type-pill is-work">Work {summary.work}</span>
+          <span className="task-type-pill is-personal">Personal {summary.personal}</span>
+        </div>
+      </div>
+
+      {tasks.length === 0 ? (
+        <p className="setup-state">No open tasks</p>
+      ) : (
+        <div className="task-groups">
+          {groupTasksByDue(tasks).map((group) => (
+            <section className={`task-group${group.isOverdue ? ' is-overdue' : ''}`} key={group.key} aria-label={group.label}>
+              <h3 className="task-group-heading">{group.label}</h3>
+              <ul className="task-list">
+                {group.tasks.map((task) => {
+                  const typeClass = taskTypeClass(task.task_type)
+                  const typeLabel = taskTypeLabel(task.task_type)
+                  return (
+                    <li
+                      className={`task-row ${typeClass}${task.is_overdue ? ' is-overdue' : ''}`}
+                      key={task.id}
+                      aria-label={`${typeLabel}: ${task.title}`}
+                    >
+                      <span className="task-title">{task.title}</span>
+                      <TaskPriorityBars priority={task.priority} />
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 export function PlanningRegion({
   calendar, notion, selectedDate, onPrevious, onToday, onNext,
 }: {
@@ -255,32 +327,7 @@ export function PlanningRegion({
         onToday={onToday}
         onNext={onNext}
       />
-      <div className="task-section">
-        {notion.status !== 'ready' || notion.tasks.length === 0 ? <SetupState service="Notion" status={notion.status} /> : (
-          <div className="task-groups">
-            {groupTasksByDue(notion.tasks.slice(0, 8)).map((group) => (
-              <section className={`task-group${group.isOverdue ? ' is-overdue' : ''}`} key={group.key} aria-label={group.label}>
-                <h3 className="task-group-heading">{group.label}</h3>
-                <ul className="task-list">
-                  {group.tasks.map((task) => (
-                    <li className={task.is_overdue ? 'is-overdue' : ''} key={task.id}>
-                      {task.status && <em className={`status-badge ${statusClass(task.status)}`}>{task.status}</em>}
-                      <div className="task-copy">
-                        <span>{task.title}</span>
-                        {task.priority && (
-                          <small>
-                            <strong className={`priority-badge ${priorityClass(task.priority)}`}>{task.priority}</strong>
-                          </small>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ))}
-          </div>
-        )}
-      </div>
+      <TaskSection notion={notion} />
     </section>
   )
 }

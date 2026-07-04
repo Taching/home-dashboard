@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     notion_due_property: str = "Due Date"
     notion_done_property: str = "Done"
     notion_status_property: str = "Status"
+    notion_type_property: str = "Type"
     notion_done_statuses: str = "Done,Complete,Completed"
     openclaw_gateway_ws_url: str | None = None
     openclaw_gateway_token: str | None = None

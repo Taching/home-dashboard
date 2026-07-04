@@ -20,6 +20,7 @@ class NotionTask:
     is_overdue: bool
     status: str | None = None
     priority: str | None = None
+    task_type: str | None = None
 
 
 class NotionService:
@@ -102,6 +103,8 @@ class NotionService:
         properties = page.get("properties", {})
         if not isinstance(properties, dict) or self._is_done(properties):
             return None
+        if not self._is_todo_status(properties):
+            return None
         due_at = self._due_at(properties)
         due_date = due_at.astimezone(self._timezone).date() if due_at else None
         title = self._title(properties).strip()
@@ -114,6 +117,7 @@ class NotionService:
             is_overdue=due_date is not None and due_date < today,
             status=self._property_name(properties, settings.notion_status_property),
             priority=self._property_name(properties, "Priority"),
+            task_type=self._property_name(properties, settings.notion_type_property),
         )
 
     def _title(self, properties: dict[str, Any]) -> str:
@@ -137,6 +141,13 @@ class NotionService:
         if parsed.tzinfo is None:
             parsed = datetime.combine(parsed.date(), time.min, self._timezone)
         return parsed.astimezone(UTC)
+
+    def _is_todo_status(self, properties: dict[str, Any]) -> bool:
+        status = self._property_name(properties, settings.notion_status_property)
+        if not status:
+            return True
+        value = status.strip().lower()
+        return value in {"to do", "todo", "backlog"}
 
     def _is_done(self, properties: dict[str, Any]) -> bool:
         checkbox = properties.get(settings.notion_done_property)

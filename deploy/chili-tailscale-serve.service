@@ -1,0 +1,16 @@
+[Unit]
+Description=Private Tailscale HTTPS access for Chili Home Dashboard
+Wants=network-online.target
+After=network-online.target tailscaled.service
+Requires=tailscaled.service
+
+[Service]
+Type=oneshot
+# Tailscale Serve is intentionally the only remote entry point. The dashboard
+# itself remains published on 127.0.0.1:8080 by Docker Compose.
+ExecStart=/usr/bin/tailscale serve --https=443 --bg http://127.0.0.1:8080
+ExecStop=/usr/bin/tailscale serve reset
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

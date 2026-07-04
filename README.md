@@ -71,8 +71,27 @@ model score has been below that threshold for `VOICE_WAKEWORD_REARM_SECONDS`.
 ## Local development
 
 1. Copy `.env.example` to `.env` and fill only values required for the active phase.
-2. Run `docker compose up --build`.
+2. Start the dashboard from the project root:
+
+   ```sh
+   ./start.sh
+   ```
+
+   The launcher starts the dashboard, voice worker, and Apple Calendar bridge.
+   It detects a Raspberry Pi and includes its hardware configuration
+   automatically. It runs the containers in the background and builds updated
+   images when necessary.
 3. Open `http://localhost:8080` on the Pi.
+
+For a development machine without one of those integrations, exclude it:
+
+```sh
+./start.sh --no-voice --no-calendar
+```
+
+Use `./start.sh --foreground` to keep logs in the terminal, and
+`./start.sh --help` to see all options. Stop the stack with `docker compose down`
+(include `-f compose.pi.yaml` when stopping it on a Pi).
 
 On the Raspberry Pi, include the hardware override:
 
@@ -80,7 +99,10 @@ On the Raspberry Pi, include the hardware override:
 docker compose -f compose.yaml -f compose.pi.yaml up --build -d
 ```
 
-The production dashboard intentionally binds to `127.0.0.1`. Do not expose it to the LAN or internet until Phase 6 authentication is implemented.
+The dashboard binds to `127.0.0.1:8080` by default. For a cleaner
+dashboard-only view, add `?mode=kiosk` to the dashboard URL. For phone access
+away from the Pi, use the Tailscale Serve setup below instead of exposing the
+dashboard directly to the LAN or internet.
 
 ## BroadLink RM4 Mini setup
 
@@ -124,3 +146,9 @@ light's existing remote emits infrared; it cannot control RF-only remotes.
 ## Deployment principle
 
 Docker owns application services. Chromium remains a host-level systemd service because HDMI kiosk display, screen blanking, Bluetooth audio, and desktop-session integration are more reliable outside a browser container.
+
+## Remote phone access
+
+Use Tailscale Serve to access the dashboard privately from a phone while away
+from home. It does not require router port forwarding and keeps the dashboard
+off the public internet. See [docs/tailscale-remote-access.md](docs/tailscale-remote-access.md).

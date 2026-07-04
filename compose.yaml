@@ -23,7 +23,7 @@ services:
         condition: service_started
     ports:
       # Keep v1 local to the Pi. Phone access is added only with authentication.
-      - "127.0.0.1:8080:80"
+      - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:8080:80"
     restart: unless-stopped
 
   voice:

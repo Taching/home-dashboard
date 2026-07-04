@@ -19,6 +19,14 @@ button { font: inherit; }
   background: radial-gradient(ellipse 75% 75% at 88% 0%, #14264a 0%, #0b1020 58%);
 }
 
+.dashboard-shell.is-chromeless {
+  padding-top: 1rem;
+}
+
+.dashboard-shell.is-chromeless .dashboard-header {
+  display: none;
+}
+
 .dashboard-header { display: flex; align-items: center; justify-content: space-between; min-height: 3.2rem; }
 .brand-block { display: flex; align-items: center; gap: 1rem; }
 .brand { margin: 0; color: #e8eef8; font-size: 1.08rem; font-weight: 750; letter-spacing: -.03em; }

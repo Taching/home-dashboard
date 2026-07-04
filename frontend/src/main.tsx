@@ -53,6 +53,13 @@ function isTypingTarget(target: EventTarget | null) {
     || (target instanceof HTMLElement && target.isContentEditable)
 }
 
+function isPresentationMode() {
+  const params = new URLSearchParams(window.location.search)
+  return params.get('mode') === 'kiosk'
+    || params.get('fullscreen') === '1'
+    || params.get('chromeless') === '1'
+}
+
 function App() {
   const [dashboard, setDashboard] = useState<Dashboard>(initialState)
   const [readings, setReadings] = useState<Reading[]>([])
@@ -67,6 +74,7 @@ function App() {
   const spotifyPlayback = useSpotifyPlayback(spotify.status === 'ready')
   const stale = isStale(dashboard.last_updated_at)
   const today = dayKey(new Date())
+  const chromeless = useMemo(isPresentationMode, [])
 
   const refresh = useCallback(async () => {
     try {
@@ -157,8 +165,8 @@ function App() {
   const broadLinkStatus = statusLabel(dashboard.integrations.broadlink)
 
   return (
-    <main className="dashboard-shell">
-      <Header />
+    <main className={`dashboard-shell${chromeless ? ' is-chromeless' : ''}`}>
+      {!chromeless && <Header />}
       <div className="dashboard-workspace">
         <aside className="environment-region" aria-label="Environment and light">
           <LightControl

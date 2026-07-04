@@ -4,6 +4,7 @@ import logging
 import os
 import subprocess
 import tempfile
+import threading
 import time
 import wave
 from pathlib import Path
@@ -59,8 +60,8 @@ def log_session(
                     "transcript": transcript,
                     "status": status,
                     "response_message": response_message,
-                    "audio_seconds": audio_seconds,
-                    "wake_score": wake_score,
+                    "audio_seconds": float(audio_seconds) if audio_seconds is not None else None,
+                    "wake_score": float(wake_score) if wake_score is not None else None,
                     "failure_stage": failure_stage,
                 },
             ).raise_for_status()
@@ -270,6 +271,27 @@ def update_status(
         return False
 
 
+def start_idle_heartbeat(
+    backend_url: str,
+    command_active: threading.Event,
+    session_ended_at: list[float],
+) -> threading.Event:
+    """Keep dashboard voice status in sync after backend restarts."""
+    stop = threading.Event()
+    interval = float(os.environ.get("VOICE_STATUS_HEARTBEAT_SECONDS", "15"))
+    settle_seconds = float(os.environ.get("VOICE_STATUS_SETTLE_SECONDS", "10"))
+
+    def loop() -> None:
+        while True:
+            if not command_active.is_set() and time.monotonic() - session_ended_at[0] >= settle_seconds:
+                update_status("idle", backend_url)
+            if stop.wait(interval):
+                break
+
+    threading.Thread(target=loop, daemon=True, name="voice-idle-heartbeat").start()
+    return stop
+
+
 def report_failure(
     backend_url: str,
     message: str,
@@ -310,11 +332,15 @@ def main() -> None:
         time.sleep(1)
     logger.info("Listening on %s for %s (transcription model: %s)", device, wakeword_label, transcription_model)
 
+    command_active = threading.Event()
+    session_ended_at = [0.0]
+    heartbeat_stop = start_idle_heartbeat(backend_url, command_active, session_ended_at)
+
     try:
         while True:
             frame = read_exact(capture.stdout, frame_bytes)
             scores = detector.predict(np.frombuffer(frame, dtype=np.int16))
-            score = max(scores.values(), default=0.0)
+            score = float(max(scores.values(), default=0.0))
 
             if not gate.observe(score, time.monotonic()):
                 continue
@@ -325,6 +351,7 @@ def main() -> None:
             stage = "recording"
             wake_score = score
             audio_seconds: float | None = None
+            command_active.set()
             try:
                 update_status("listening", backend_url)
                 skip_frames = round(POST_WAKE_SKIP_SECONDS * SAMPLE_RATE / WAKEWORD_FRAME_SAMPLES)
@@ -386,7 +413,11 @@ def main() -> None:
                     wake_score=wake_score,
                     failure_stage=stage,
                 )
+            finally:
+                command_active.clear()
+                session_ended_at[0] = time.monotonic()
     finally:
+        heartbeat_stop.set()
         capture.terminate()
         try:
             capture.wait(timeout=5)

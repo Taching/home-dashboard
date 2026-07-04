@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Header } from './components/Header'
+import { RegionBlock } from './components/RegionBlock'
 import { DeviceControls } from './components/DeviceControls'
 import { VoicePipelinePanel } from './components/VoicePipelinePanel'
 import { MediaRegion } from './components/MediaRegion'
 import { OpenClawChat } from './components/OpenClawChat'
 import { addDays, dayKey, PlanningRegion } from './components/PlanningRegion'
-import { SystemStrip } from './components/SystemStrip'
 import { SystemHealthPanel } from './components/SystemHealthPanel'
 import { useDashboardCommand } from './hooks/useDashboardCommand'
 import { useSpotifyPlayback } from './hooks/useSpotifyPlayback'
@@ -20,6 +20,7 @@ import {
   sendOpenClawMessage,
   fetchSpotifyNowPlaying,
   fetchWeather,
+  setSystemVolume,
 } from './lib/api'
 import type { CalendarToday, Dashboard, Light, NotionToday, OpenClawConversation, SpotifyNowPlaying, WaterPump, WeatherForecast } from './types'
 import './styles.css'
@@ -43,6 +44,9 @@ const initialState: Dashboard = {
     bluetooth_status: 'unavailable',
     bluetooth_device_name: null,
     bluetooth_is_default_output: false,
+    volume_percent: null,
+    volume_available: false,
+    volume_output_label: 'Audio output',
   },
   display: { state: 'visible' },
   integrations: { sensor: 'pending', broadlink: 'pending', calendar: 'not_configured', notion: 'not_configured', spotify: 'not_configured', openclaw: 'not_configured' },
@@ -78,7 +82,9 @@ function App() {
   const [openclawPending, setOpenClawPending] = useState(false)
   const [openclawFeedback, setOpenClawFeedback] = useState<string | null>(null)
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null)
-  const { execute, feedback, pendingIntent } = useDashboardCommand()
+  const [djPending, setDjPending] = useState(false)
+  const [volumePending, setVolumePending] = useState(false)
+  const { execute, pendingIntent } = useDashboardCommand()
   const { voiceStatus, activityEvents } = useVoiceMonitor()
   const spotifyPlayback = useSpotifyPlayback(spotify.status === 'ready')
   const today = dayKey(new Date())
@@ -156,6 +162,24 @@ function App() {
     })
   }, [dashboard.water_pump.state, execute])
 
+  const setVolume = useCallback((volumePercent: number) => {
+    setVolumePending(true)
+    void setSystemVolume(volumePercent)
+      .then((result) => {
+        if (result.volume_percent === null) return
+        setDashboard((current) => ({
+          ...current,
+          system: {
+            ...current.system,
+            volume_percent: result.volume_percent,
+            volume_available: result.available,
+            volume_output_label: result.output_label,
+          },
+        }))
+      })
+      .finally(() => setVolumePending(false))
+  }, [])
+
   useEffect(() => {
     void refresh()
     const intervalMs = dashboard.water_pump.state === 'running' ? 2_000 : 60_000
@@ -221,16 +245,26 @@ function App() {
       )}
       <div className="dashboard-workspace">
         <aside className="environment-region" aria-label="Environment and light">
-          <VoicePipelinePanel status={voiceStatus} events={activityEvents} />
-          <DeviceControls
-            light={dashboard.light}
-            pump={dashboard.water_pump}
-            lightPending={pendingIntent === 'light.turn_on' || pendingIntent === 'light.turn_off'}
-            pumpPending={pendingIntent === 'water.run' || pendingIntent === 'water.stop'}
-            onToggleLight={toggleLight}
-            onTogglePump={togglePlantPump}
-          />
-          <SystemHealthPanel system={dashboard.system} />
+          <RegionBlock label="Log" className="region-block-log">
+            <VoicePipelinePanel status={voiceStatus} events={activityEvents} />
+          </RegionBlock>
+          <RegionBlock label="Controls">
+            <DeviceControls
+              light={dashboard.light}
+              pump={dashboard.water_pump}
+              lightPending={pendingIntent === 'light.turn_on' || pendingIntent === 'light.turn_off'}
+              pumpPending={pendingIntent === 'water.run' || pendingIntent === 'water.stop'}
+              onToggleLight={toggleLight}
+              onTogglePump={togglePlantPump}
+            />
+          </RegionBlock>
+          <RegionBlock label="System">
+            <SystemHealthPanel
+              system={dashboard.system}
+              volumePending={volumePending}
+              onSetVolume={setVolume}
+            />
+          </RegionBlock>
           <MediaRegion
             spotify={spotify}
             playerReady={spotifyPlayback.ready}
@@ -242,6 +276,11 @@ function App() {
             onTogglePlayback={() => void spotifyPlayback.togglePlayback()}
             onPrevious={() => void spotifyPlayback.previousTrack()}
             onNext={() => void spotifyPlayback.nextTrack()}
+            djPending={djPending}
+            onStartDj={() => {
+              setDjPending(true)
+              void spotifyPlayback.startDj().finally(() => setDjPending(false))
+            }}
           />
         </aside>
         <PlanningRegion
@@ -262,7 +301,6 @@ function App() {
           />
         </aside>
       </div>
-      <SystemStrip feedback={feedback} />
     </main>
   )
 }

@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import type { SystemStatus } from '../types'
+import { SystemVolumeBar } from './SystemVolumeBar'
 
 function percentLabel(value: number | null) {
   return value === null ? '--' : `${value.toFixed(0)}%`
@@ -58,30 +59,17 @@ function HealthMetric({ label, value, detail, percent, className = '' }: HealthM
   )
 }
 
-function BluetoothIcon() {
+export function SystemHealthPanel({
+  system,
+  volumePending,
+  onSetVolume,
+}: {
+  system: SystemStatus
+  volumePending: boolean
+  onSetVolume: (volumePercent: number) => void
+}) {
   return (
-    <svg className="health-bluetooth-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M17.71 7.71 12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z" />
-    </svg>
-  )
-}
-
-function bluetoothLine(system: SystemStatus) {
-  if (system.bluetooth_status === 'unavailable') return 'Bluetooth unavailable'
-  if (system.bluetooth_status === 'disconnected') return 'No speaker connected'
-  const name = system.bluetooth_device_name ?? 'Bluetooth speaker'
-  return system.bluetooth_is_default_output ? `${name} · default output` : name
-}
-
-function bluetoothClass(system: SystemStatus) {
-  if (system.bluetooth_status === 'connected') return ' is-connected'
-  if (system.bluetooth_status === 'disconnected') return ' is-disconnected'
-  return ' is-unavailable'
-}
-
-export function SystemHealthPanel({ system }: { system: SystemStatus }) {
-  return (
-    <section className="health-panel" aria-label="System health">
+    <section className="health-panel is-compact" aria-label="System health">
       <dl>
         <HealthMetric
           label="CPU temp"
@@ -109,10 +97,13 @@ export function SystemHealthPanel({ system }: { system: SystemStatus }) {
           className={statusClass(system.storage_used_percent)}
         />
       </dl>
-      <p className={`health-bluetooth${bluetoothClass(system)}`} aria-label={`Bluetooth audio: ${bluetoothLine(system)}`}>
-        <BluetoothIcon />
-        <span>{bluetoothLine(system)}</span>
-      </p>
+      <SystemVolumeBar
+        volumePercent={system.volume_percent}
+        outputLabel={system.volume_output_label}
+        available={system.volume_available}
+        pending={volumePending}
+        onSetVolume={onSetVolume}
+      />
     </section>
   )
 }

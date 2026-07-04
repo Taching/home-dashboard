@@ -38,6 +38,9 @@ export type SystemStatus = {
   bluetooth_status: 'connected' | 'disconnected' | 'unavailable'
   bluetooth_device_name: string | null
   bluetooth_is_default_output: boolean
+  volume_percent: number | null
+  volume_available: boolean
+  volume_output_label: string
 }
 
 export type Reading = {

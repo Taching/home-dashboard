@@ -23,14 +23,17 @@ export function Header({ voiceStatus, temperature, humidity, weather }: HeaderPr
 
   return (
     <header className="dashboard-header">
-      <a
-        className={`brand-mark is-voice-${voiceStatus.state}`}
-        href="/"
-        aria-label={`Chili · ${voiceLabels[voiceStatus.state]}`}
-      >
-        <img src={chiliLogo} alt="" className="brand-logo" />
-        <span className="sr-only">{voiceLabels[voiceStatus.state]}</span>
-      </a>
+      <div className="brand-cluster">
+        <a
+          className={`brand-mark is-voice-${voiceStatus.state}`}
+          href="/"
+          aria-label={`Chili · ${voiceLabels[voiceStatus.state]}`}
+        >
+          <img src={chiliLogo} alt="" className="brand-logo" />
+          <span className="sr-only">{voiceLabels[voiceStatus.state]}</span>
+        </a>
+        <span className={`voice-status-chip is-${voiceStatus.state}`}>{voiceLabels[voiceStatus.state]}</span>
+      </div>
       <div className="header-meta">
         <EnvironmentBadge temperature={temperature} humidity={humidity} />
         <WeatherWidget forecast={weather} />

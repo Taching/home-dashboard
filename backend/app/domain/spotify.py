@@ -22,6 +22,8 @@ class SpotifyService:
     playback_url = "https://api.spotify.com/v1/me/player"
     devices_url = "https://api.spotify.com/v1/me/player/devices"
     search_url = "https://api.spotify.com/v1/search"
+    recently_played_url = "https://api.spotify.com/v1/me/player/recently-played"
+    dj_context_uri = "spotify:playlist:37i9dQZF1EYkqdzj48dyYq"
 
     def __init__(self) -> None:
         self._pending_states: set[str] = set()
@@ -55,7 +57,7 @@ class SpotifyService:
                 "client_id": settings.spotify_client_id,
                 "response_type": "code",
                 "redirect_uri": settings.spotify_redirect_uri,
-                "scope": "user-read-playback-state user-modify-playback-state streaming user-read-email user-read-private",
+                "scope": "user-read-playback-state user-modify-playback-state streaming user-read-email user-read-private user-read-recently-played",
                 "state": state,
             }
         )
@@ -154,6 +156,53 @@ class SpotifyService:
             f"{self.playback_url}/pause",
             params={"device_id": self._registered_device()},
             headers={"Authorization": f"Bearer {self._access_token()}"},
+            timeout=15,
+        )
+        response.raise_for_status()
+
+    def start_dj(self) -> None:
+        access_token = self._access_token()
+        device_id = self._registered_device()
+        headers = {"Authorization": f"Bearer {access_token}"}
+        shuffle = httpx.put(
+            f"{self.playback_url}/shuffle",
+            params={"device_id": device_id, "state": "true"},
+            headers=headers,
+            timeout=15,
+        )
+        shuffle.raise_for_status()
+        response = httpx.put(
+            f"{self.playback_url}/play",
+            params={"device_id": device_id},
+            headers=headers,
+            json={"context_uri": self.dj_context_uri},
+            timeout=15,
+        )
+        if response.status_code in {200, 204}:
+            return
+        self._play_recent_mix(access_token, device_id)
+
+    def _play_recent_mix(self, access_token: str, device_id: str) -> None:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        recent = httpx.get(
+            self.recently_played_url,
+            params={"limit": 10},
+            headers=headers,
+            timeout=15,
+        )
+        recent.raise_for_status()
+        uris = [
+            item["track"]["uri"]
+            for item in recent.json().get("items", [])
+            if item.get("track", {}).get("uri")
+        ]
+        if not uris:
+            raise RuntimeError("Spotify DJ is unavailable right now.")
+        response = httpx.put(
+            f"{self.playback_url}/play",
+            params={"device_id": device_id},
+            headers=headers,
+            json={"uris": uris},
             timeout=15,
         )
         response.raise_for_status()

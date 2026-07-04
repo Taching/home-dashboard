@@ -100,6 +100,20 @@ export async function registerSpotifyDevice(deviceId: string) {
   }))
 }
 
+export async function startSpotifyDj() {
+  return requireJson<{ status: string }>(await fetch('/api/v1/spotify/dj', { method: 'POST' }))
+}
+
+export async function setSystemVolume(volumePercent: number) {
+  return requireJson<{ volume_percent: number | null; available: boolean; output_label: string }>(
+    await fetch('/api/v1/system/volume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ volume_percent: volumePercent }),
+    }),
+  )
+}
+
 export async function sendCommand(intent: CommandIntent): Promise<CommandResult> {
   return requireJson<CommandResult>(await fetch('/api/v1/commands', {
     method: 'POST',

@@ -108,8 +108,11 @@ export function WeatherWidget({ forecast }: Props) {
 
   return (
     <section className="weather-widget" aria-label={`Weather for ${forecast.location}`}>
-      <WeatherDayCard day={forecast.today} emphasis="today" />
-      {forecast.tomorrow && <WeatherDayCard day={forecast.tomorrow} emphasis="tomorrow" />}
+      <span className="weather-widget-label">Outside · {forecast.location}</span>
+      <div className="weather-widget-days">
+        <WeatherDayCard day={forecast.today} emphasis="today" />
+        {forecast.tomorrow && <WeatherDayCard day={forecast.tomorrow} emphasis="tomorrow" />}
+      </div>
     </section>
   )
 }

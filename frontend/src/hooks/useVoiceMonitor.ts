@@ -36,12 +36,12 @@ export function useVoiceMonitor() {
     }
 
     const refresh = () => {
-      void Promise.all([fetchVoiceStatus(), fetchActivityEvents()])
-        .then(([status, events]) => {
-          applyStatus(status)
-          applyEvents(events)
-        })
+      void fetchVoiceStatus()
+        .then(applyStatus)
         .catch(() => applyStatus(offlineStatus))
+      void fetchActivityEvents()
+        .then(applyEvents)
+        .catch(() => {})
     }
 
     refresh()

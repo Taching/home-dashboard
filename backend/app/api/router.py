@@ -123,6 +123,32 @@ class SpotifyTransferRequest(BaseModel):
     device_id: str
 
 
+class SystemVolumeRequest(BaseModel):
+    volume_percent: int = Field(ge=0, le=100)
+
+
+class SystemVolumeResponse(BaseModel):
+    volume_percent: int | None
+    available: bool
+    output_label: str = "Audio output"
+
+
+def _volume_snapshot(request: Request) -> dict[str, object]:
+    service = request.app.state.pi_volume_service
+    try:
+        return {
+            "volume_percent": service.current(),
+            "volume_available": True,
+            "volume_output_label": service.output_label(),
+        }
+    except RuntimeError:
+        return {
+            "volume_percent": None,
+            "volume_available": False,
+            "volume_output_label": "Audio output",
+        }
+
+
 class VoiceTranscriptRequest(BaseModel):
     text: str
     audio_seconds: float | None = Field(default=None, ge=0, le=120)
@@ -326,6 +352,7 @@ async def dashboard(request: Request) -> dict[str, object]:
     openclaw_status = request.app.state.openclaw_service.status()
     system_status = request.app.state.system_status_service.snapshot()
     bluetooth_audio = request.app.state.bluetooth_audio_service.snapshot()
+    volume = _volume_snapshot(request)
     reading = sensor.current()
     return {
         "temperature_c": reading.temperature_c if reading else None,
@@ -355,6 +382,9 @@ async def dashboard(request: Request) -> dict[str, object]:
             "bluetooth_status": bluetooth_audio.status,
             "bluetooth_device_name": bluetooth_audio.device_name,
             "bluetooth_is_default_output": bluetooth_audio.is_default_output,
+            "volume_percent": volume["volume_percent"],
+            "volume_available": volume["volume_available"],
+            "volume_output_label": volume["volume_output_label"],
         },
         "display": {"state": "visible"},
         "integrations": {
@@ -565,6 +595,32 @@ async def spotify_device(request: Request, body: SpotifyTransferRequest) -> dict
     request.app.state.spotify_service.register_device(body.device_id)
     log_activity(request, "in", "spotify", f"register web player device={body.device_id[:8]}…")
     return {"status": "success"}
+
+
+@api_router.post("/spotify/dj")
+async def spotify_dj(request: Request) -> dict[str, str]:
+    try:
+        request.app.state.spotify_service.start_dj()
+        log_activity(request, "in", "spotify", "start dj")
+    except Exception as error:
+        raise HTTPException(status_code=503, detail="Spotify DJ could not start.") from error
+    return {"status": "success"}
+
+
+@api_router.post("/system/volume", response_model=SystemVolumeResponse)
+async def set_system_volume(request: Request, body: SystemVolumeRequest) -> SystemVolumeResponse:
+    try:
+        volume = request.app.state.pi_volume_service.set(body.volume_percent)
+        log_activity(request, "in", "dashboard", f"volume {volume}%")
+        return SystemVolumeResponse(
+            volume_percent=volume,
+            available=True,
+            output_label=request.app.state.pi_volume_service.output_label(),
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail="Raspberry Pi volume control is unavailable.") from error
 
 
 @api_router.get("/spotify/connect", include_in_schema=False)

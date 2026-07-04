@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchSpotifyWebPlaybackToken, registerSpotifyDevice, transferSpotifyPlayback } from '../lib/api'
+import { fetchSpotifyWebPlaybackToken, registerSpotifyDevice, startSpotifyDj, transferSpotifyPlayback } from '../lib/api'
 
 export type PlaybackTrack = { track: string, artist: string, artworkUrl: string | null }
 
@@ -92,5 +92,20 @@ export function useSpotifyPlayback(enabled: boolean) {
     await player.nextTrack()
   }
 
-  return { ready: Boolean(deviceId), active, paused, track, error, playHere, togglePlayback, previousTrack, nextTrack }
+  async function startDj() {
+    if (!player || !deviceId) {
+      setError('Spotify player is not ready.')
+      return
+    }
+    setError(null)
+    try {
+      await player.activateElement()
+      await transferSpotifyPlayback(deviceId)
+      await startSpotifyDj()
+    } catch {
+      setError('Spotify DJ could not start.')
+    }
+  }
+
+  return { ready: Boolean(deviceId), active, paused, track, error, playHere, togglePlayback, previousTrack, nextTrack, startDj }
 }

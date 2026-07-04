@@ -1,5 +1,7 @@
 import type { SpotifyNowPlaying } from '../types'
 import type { PlaybackTrack } from '../hooks/useSpotifyPlayback'
+import { SpotifyDjIcon } from './SpotifyDjIcon'
+import { SpotifyEqualizer } from './SpotifyEqualizer'
 
 type Props = {
   spotify: SpotifyNowPlaying
@@ -12,21 +14,40 @@ type Props = {
   onTogglePlayback: () => void
   onPrevious: () => void
   onNext: () => void
+  onStartDj: () => void
+  djPending?: boolean
 }
 
-export function MediaRegion({ spotify, playerReady, playerActive, playerPaused, playerTrack, playerError, onPlayHere, onTogglePlayback, onPrevious, onNext }: Props) {
+export function MediaRegion({ spotify, playerReady, playerActive, playerPaused, playerTrack, playerError, onPlayHere, onTogglePlayback, onPrevious, onNext, onStartDj, djPending = false }: Props) {
   const activeTrack = playerTrack ?? (spotify.track ? { track: spotify.track, artist: spotify.artist ?? 'Unknown artist', artworkUrl: spotify.artwork_url } : null)
+  const playingOnDashboard = playerActive && !playerPaused
+  const playingElsewhere = !playerActive && spotify.is_playing && Boolean(activeTrack)
+  const isPlaying = playingOnDashboard || playingElsewhere
+  const isPaused = Boolean(activeTrack) && !isPlaying
 
   return (
-    <section className="media-region spotify-widget" aria-label="Spotify now playing">
-      <div className={`spotify-player${activeTrack ? '' : ' is-empty'}`}>
+    <section className={`media-region spotify-widget${isPlaying ? ' is-playing' : isPaused ? ' is-paused' : ''}`} aria-label="Spotify now playing">
+      <div className={`spotify-player${activeTrack ? '' : ' is-empty'}${isPlaying ? ' is-playing' : isPaused ? ' is-paused' : ''}`}>
         {activeTrack ? (
           <div className="now-playing">
-            {activeTrack.artworkUrl ? <img src={activeTrack.artworkUrl} alt="" /> : <div className="artwork-fallback" aria-hidden="true">♪</div>}
+            <div className={`now-playing-art${isPlaying ? ' is-playing' : ''}`}>
+              {activeTrack.artworkUrl ? <img src={activeTrack.artworkUrl} alt="" /> : <div className="artwork-fallback" aria-hidden="true">♪</div>}
+              {isPlaying && <span className="spotify-art-glow" aria-hidden="true" />}
+            </div>
             <div>
-              <strong>{activeTrack.track}</strong>
+              <div className="now-playing-title-row">
+                <strong>{activeTrack.track}</strong>
+                {isPlaying && <SpotifyEqualizer active />}
+              </div>
               <p>{activeTrack.artist}</p>
-              <small>{playerActive ? 'Chili Dashboard' : spotify.device_name}</small>
+              <small className={`now-playing-status${isPlaying ? ' is-playing' : isPaused ? ' is-paused' : ''}`}>
+                {isPlaying ? (
+                  <>
+                    <span className="spotify-live-dot" aria-hidden="true" />
+                    {playerActive ? 'Playing on Chili' : 'Now playing'}
+                  </>
+                ) : isPaused ? 'Paused' : playerActive ? 'Chili Dashboard' : spotify.device_name}
+              </small>
             </div>
           </div>
         ) : (
@@ -57,7 +78,16 @@ export function MediaRegion({ spotify, playerReady, playerActive, playerPaused, 
       {spotify.status === 'ready' && (
         <div className="player-actions">
           <div className="transport-controls" aria-label="Spotify playback controls">
-            <button type="button" className="transport-icon" disabled title="Shuffle will be added next" aria-label="Shuffle"><span aria-hidden="true">⤨</span></button>
+            <button
+              type="button"
+              className="transport-dj"
+              onClick={onStartDj}
+              disabled={!playerReady || djPending}
+              aria-label="Start Spotify DJ"
+              title="Spotify DJ"
+            >
+              <SpotifyDjIcon className="spotify-dj-icon" />
+            </button>
             <button type="button" className="transport-icon" onClick={onPrevious} disabled={!playerActive} aria-label="Previous track"><span aria-hidden="true">Ⅰ◀</span></button>
             {playerActive ? (
               <button type="button" onClick={onTogglePlayback} className="transport-play" aria-label={playerPaused ? 'Play' : 'Pause'}><span className={playerPaused ? 'play-glyph' : 'pause-glyph'} aria-hidden="true">{playerPaused ? '▶' : 'Ⅱ'}</span></button>

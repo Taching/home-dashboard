@@ -193,10 +193,9 @@ function CalendarSchedule({
 
       <div className="all-day-strip" aria-label="All-day events">
         <span>All day</span>
-        {allDayEvents.length === 0 ? <small>—</small> : allDayEvents.slice(0, 2).map((event) => (
+        {allDayEvents.length === 0 ? <small>—</small> : allDayEvents.map((event) => (
           <span className="all-day-event" key={event.id}>{event.title}</span>
         ))}
-        {allDayEvents.length > 2 && <small>+{allDayEvents.length - 2}</small>}
       </div>
 
       {calendar.status !== 'ready' ? <SetupState service="Apple Calendar" status={calendar.status} /> : (
@@ -213,7 +212,7 @@ function CalendarSchedule({
                 const compact = event.endMinute - event.startMinute < 45
                 return (
                   <article
-                    className={`calendar-event${compact ? ' is-compact' : ''}`}
+                    className={`calendar-event${compact ? ' is-compact' : ''}${event.is_current ? ' is-current' : ''}`}
                     key={event.id}
                     style={{
                       top: `${top}%`, height: `${height}%`,

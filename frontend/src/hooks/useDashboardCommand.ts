@@ -22,7 +22,7 @@ export function useDashboardCommand() {
       const result = await sendCommand(intent)
       if (result.status === 'success') options.onSuccess?.(result)
       else options.onFailure?.()
-      setFeedback(result.message ?? (result.status === 'success' ? 'Done.' : 'Command failed.'))
+      setFeedback(result.message ?? (result.status === 'success' ? 'Done.' : result.status === 'skipped' ? 'Already running.' : 'Command failed.'))
       return result
     } catch {
       options.onFailure?.()

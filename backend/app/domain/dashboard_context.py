@@ -86,7 +86,7 @@ class DashboardContextProvider:
             lines = [f"- Tasks: {status}; synced at {synced}; {len(tasks)} due or overdue task(s)."]
             for task in tasks[:8]:
                 due = task.due_at.isoformat() if task.due_at else "no due date"
-                overdue = "overdue" if task.is_overdue else "due today"
+                overdue = "overdue" if task.is_overdue else "open"
                 details = ", ".join(value for value in [task.status, task.priority, overdue, due] if value)
                 lines.append(f"  - {task.title}: {details}.")
             if len(tasks) > 8:

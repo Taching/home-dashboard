@@ -48,16 +48,52 @@ function eventTime(event: CalendarEvent) {
   }).format(new Date(event.start_at))
 }
 
-function taskDueLabel(value: string | null) {
-  if (!value) return null
-  const due = new Date(value)
-  const now = new Date()
-  if (dayKey(due) === dayKey(now) && due.getUTCHours() === 0 && due.getUTCMinutes() === 0) {
-    return 'Today'
+function taskDueDateKey(value: string | null) {
+  return value ? dayKey(new Date(value)) : 'none'
+}
+
+function taskDueGroupLabel(key: string, todayKey: string) {
+  if (key === 'none') return 'No due date'
+
+  const dueDate = dateAtStartOfDay(key)
+  const todayDate = dateAtStartOfDay(todayKey)
+  const dayDiff = Math.round((dueDate.getTime() - todayDate.getTime()) / 86_400_000)
+  const dateLabel = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TIME_ZONE,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).format(dueDate)
+
+  if (dayDiff < 0) return `${dateLabel} · overdue`
+  if (dayDiff === 0) return 'Today'
+  if (dayDiff === 1) return 'Tomorrow'
+  return dateLabel
+}
+
+function groupTasksByDue(tasks: NotionToday['tasks']) {
+  const todayKey = dayKey(new Date())
+  const groups = new Map<string, NotionToday['tasks']>()
+
+  for (const task of tasks) {
+    const key = taskDueDateKey(task.due_at)
+    const bucket = groups.get(key)
+    if (bucket) bucket.push(task)
+    else groups.set(key, [task])
   }
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: TIME_ZONE, hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(due)
+
+  return [...groups.entries()]
+    .sort(([first], [second]) => {
+      if (first === 'none') return 1
+      if (second === 'none') return -1
+      return first.localeCompare(second)
+    })
+    .map(([key, groupedTasks]) => ({
+      key,
+      label: taskDueGroupLabel(key, todayKey),
+      tasks: groupedTasks,
+      isOverdue: key !== 'none' && key < todayKey,
+    }))
 }
 
 function priorityClass(priority: string | null) {
@@ -221,28 +257,29 @@ export function PlanningRegion({
         onNext={onNext}
       />
       <div className="task-section">
-        <div className="region-heading">
-          <div>
-            <p className="eyebrow">TASKS</p>
-            <h2>Today</h2>
-          </div>
-          <p>Notion · {notion.tasks.length}</p>
-        </div>
         {notion.status !== 'ready' || notion.tasks.length === 0 ? <SetupState service="Notion" status={notion.status} /> : (
-          <ul className="task-list">
-            {notion.tasks.slice(0, 8).map((task) => (
-              <li className={task.is_overdue ? 'is-overdue' : ''} key={task.id}>
-                {task.status && <em className={`status-badge ${statusClass(task.status)}`}>{task.status}</em>}
-                <div className="task-copy">
-                  <span>{task.title}</span>
-                  <small>
-                    {task.priority && <strong className={`priority-badge ${priorityClass(task.priority)}`}>{task.priority}</strong>}
-                    <span>{task.is_overdue ? 'Overdue' : taskDueLabel(task.due_at)}</span>
-                  </small>
-                </div>
-              </li>
+          <div className="task-groups">
+            {groupTasksByDue(notion.tasks.slice(0, 8)).map((group) => (
+              <section className={`task-group${group.isOverdue ? ' is-overdue' : ''}`} key={group.key} aria-label={group.label}>
+                <h3 className="task-group-heading">{group.label}</h3>
+                <ul className="task-list">
+                  {group.tasks.map((task) => (
+                    <li className={task.is_overdue ? 'is-overdue' : ''} key={task.id}>
+                      {task.status && <em className={`status-badge ${statusClass(task.status)}`}>{task.status}</em>}
+                      <div className="task-copy">
+                        <span>{task.title}</span>
+                        {task.priority && (
+                          <small>
+                            <strong className={`priority-badge ${priorityClass(task.priority)}`}>{task.priority}</strong>
+                          </small>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             ))}
-          </ul>
+          </div>
         )}
       </div>
     </section>

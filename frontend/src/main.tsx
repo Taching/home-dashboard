@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Header } from './components/Header'
-import { LightControl } from './components/LightControl'
+import { DeviceControls } from './components/DeviceControls'
 import { MediaRegion } from './components/MediaRegion'
 import { OpenClawChat } from './components/OpenClawChat'
 import { addDays, dayKey, PlanningRegion } from './components/PlanningRegion'
@@ -20,7 +20,7 @@ import {
   sendOpenClawMessage,
   fetchSpotifyNowPlaying,
 } from './lib/api'
-import type { CalendarToday, Dashboard, Light, NotionToday, OpenClawConversation, Reading, SpotifyNowPlaying } from './types'
+import type { CalendarToday, Dashboard, Light, NotionToday, OpenClawConversation, Reading, SpotifyNowPlaying, WaterPump } from './types'
 import './styles.css'
 
 const initialState: Dashboard = {
@@ -28,6 +28,7 @@ const initialState: Dashboard = {
   humidity_percent: null,
   last_updated_at: null,
   light: { last_command_state: 'unknown', last_command_at: null, available: false },
+  water_pump: { state: 'idle', last_run_at: null, last_run_status: null, available: false },
   system: {
     cpu_temperature_c: null,
     load_1m: null,
@@ -38,6 +39,9 @@ const initialState: Dashboard = {
     storage_used_percent: null,
     storage_free_gb: null,
     storage_total_gb: null,
+    bluetooth_status: 'unavailable',
+    bluetooth_device_name: null,
+    bluetooth_is_default_output: false,
   },
   display: { state: 'visible' },
   integrations: { sensor: 'pending', broadlink: 'pending', calendar: 'not_configured', notion: 'not_configured', spotify: 'not_configured', openclaw: 'not_configured' },
@@ -132,11 +136,42 @@ function App() {
     })
   }, [dashboard.light, execute])
 
+  const togglePlantPump = useCallback(() => {
+    const intent = dashboard.water_pump.state === 'running' ? 'water.stop' : 'water.run'
+    if (intent === 'water.run') {
+      void execute('water.run', {
+        optimistic: () => setDashboard((current) => ({
+          ...current,
+          water_pump: { ...current.water_pump, state: 'running' },
+        })),
+        onSuccess: (result) => {
+          if (result.water_pump) {
+            setDashboard((current) => ({ ...current, water_pump: result.water_pump as WaterPump }))
+          }
+        },
+        onFailure: () => setDashboard((current) => ({
+          ...current,
+          water_pump: { ...current.water_pump, state: 'idle' },
+        })),
+      })
+      return
+    }
+
+    void execute('water.stop', {
+      onSuccess: (result) => {
+        if (result.water_pump) {
+          setDashboard((current) => ({ ...current, water_pump: result.water_pump as WaterPump }))
+        }
+      },
+    })
+  }, [dashboard.water_pump.state, execute])
+
   useEffect(() => {
     void refresh()
-    const interval = window.setInterval(() => void refresh(), 60_000)
+    const intervalMs = dashboard.water_pump.state === 'running' ? 2_000 : 60_000
+    const interval = window.setInterval(() => void refresh(), intervalMs)
     return () => window.clearInterval(interval)
-  }, [refresh])
+  }, [refresh, dashboard.water_pump.state])
 
   useEffect(() => {
     if (typeof EventSource === 'undefined') {
@@ -187,19 +222,15 @@ function App() {
       {!chromeless && <Header />}
       <div className="dashboard-workspace">
         <aside className="environment-region" aria-label="Environment and light">
-          <LightControl
+          <DeviceControls
             light={dashboard.light}
-            pending={pendingIntent === 'light.turn_on' || pendingIntent === 'light.turn_off'}
-            onToggle={toggleLight}
+            pump={dashboard.water_pump}
+            lightPending={pendingIntent === 'light.turn_on' || pendingIntent === 'light.turn_off'}
+            pumpPending={pendingIntent === 'water.run' || pendingIntent === 'water.stop'}
+            onToggleLight={toggleLight}
+            onTogglePump={togglePlantPump}
           />
-          <section className="history" aria-labelledby="history-title">
-            <div className="history-heading">
-              <div>
-                <p className="eyebrow">TEMPERATURE</p>
-                <h2 id="history-title">Hourly readings</h2>
-              </div>
-              <p>Last 6 hours</p>
-            </div>
+          <section className="history" aria-label="Hourly temperature readings">
             <TemperatureTrend readings={readings} />
           </section>
           <SystemHealthPanel system={dashboard.system} />

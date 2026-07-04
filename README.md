@@ -157,6 +157,43 @@ light's existing remote emits infrared; it cannot control RF-only remotes.
 4. Restart the backend with the same Compose files and use the light control
    on the dashboard. A failed command never changes the recorded light state.
 
+## SwitchBot plant pump
+
+The dashboard can water plants through a SwitchBot Plug via the Cloud Open API.
+Manual control lives in the left column as **Plant pump**; OpenClaw can trigger
+the same 20-second pulse each morning.
+
+1. In the SwitchBot app, open **Profile → About** and tap the version number
+   ten times to reveal **Developer Options**. Copy the **token** and **secret**
+   into `.env` as `SWITCHBOT_TOKEN` and `SWITCHBOT_SECRET`.
+2. Discover the plug device ID:
+
+   ```sh
+   docker compose -f compose.yaml -f compose.pi.yaml run --rm backend python -m app.tools.discover_switchbot
+   ```
+
+   Copy the plug ID into `SWITCHBOT_PLUG_DEVICE_ID`.
+3. Generate a long random `DASHBOARD_AUTOMATION_TOKEN` in `.env`.
+4. Rebuild and restart the dashboard stack.
+5. Schedule OpenClaw (or host cron) to call the automation endpoint at
+   **08:00 Asia/Tokyo**:
+
+   ```sh
+   # ~/.config/chili/plant-water.env
+   DASHBOARD_AUTOMATION_TOKEN=your-token-here
+   CHILI_DASHBOARD_URL=http://127.0.0.1:8080
+   ```
+
+   ```cron
+   0 8 * * * /home/takatoshi/Work/home-dashboard/deploy/openclaw-plant-water.sh
+   ```
+
+   OpenClaw on the same Pi should use `http://127.0.0.1:8080`. If the cron job
+   runs elsewhere, point `CHILI_DASHBOARD_URL` at your Tailscale dashboard URL
+   instead.
+
+   If watering fails, the dashboard asks OpenClaw to notify you on Telegram.
+
 ## Project layout
 
 - `backend/` — FastAPI, device integrations, scheduling, database.

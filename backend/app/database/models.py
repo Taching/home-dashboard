@@ -24,6 +24,16 @@ class LightCommand(Base):
     source: Mapped[str] = mapped_column(String(32))
 
 
+class WaterPumpRun(Base):
+    __tablename__ = "water_pump_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    source: Mapped[str] = mapped_column(String(32))
+    duration_seconds: Mapped[int] = mapped_column(Integer)
+    result: Mapped[str] = mapped_column(String(64))
+
+
 class SpotifyToken(Base):
     __tablename__ = "spotify_tokens"
 

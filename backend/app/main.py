@@ -13,10 +13,12 @@ from app.domain.calendar_bridge import CalendarBridgeService
 from app.domain.notion import NotionService
 from app.domain.sensors import SensorService
 from app.domain.spotify import SpotifyService
+from app.domain.bluetooth_audio import BluetoothAudioService
 from app.domain.system_status import SystemStatusService
 from app.domain.voice_state import VoiceStateService
 from app.domain.voice_commands import VoiceCommandInterpreter
 from app.domain.system_volume import PiVolumeService
+from app.domain.water_pump import WaterPumpService
 from app.jobs.sensor_polling import run_sensor_poller
 
 
@@ -36,6 +38,10 @@ async def lifespan(application: FastAPI):
     application.state.voice_command_interpreter = VoiceCommandInterpreter()
     application.state.pi_volume_service = PiVolumeService()
     application.state.system_status_service = SystemStatusService()
+    application.state.bluetooth_audio_service = BluetoothAudioService()
+    water_pump_service = WaterPumpService()
+    water_pump_service.restore_latest()
+    application.state.water_pump_service = water_pump_service
     application.state.openclaw_service = OpenClawService(
         DashboardContextProvider(
             sensor_service=sensor_service,

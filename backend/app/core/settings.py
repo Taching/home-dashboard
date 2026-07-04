@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     openclaw_gateway_token: str | None = None
     openclaw_session_key: str = "agent:main:main"
     openclaw_prefer_telegram_session: bool = True
+    switchbot_token: str | None = None
+    switchbot_secret: str | None = None
+    switchbot_plug_device_id: str | None = None
+    water_pump_duration_seconds: int = 20
+    dashboard_automation_token: str | None = None
 
 
 settings = Settings()

@@ -104,8 +104,6 @@ class NotionService:
             return None
         due_at = self._due_at(properties)
         due_date = due_at.astimezone(self._timezone).date() if due_at else None
-        if due_date is None or due_date > today:
-            return None
         title = self._title(properties).strip()
         if not title:
             return None
@@ -113,7 +111,7 @@ class NotionService:
             id=str(page.get("id", "")),
             title=title,
             due_at=due_at,
-            is_overdue=due_date < today,
+            is_overdue=due_date is not None and due_date < today,
             status=self._property_name(properties, settings.notion_status_property),
             priority=self._property_name(properties, "Priority"),
         )

@@ -4,3 +4,7 @@ services:
   backend:
     devices:
       - /dev/i2c-1:/dev/i2c-1
+    environment:
+      PULSE_SERVER: unix:/run/pulse/native
+    volumes:
+      - /run/user/1000/pulse:/run/pulse:ro

@@ -47,9 +47,10 @@ class NotionServiceTests(unittest.TestCase):
             status, _, tasks = service.today()
 
         self.assertEqual(status, "ready")
-        self.assertEqual([task.id for task in tasks], ["overdue", "today"])
+        self.assertEqual([task.id for task in tasks], ["overdue", "today", "future"])
         self.assertTrue(tasks[0].is_overdue)
         self.assertFalse(tasks[1].is_overdue)
+        self.assertFalse(tasks[2].is_overdue)
 
     @patch("app.domain.notion.settings.notion_token", "secret")
     @patch("app.domain.notion.settings.notion_database_id", "database")

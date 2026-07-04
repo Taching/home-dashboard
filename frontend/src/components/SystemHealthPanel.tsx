@@ -58,16 +58,30 @@ function HealthMetric({ label, value, detail, percent, className = '' }: HealthM
   )
 }
 
+function BluetoothIcon() {
+  return (
+    <svg className="health-bluetooth-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M17.71 7.71 12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z" />
+    </svg>
+  )
+}
+
+function bluetoothLine(system: SystemStatus) {
+  if (system.bluetooth_status === 'unavailable') return 'Bluetooth unavailable'
+  if (system.bluetooth_status === 'disconnected') return 'No speaker connected'
+  const name = system.bluetooth_device_name ?? 'Bluetooth speaker'
+  return system.bluetooth_is_default_output ? `${name} · default output` : name
+}
+
+function bluetoothClass(system: SystemStatus) {
+  if (system.bluetooth_status === 'connected') return ' is-connected'
+  if (system.bluetooth_status === 'disconnected') return ' is-disconnected'
+  return ' is-unavailable'
+}
+
 export function SystemHealthPanel({ system }: { system: SystemStatus }) {
   return (
-    <section className="health-panel" aria-labelledby="health-title">
-      <div className="health-heading">
-        <div>
-          <p className="eyebrow">RASPBERRY PI</p>
-          <h3 id="health-title">System health</h3>
-        </div>
-        <p>1m load {system.load_1m === null ? '--' : system.load_1m.toFixed(2)}</p>
-      </div>
+    <section className="health-panel" aria-label="System health">
       <dl>
         <HealthMetric
           label="CPU temp"
@@ -95,6 +109,10 @@ export function SystemHealthPanel({ system }: { system: SystemStatus }) {
           className={statusClass(system.storage_used_percent)}
         />
       </dl>
+      <p className={`health-bluetooth${bluetoothClass(system)}`} aria-label={`Bluetooth audio: ${bluetoothLine(system)}`}>
+        <BluetoothIcon />
+        <span>{bluetoothLine(system)}</span>
+      </p>
     </section>
   )
 }

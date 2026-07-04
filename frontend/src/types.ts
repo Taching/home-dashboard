@@ -7,11 +7,19 @@ export type Light = {
   available: boolean
 }
 
+export type WaterPump = {
+  state: 'idle' | 'running'
+  last_run_at: string | null
+  last_run_status: string | null
+  available: boolean
+}
+
 export type Dashboard = {
   temperature_c: number | null
   humidity_percent: number | null
   last_updated_at: string | null
   light: Light
+  water_pump: WaterPump
   system: SystemStatus
   display: { state: string }
   integrations: Record<string, string>
@@ -27,6 +35,9 @@ export type SystemStatus = {
   storage_used_percent: number | null
   storage_free_gb: number | null
   storage_total_gb: number | null
+  bluetooth_status: 'connected' | 'disconnected' | 'unavailable'
+  bluetooth_device_name: string | null
+  bluetooth_is_default_output: boolean
 }
 
 export type Reading = {
@@ -38,14 +49,17 @@ export type Reading = {
 export type CommandIntent =
   | 'light.turn_on'
   | 'light.turn_off'
+  | 'water.run'
+  | 'water.stop'
   | 'display.show'
   | 'display.hide'
 
 export type CommandResult = {
-  status: 'success' | 'failed'
+  status: 'success' | 'failed' | 'skipped'
   intent: CommandIntent
   message: string | null
   light: Light | null
+  water_pump: WaterPump | null
 }
 
 export type CalendarEvent = {

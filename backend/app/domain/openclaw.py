@@ -46,8 +46,10 @@ class OpenClawService:
                 {"sessionKey": self._session_key(), "limit": limit},
             )
             messages = [self._normalise_message(message) for message in payload.get("messages", [])]
+            messages = [message for message in messages if message.text]
+            messages = self._dedupe_messages(messages)
             self._last_error = None
-            return [message for message in messages if message.text][-limit:]
+            return messages[-limit:]
         except Exception as error:
             self._last_error = "OpenClaw is unavailable."
             raise OpenClawError(self._last_error) from error
@@ -153,12 +155,35 @@ class OpenClawService:
         elif role not in {"user", "assistant", "system"}:
             role = "assistant"
         created_at = message.get("createdAt", message.get("timestamp"))
+        text = OpenClawService._display_text(str(content).strip(), role)
+        message_id = message.get("id", message.get("messageId"))
         return OpenClawMessage(
-            id=str(message.get("id", message.get("messageId", uuid4()))),
+            id=str(message_id if message_id is not None else uuid4()),
             role=role,
-            text=str(content).strip(),
+            text=text,
             created_at=str(created_at) if created_at is not None else None,
         )
+
+    @staticmethod
+    def _display_text(text: str, role: str) -> str:
+        if role != "user" or not text.startswith("Use this private dashboard context"):
+            return text
+        marker = "User request: "
+        if marker in text:
+            return text.split(marker, 1)[1].strip()
+        return text
+
+    @staticmethod
+    def _dedupe_messages(messages: list[OpenClawMessage]) -> list[OpenClawMessage]:
+        deduped: list[OpenClawMessage] = []
+        seen: set[tuple[str, str]] = set()
+        for message in messages:
+            key = (message.role, message.text)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(message)
+        return deduped
 
     @staticmethod
     def _message_text(message: dict[str, Any]) -> str:

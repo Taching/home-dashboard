@@ -5,7 +5,7 @@ import logging
 from typing import Literal
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 ALLOWED_INTENTS = {
     "light.turn_on",
     "light.turn_off",
+    "water.run",
+    "water.stop",
     "sensor.get_temperature",
     "sensor.get_humidity",
     "display.show",
@@ -36,11 +38,24 @@ class LightResponse(BaseModel):
     available: bool
 
 
+class WaterPumpResponse(BaseModel):
+    state: Literal["idle", "running"]
+    last_run_at: datetime | None
+    last_run_status: str | None
+    available: bool
+
+
 class CommandResponse(BaseModel):
-    status: Literal["success", "failed"]
+    status: Literal["success", "failed", "skipped"]
     intent: str
     message: str | None = None
     light: LightResponse | None = None
+    water_pump: WaterPumpResponse | None = None
+
+
+class AutomationWaterResponse(BaseModel):
+    status: Literal["success", "skipped", "failed"]
+    message: str | None = None
 
 
 IntegrationStatus = Literal["not_configured", "ready", "unavailable"]
@@ -148,6 +163,23 @@ class OpenClawSendResponse(BaseModel):
     message: str | None = None
 
 
+def _water_pump_response(snapshot) -> WaterPumpResponse:
+    return WaterPumpResponse(
+        state=snapshot.state,
+        last_run_at=snapshot.last_run_at,
+        last_run_status=snapshot.last_run_status,
+        available=snapshot.available,
+    )
+
+
+def _automation_authorized(authorization: str | None) -> bool:
+    token = settings.dashboard_automation_token
+    if not token or not authorization or not authorization.startswith("Bearer "):
+        return False
+    provided = authorization.removeprefix("Bearer ").strip()
+    return bool(provided) and hmac.compare_digest(provided, token)
+
+
 def _openclaw_conversation(service) -> OpenClawConversationResponse:
     if not service.configured():
         return OpenClawConversationResponse(status="not_configured")
@@ -176,9 +208,11 @@ async def health() -> dict[str, str]:
 async def dashboard(request: Request) -> dict[str, object]:
     sensor = request.app.state.sensor_service
     light = request.app.state.light_service.snapshot()
+    water_pump = request.app.state.water_pump_service.snapshot()
     spotify_status = request.app.state.spotify_service.status()
     openclaw_status = request.app.state.openclaw_service.status()
     system_status = request.app.state.system_status_service.snapshot()
+    bluetooth_audio = request.app.state.bluetooth_audio_service.snapshot()
     reading = sensor.current()
     return {
         "temperature_c": reading.temperature_c if reading else None,
@@ -188,6 +222,12 @@ async def dashboard(request: Request) -> dict[str, object]:
             "last_command_state": light.last_command_state,
             "last_command_at": light.last_command_at,
             "available": light.available,
+        },
+        "water_pump": {
+            "state": water_pump.state,
+            "last_run_at": water_pump.last_run_at,
+            "last_run_status": water_pump.last_run_status,
+            "available": water_pump.available,
         },
         "system": {
             "cpu_temperature_c": system_status.cpu_temperature_c,
@@ -199,6 +239,9 @@ async def dashboard(request: Request) -> dict[str, object]:
             "storage_used_percent": system_status.storage_used_percent,
             "storage_free_gb": system_status.storage_free_gb,
             "storage_total_gb": system_status.storage_total_gb,
+            "bluetooth_status": bluetooth_audio.status,
+            "bluetooth_device_name": bluetooth_audio.device_name,
+            "bluetooth_is_default_output": bluetooth_audio.is_default_output,
         },
         "display": {"state": "visible"},
         "integrations": {
@@ -208,6 +251,7 @@ async def dashboard(request: Request) -> dict[str, object]:
             "notion": request.app.state.notion_service.status(),
             "spotify": spotify_status,
             "openclaw": openclaw_status,
+            "water_pump": "ready" if water_pump.available else "not_configured",
         },
     }
 
@@ -424,6 +468,7 @@ async def command(request: CommandRequest, api_request: Request) -> CommandRespo
         raise HTTPException(status_code=400, detail="Unsupported command intent")
 
     light = api_request.app.state.light_service
+    water_pump = api_request.app.state.water_pump_service
     if request.intent in {"light.turn_on", "light.turn_off"}:
         result = light.set_state(
             "on" if request.intent == "light.turn_on" else "off", request.source
@@ -439,11 +484,50 @@ async def command(request: CommandRequest, api_request: Request) -> CommandRespo
             ),
         )
 
+    if request.intent == "water.run":
+        result = await water_pump.start_pulse(request.source)
+        return CommandResponse(
+            status=result.status,
+            intent=request.intent,
+            message=result.message,
+            water_pump=_water_pump_response(result.water_pump),
+        )
+
+    if request.intent == "water.stop":
+        result = await water_pump.stop(request.source)
+        return CommandResponse(
+            status="success" if result.status != "failed" else "failed",
+            intent=request.intent,
+            message=result.message,
+            water_pump=_water_pump_response(result.water_pump),
+        )
+
     return CommandResponse(
         status="failed",
         intent=request.intent,
         message="This dashboard command is not configured yet.",
     )
+
+
+@api_router.post("/automation/water", response_model=AutomationWaterResponse)
+async def automation_water(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> AutomationWaterResponse:
+    if not _automation_authorized(authorization):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    water_pump = request.app.state.water_pump_service
+    openclaw = request.app.state.openclaw_service
+    result = await water_pump.run_pulse("openclaw")
+
+    if result.status == "failed" and openclaw.configured():
+        try:
+            openclaw.send(f"Plant pump failed: {result.message}")
+        except Exception:
+            logger.exception("Could not notify OpenClaw about plant pump failure")
+
+    return AutomationWaterResponse(status=result.status, message=result.message)
 
 
 @api_router.post("/voice/transcripts")

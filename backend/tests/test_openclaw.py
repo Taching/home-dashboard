@@ -32,6 +32,41 @@ class OpenClawServiceTests(unittest.TestCase):
             ("user", "Hello"), ("assistant", "Visible reply"),
         ])
 
+    def test_history_dedupes_repeated_assistant_replies(self):
+        reply = "Done. I marked the task as Done in Notion."
+        service = FakeOpenClawService([{
+            "messages": [
+                {"id": "text", "role": "assistant", "content": [{"type": "text", "text": reply}]},
+                {"id": "tool", "role": "assistant", "content": [{
+                    "type": "toolCall",
+                    "name": "message",
+                    "arguments": {"message": reply},
+                }]},
+            ]
+        }])
+
+        messages = service.history()
+
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0].text, reply)
+
+    def test_history_strips_dashboard_context_from_user_messages(self):
+        service = FakeOpenClawService([{
+            "messages": [{
+                "id": "user",
+                "role": "user",
+                "content": (
+                    "Use this private dashboard context to answer the user's request.\n\n"
+                    "Temperature: 22 C\n\n"
+                    "User request: Mark the switchbot task done"
+                ),
+            }],
+        }])
+
+        messages = service.history()
+
+        self.assertEqual(messages[0].text, "Mark the switchbot task done")
+
     def test_history_shows_telegram_message_tool_and_hides_tool_results(self):
         service = FakeOpenClawService([{
             "messages": [

@@ -5,14 +5,18 @@ import { RegionBlock } from './components/RegionBlock'
 import { DeviceControls } from './components/DeviceControls'
 import { VoicePipelinePanel } from './components/VoicePipelinePanel'
 import { MediaRegion } from './components/MediaRegion'
+import { MotionModeToggle } from './components/MotionModeToggle'
 import { OpenClawChat } from './components/OpenClawChat'
 import { addDays, dayKey, PlanningRegion } from './components/PlanningRegion'
+import { StartupSplash } from './components/StartupSplash'
 import { SystemHealthPanel } from './components/SystemHealthPanel'
 import { useDashboardCommand } from './hooks/useDashboardCommand'
-import { useDashboardData } from './hooks/useDashboardData'
+import { useDashboardData, type DashboardInitialData } from './hooks/useDashboardData'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useSpotifyPlayback } from './hooks/useSpotifyPlayback'
+import { useStartupBoot } from './hooks/useStartupBoot'
 import { useVoiceMonitor } from './hooks/useVoiceMonitor'
+import { getMotionMode } from './lib/motionMode'
 import type { Light, WaterPump } from './types'
 import './styles.css'
 
@@ -23,19 +27,37 @@ function isPresentationMode() {
     || params.get('chromeless') === '1'
 }
 
-function isPerformanceMode() {
-  const params = new URLSearchParams(window.location.search)
-  return params.get('performance') === '1'
-    || params.get('lowMotion') === '1'
+function AppShell() {
+  const today = dayKey(new Date())
+  const motionMode = useMemo(getMotionMode, [])
+  const boot = useStartupBoot(today)
+
+  if (!boot.isReady || !boot.data) {
+    return (
+      <StartupSplash
+        checks={boot.checks}
+        motionMode={motionMode}
+        fading={boot.phase === 'fading'}
+      />
+    )
+  }
+
+  return <DashboardApp today={today} motionMode={motionMode} initialData={boot.data} />
 }
 
-function App() {
+function DashboardApp({
+  today,
+  motionMode,
+  initialData,
+}: {
+  today: string
+  motionMode: ReturnType<typeof getMotionMode>
+  initialData: DashboardInitialData
+}) {
   const [djPending, setDjPending] = useState(false)
   const { execute, pendingIntent } = useDashboardCommand()
   const { voiceStatus, activityEvents } = useVoiceMonitor()
-  const today = dayKey(new Date())
   const chromeless = useMemo(isPresentationMode, [])
-  const performanceMode = useMemo(isPerformanceMode, [])
   const {
     dashboard,
     calendar,
@@ -54,7 +76,7 @@ function App() {
     refreshOpenClaw,
     setVolume,
     sendToOpenClaw,
-  } = useDashboardData(today)
+  } = useDashboardData(today, initialData)
   const spotifyPlayback = useSpotifyPlayback(spotify.status === 'ready')
 
   const toggleLight = useCallback(() => {
@@ -107,15 +129,16 @@ function App() {
   const shortcuts = useMemo(() => ({
     l: toggleLight,
     r: () => {
-        void refresh()
-        void refreshCalendar()
+      void refresh()
+      void refreshCalendar()
     },
     s: () => void execute('display.hide'),
   }), [execute, refresh, refreshCalendar, toggleLight])
   useKeyboardShortcuts(shortcuts)
 
   return (
-    <main className={`dashboard-shell${chromeless ? ' is-chromeless' : ''}${performanceMode ? ' is-performance-mode' : ''}`}>
+    <main className={`dashboard-shell${chromeless ? ' is-chromeless' : ''}${motionMode === 'lite' ? ' is-lite-motion' : ''}`}>
+      <MotionModeToggle mode={motionMode} />
       {!chromeless && (
         <Header
           voiceStatus={voiceStatus}
@@ -186,4 +209,4 @@ function App() {
   )
 }
 
-createRoot(document.getElementById('root')!).render(<App />)
+createRoot(document.getElementById('root')!).render(<AppShell />)

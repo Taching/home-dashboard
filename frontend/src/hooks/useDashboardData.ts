@@ -14,7 +14,7 @@ import {
 import type { CalendarToday, Dashboard, NotionToday, OpenClawConversation, SpotifyNowPlaying, WeatherForecast } from '../types'
 import { usePolling } from './usePolling'
 
-const initialDashboard: Dashboard = {
+export const initialDashboard: Dashboard = {
   temperature_c: null,
   humidity_percent: null,
   last_updated_at: null,
@@ -41,11 +41,11 @@ const initialDashboard: Dashboard = {
   integrations: { sensor: 'pending', broadlink: 'pending', calendar: 'not_configured', notion: 'not_configured', spotify: 'not_configured', openclaw: 'not_configured' },
 }
 
-const initialCalendar: CalendarToday = { status: 'not_configured', synced_at: null, events: [] }
-const initialNotion: NotionToday = { status: 'not_configured', synced_at: null, tasks: [] }
-const initialSpotify: SpotifyNowPlaying = { status: 'not_configured', synced_at: null, track: null, artist: null, artwork_url: null, device_name: null, is_playing: false }
-const initialOpenClaw: OpenClawConversation = { status: 'not_configured', messages: [], message: null }
-const initialWeather: WeatherForecast = { status: 'not_configured', location: '', synced_at: null, today: null, tomorrow: null }
+export const initialCalendar: CalendarToday = { status: 'not_configured', synced_at: null, events: [] }
+export const initialNotion: NotionToday = { status: 'not_configured', synced_at: null, tasks: [] }
+export const initialSpotify: SpotifyNowPlaying = { status: 'not_configured', synced_at: null, track: null, artist: null, artwork_url: null, device_name: null, is_playing: false }
+export const initialOpenClaw: OpenClawConversation = { status: 'not_configured', messages: [], message: null }
+export const initialWeather: WeatherForecast = { status: 'not_configured', location: '', synced_at: null, today: null, tomorrow: null }
 
 const DASHBOARD_REFRESH_MS = 60_000
 const DASHBOARD_FAST_REFRESH_MS = 2_000
@@ -53,17 +53,30 @@ const CALENDAR_REFRESH_MS = 15 * 60_000
 const WEATHER_REFRESH_MS = 30 * 60_000
 const OPENCLAW_FALLBACK_REFRESH_MS = 5_000
 
-export function useDashboardData(today: string) {
-  const [dashboard, setDashboard] = useState<Dashboard>(initialDashboard)
-  const [calendar, setCalendar] = useState<CalendarToday>(initialCalendar)
-  const [notion, setNotion] = useState<NotionToday>(initialNotion)
-  const [spotify, setSpotify] = useState<SpotifyNowPlaying>(initialSpotify)
-  const [openclaw, setOpenClaw] = useState<OpenClawConversation>(initialOpenClaw)
-  const [weather, setWeather] = useState<WeatherForecast>(initialWeather)
+export type DashboardInitialData = {
+  dashboard: Dashboard
+  calendar: CalendarToday
+  notion: NotionToday
+  spotify: SpotifyNowPlaying
+  openclaw: OpenClawConversation
+  weather: WeatherForecast
+  selectedCalendarDate?: string | null
+}
+
+export function useDashboardData(today: string, initialData?: DashboardInitialData) {
+  const [dashboard, setDashboard] = useState(initialData?.dashboard ?? initialDashboard)
+  const [calendar, setCalendar] = useState(initialData?.calendar ?? initialCalendar)
+  const [notion, setNotion] = useState(initialData?.notion ?? initialNotion)
+  const [spotify, setSpotify] = useState(initialData?.spotify ?? initialSpotify)
+  const [openclaw, setOpenClaw] = useState(initialData?.openclaw ?? initialOpenClaw)
+  const [weather, setWeather] = useState(initialData?.weather ?? initialWeather)
   const [openclawPending, setOpenClawPending] = useState(false)
   const [openclawFeedback, setOpenClawFeedback] = useState<string | null>(null)
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null)
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(
+    initialData?.selectedCalendarDate ?? null,
+  )
   const [volumePending, setVolumePending] = useState(false)
+  const skipImmediatePoll = Boolean(initialData)
 
   const refresh = useCallback(async () => {
     const results = await Promise.allSettled([
@@ -141,9 +154,9 @@ export function useDashboardData(today: string) {
   }, [])
 
   const dashboardRefreshMs = dashboard.water_pump.state === 'running' ? DASHBOARD_FAST_REFRESH_MS : DASHBOARD_REFRESH_MS
-  usePolling(refresh, dashboardRefreshMs)
-  usePolling(refreshCalendar, CALENDAR_REFRESH_MS)
-  usePolling(refreshWeather, WEATHER_REFRESH_MS)
+  usePolling(refresh, dashboardRefreshMs, !skipImmediatePoll)
+  usePolling(refreshCalendar, CALENDAR_REFRESH_MS, !skipImmediatePoll)
+  usePolling(refreshWeather, WEATHER_REFRESH_MS, !skipImmediatePoll)
 
   useEffect(() => {
     if (typeof EventSource === 'undefined') {

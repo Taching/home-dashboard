@@ -123,10 +123,14 @@ docker compose -f compose.yaml -f compose.pi.yaml up --build -d
 ```
 
 The dashboard binds to `127.0.0.1:8080` by default. For a cleaner
-dashboard-only view, add `?mode=kiosk` to the dashboard URL. Add
-`&performance=1` for the Pi kiosk to disable nonessential motion and reduce
-Chromium CPU use. For phone access away from the Pi, use the Tailscale Serve
-setup below instead of exposing the dashboard directly to the LAN or internet.
+dashboard-only view, add `?mode=kiosk` to the dashboard URL. On refresh, a
+startup splash checks backend, calendar bridge, Notion, Spotify, OpenClaw, and
+weather before revealing the dashboard. Hover the bottom center of the screen to switch
+**Full** vs **Lite** motion (saved in the browser; toggling reloads the page).
+Lite mode keeps voice and Spotify equalizer animations but drops the heaviest
+GPU effects. Chromium CPU flags in `deploy/chili-kiosk.service` also help. For
+phone access away from the Pi, use the Tailscale Serve setup below instead of
+exposing the dashboard directly to the LAN or internet.
 
 ## BroadLink RM4 Mini setup
 

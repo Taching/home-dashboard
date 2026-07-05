@@ -21,8 +21,9 @@ class Settings(BaseSettings):
     screen_off_hour: int = 22
     display_schedule_enabled: bool = True
     display_power_script: str = "/deploy/display-power.sh"
-    display_x_display: str = ":0"
-    display_xauthority: str | None = "/home/takatoshi/.Xauthority"
+    display_wayland_display: str = "wayland-0"
+    display_xdg_runtime_dir: str = "/run/user/1000"
+    display_hdmi_output: str | None = None
     spotify_client_id: str | None = None
     spotify_client_secret: str | None = None
     spotify_redirect_uri: str = "http://127.0.0.1:8080/api/v1/spotify/callback"

@@ -6,13 +6,15 @@ services:
       - /dev/i2c-1:/dev/i2c-1
     environment:
       PULSE_SERVER: unix:/run/pulse/native
-      DISPLAY: ":0"
-      XAUTHORITY: /home/takatoshi/.Xauthority
+      WAYLAND_DISPLAY: wayland-0
+      XDG_RUNTIME_DIR: /run/user/1000
     volumes:
       - /run/user/1000/pulse:/run/pulse:ro
+      - /run/user/1000:/run/user/1000
       - ./deploy/display-power.sh:/deploy/display-power.sh:ro
-      - /tmp/.X11-unix:/tmp/.X11-unix:ro
-      - /home/takatoshi/.Xauthority:/home/takatoshi/.Xauthority:ro
+      - /usr/bin/wlr-randr:/usr/bin/wlr-randr:ro
+      - /lib/aarch64-linux-gnu/libwayland-client.so.0:/lib/aarch64-linux-gnu/libwayland-client.so.0:ro
+      - /lib/aarch64-linux-gnu/libffi.so.8:/lib/aarch64-linux-gnu/libffi.so.8:ro
 
   walkingpad-collector:
     network_mode: host

@@ -43,6 +43,7 @@ class DisplayService:
         self._schedule_enabled = settings.display_schedule_enabled
         self._manual_override_until: datetime | None = None
         self._applied_state: DisplayState | None = None
+        self._power_ready: bool | None = None
 
     def restore(self) -> None:
         if not self._state_path.exists():
@@ -61,6 +62,7 @@ class DisplayService:
             self._schedule_enabled = bool(payload["schedule_enabled"])
         override = payload.get("manual_override_until")
         self._manual_override_until = self._parse_timestamp(override)
+        self._probe_power()
         self.sync(self._now())
 
     def snapshot(self) -> DisplaySnapshot:
@@ -151,28 +153,62 @@ class DisplayService:
     def _apply(self, state: DisplayState) -> None:
         self._applied_state = state
         if not self._power_available():
+            logger.warning("Display power control unavailable; UI blanking only")
             return
         action = "on" if state == "visible" else "off"
+        command = self._power_command(action)
         try:
-            subprocess.run(
-                [str(self._power_script), action],
+            result = subprocess.run(
+                command,
                 check=True,
                 capture_output=True,
                 text=True,
                 timeout=5,
                 env=self._power_env(),
             )
+            if result.stderr.strip():
+                logger.debug("Display power stderr (%s): %s", action, result.stderr.strip())
         except (OSError, subprocess.SubprocessError) as error:
             logger.warning("Display power command failed (%s): %s", action, error)
 
+    def _power_command(self, action: str) -> list[str]:
+        return [str(self._power_script), action]
+
     def _power_available(self) -> bool:
-        return os.access(self._power_script, os.X_OK)
+        if self._power_ready is None:
+            return self._probe_power()
+        return self._power_ready
+
+    def _probe_power(self) -> bool:
+        if not os.access(self._power_script, os.X_OK):
+            self._power_ready = False
+            return False
+        runtime = Path(settings.display_xdg_runtime_dir)
+        wayland = settings.display_wayland_display
+        if not (runtime / wayland).exists():
+            self._power_ready = False
+            return False
+        try:
+            result = subprocess.run(
+                self._power_command("status"),
+                capture_output=True,
+                text=True,
+                timeout=5,
+                env=self._power_env(),
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            self._power_ready = False
+            return False
+        self._power_ready = result.returncode == 0
+        return self._power_ready
 
     def _power_env(self) -> dict[str, str]:
         env = os.environ.copy()
-        env.setdefault("DISPLAY", settings.display_x_display)
-        if settings.display_xauthority:
-            env.setdefault("XAUTHORITY", settings.display_xauthority)
+        env.setdefault("WAYLAND_DISPLAY", settings.display_wayland_display)
+        env.setdefault("XDG_RUNTIME_DIR", settings.display_xdg_runtime_dir)
+        if settings.display_hdmi_output:
+            env.setdefault("DISPLAY_HDMI_OUTPUT", settings.display_hdmi_output)
         return env
 
     def _persist(self) -> None:

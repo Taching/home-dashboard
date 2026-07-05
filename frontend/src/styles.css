@@ -32,6 +32,11 @@ button { font: inherit; }
   visibility: hidden;
 }
 
+.dashboard-shell.is-display-hidden,
+.dashboard-shell.is-display-hidden * {
+  cursor: none !important;
+}
+
 .display-blanket {
   position: fixed;
   inset: 0;

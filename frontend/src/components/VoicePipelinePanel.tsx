@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react'
 import { formatClock } from '../lib/format'
 import type { ActivityEvent, VoiceEventDirection, VoiceState, VoiceStatus } from '../types'
 
@@ -25,20 +24,16 @@ function eventKey(event: ActivityEvent) {
   return `${event.at}:${event.direction}:${event.service}:${event.detail}`
 }
 
+function scrollLatestEventIntoView(element: HTMLElement | null) {
+  element?.scrollIntoView({ block: 'end' })
+}
+
 type VoicePipelinePanelProps = {
   status: VoiceStatus
   events: ActivityEvent[]
 }
 
 export function VoicePipelinePanel({ status, events }: VoicePipelinePanelProps) {
-  const feedRef = useRef<HTMLOListElement>(null)
-
-  useEffect(() => {
-    const feed = feedRef.current
-    if (!feed) return
-    feed.scrollTop = feed.scrollHeight
-  }, [events])
-
   return (
     <section
       className={`voice-pipeline voice-pipeline-sidebar is-${status.state}`}
@@ -51,13 +46,14 @@ export function VoicePipelinePanel({ status, events }: VoicePipelinePanelProps) 
           {status.message && <p className="voice-message">{status.message}</p>}
         </div>
       )}
-      <ol ref={feedRef} className="voice-pipeline-feed">
+      <ol className="voice-pipeline-feed">
         {events.length === 0 ? (
           <li className="voice-pipeline-row is-empty">Waiting for activity…</li>
         ) : (
-          events.map((event) => (
+          events.map((event, index) => (
             <li
               key={eventKey(event)}
+              ref={index === events.length - 1 ? scrollLatestEventIntoView : undefined}
               className={`voice-pipeline-row is-${event.direction} svc-${event.service}`}
             >
               <time dateTime={event.at}>{eventTime(event.at)}</time>

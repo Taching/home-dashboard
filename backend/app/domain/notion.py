@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
-from typing import Any, Literal
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 import httpx
 
 from app.core.settings import settings
+from app.domain.json_types import JsonDict, as_dict, as_list
 
 NotionStatus = Literal["not_configured", "ready", "unavailable"]
 
@@ -55,7 +56,7 @@ class NotionService:
             self._last_error = str(error) or "Notion is unavailable."
             return "unavailable", datetime.now(UTC), []
 
-    def _query_pages(self) -> list[dict[str, Any]]:
+    def _query_pages(self) -> list[JsonDict]:
         assert settings.notion_token
         if settings.notion_data_source_id:
             url = f"https://api.notion.com/v1/data_sources/{settings.notion_data_source_id}/query"
@@ -76,7 +77,10 @@ class NotionService:
                 json={"page_size": 100},
             )
             response.raise_for_status()
-            return list(response.json().get("results", []))
+            payload = response.json()
+            if not isinstance(payload, dict):
+                return []
+            return [page for page in as_list(payload.get("results")) if isinstance(page, dict)]
         finally:
             if close_client:
                 client.close()
@@ -99,9 +103,9 @@ class NotionService:
             return 2
         return 3
 
-    def _page_to_task(self, page: dict[str, Any], today: date) -> NotionTask | None:
-        properties = page.get("properties", {})
-        if not isinstance(properties, dict) or self._is_done(properties):
+    def _page_to_task(self, page: JsonDict, today: date) -> NotionTask | None:
+        properties = as_dict(page.get("properties"))
+        if self._is_done(properties):
             return None
         if not self._is_todo_status(properties):
             return None
@@ -120,60 +124,57 @@ class NotionService:
             task_type=self._property_name(properties, settings.notion_type_property),
         )
 
-    def _title(self, properties: dict[str, Any]) -> str:
+    def _title(self, properties: JsonDict) -> str:
         prop = properties.get(settings.notion_title_property) or next(
-            (value for value in properties.values() if value.get("type") == "title"),
+            (value for value in properties.values() if isinstance(value, dict) and value.get("type") == "title"),
             {},
         )
-        values = prop.get("title") or prop.get("rich_text") or []
-        return "".join(str(item.get("plain_text", "")) for item in values)
+        prop_data = as_dict(prop)
+        values = as_list(prop_data.get("title") or prop_data.get("rich_text"))
+        return "".join(str(as_dict(item).get("plain_text", "")) for item in values)
 
-    def _due_at(self, properties: dict[str, Any]) -> datetime | None:
+    def _due_at(self, properties: JsonDict) -> datetime | None:
         prop = properties.get(settings.notion_due_property) or next(
-            (value for value in properties.values() if value.get("type") == "date"),
+            (value for value in properties.values() if isinstance(value, dict) and value.get("type") == "date"),
             None,
         )
-        date_value = prop.get("date") if prop else None
-        value = date_value.get("start") if isinstance(date_value, dict) else None
-        if not value:
+        date_value = as_dict(as_dict(prop).get("date"))
+        value = date_value.get("start")
+        if not isinstance(value, str) or not value:
             return None
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
             parsed = datetime.combine(parsed.date(), time.min, self._timezone)
         return parsed.astimezone(UTC)
 
-    def _is_todo_status(self, properties: dict[str, Any]) -> bool:
+    def _is_todo_status(self, properties: JsonDict) -> bool:
         status = self._property_name(properties, settings.notion_status_property)
         if not status:
             return True
         value = status.strip().lower()
         return value in {"to do", "todo", "backlog"}
 
-    def _is_done(self, properties: dict[str, Any]) -> bool:
-        checkbox = properties.get(settings.notion_done_property)
-        if checkbox and checkbox.get("type") == "checkbox":
+    def _is_done(self, properties: JsonDict) -> bool:
+        checkbox = as_dict(properties.get(settings.notion_done_property))
+        if checkbox.get("type") == "checkbox":
             return bool(checkbox.get("checkbox"))
-        status = properties.get(settings.notion_status_property)
+        status = as_dict(properties.get(settings.notion_status_property))
         if not status:
             return False
         done_values = {item.strip().lower() for item in settings.notion_done_statuses.split(",")}
         status_type = status.get("type")
-        value = status.get(status_type) if status_type in {"status", "select"} else {}
-        if not isinstance(value, dict):
-            return False
+        value = as_dict(status.get(status_type)) if status_type in {"status", "select"} else {}
         return str(value.get("name", "")).strip().lower() in done_values
 
-    def _property_name(self, properties: dict[str, Any], name: str) -> str | None:
-        prop = properties.get(name)
+    def _property_name(self, properties: JsonDict, name: str) -> str | None:
+        prop = as_dict(properties.get(name))
         if not prop:
             return None
         prop_type = prop.get("type")
         if prop_type in {"status", "select"}:
-            value = prop.get(prop_type) or {}
-            if not isinstance(value, dict):
-                return None
+            value = as_dict(prop.get(prop_type))
             return str(value.get("name") or "").strip() or None
         if prop_type == "multi_select":
-            values = [str(item.get("name", "")).strip() for item in prop.get("multi_select", [])]
+            values = [str(as_dict(item).get("name", "")).strip() for item in as_list(prop.get("multi_select"))]
             return ", ".join(value for value in values if value) or None
         return None

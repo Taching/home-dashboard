@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 
 type Props = {
   volumePercent: number | null
@@ -8,38 +8,30 @@ type Props = {
   onSetVolume: (volumePercent: number) => void
 }
 
+type VolumeState = {
+  source: number | null
+  local: number
+}
+
 export function SystemVolumeBar({ volumePercent, outputLabel, available, pending, onSetVolume }: Props) {
-  const [localVolume, setLocalVolume] = useState(volumePercent ?? 0)
-  const commitTimer = useRef<number | null>(null)
-  const lastCommitted = useRef(volumePercent ?? 0)
+  const [volumeState, setVolumeState] = useState<VolumeState>(() => ({
+    source: volumePercent,
+    local: volumePercent ?? 0,
+  }))
+  let localVolume = volumeState.local
 
-  useEffect(() => {
-    if (volumePercent !== null) {
-      setLocalVolume(volumePercent)
-      lastCommitted.current = volumePercent
-    }
-  }, [volumePercent])
+  if (volumePercent !== volumeState.source) {
+    localVolume = volumePercent ?? volumeState.local
+    setVolumeState({ source: volumePercent, local: localVolume })
+  }
 
-  useEffect(() => () => {
-    if (commitTimer.current !== null) window.clearTimeout(commitTimer.current)
-  }, [])
+  function setLocalVolume(value: number) {
+    setVolumeState({ source: volumePercent, local: value })
+  }
 
-  function commitVolume(value: number, immediate = false) {
-    if (!available || pending || value === lastCommitted.current) return
-    if (commitTimer.current !== null) {
-      window.clearTimeout(commitTimer.current)
-      commitTimer.current = null
-    }
-    if (immediate) {
-      lastCommitted.current = value
-      onSetVolume(value)
-      return
-    }
-    commitTimer.current = window.setTimeout(() => {
-      lastCommitted.current = value
-      onSetVolume(value)
-      commitTimer.current = null
-    }, 200)
+  function commitVolume(value: number) {
+    if (!available || pending || value === volumePercent) return
+    onSetVolume(value)
   }
 
   return (
@@ -64,10 +56,10 @@ export function SystemVolumeBar({ volumePercent, outputLabel, available, pending
         onChange={(event) => {
           const value = Number(event.target.value)
           setLocalVolume(value)
-          commitVolume(value)
         }}
-        onPointerUp={(event) => commitVolume(Number(event.currentTarget.value), true)}
-        onKeyUp={(event) => commitVolume(Number(event.currentTarget.value), true)}
+        onPointerUp={(event) => commitVolume(Number(event.currentTarget.value))}
+        onKeyUp={(event) => commitVolume(Number(event.currentTarget.value))}
+        onBlur={(event) => commitVolume(Number(event.currentTarget.value))}
       />
     </div>
   )

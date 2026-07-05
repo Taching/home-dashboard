@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import openClawLogo from '../assets/openclaw-logo.svg'
 import type { OpenClawConversation } from '../types'
 
@@ -10,14 +10,12 @@ type Props = {
   onRefresh: () => void
 }
 
+function scrollLatestMessageIntoView(element: HTMLElement | null) {
+  element?.scrollIntoView({ block: 'end' })
+}
+
 export function OpenClawChat({ conversation, pending, feedback, onSend, onRefresh }: Props) {
   const [draft, setDraft] = useState('')
-  const transcript = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const element = transcript.current
-    if (element) element.scrollTop = element.scrollHeight
-  }, [conversation.messages.length])
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -55,11 +53,15 @@ export function OpenClawChat({ conversation, pending, feedback, onSend, onRefres
         </div>
       ) : (
         <>
-          <div className="openclaw-transcript" ref={transcript} aria-live="polite">
+          <div className="openclaw-transcript" aria-live="polite">
             {conversation.messages.length === 0 ? (
               <p className="openclaw-empty-hint">Say “Hey Chili” or type below. Messages sync with your Telegram chat.</p>
-            ) : conversation.messages.map((message) => (
-              <article key={message.id} className={`openclaw-message is-${message.role}`}>
+            ) : conversation.messages.map((message, index) => (
+              <article
+                key={message.id}
+                ref={index === conversation.messages.length - 1 ? scrollLatestMessageIntoView : undefined}
+                className={`openclaw-message is-${message.role}`}
+              >
                 <span className="openclaw-message-label">{message.role === 'user' ? 'You' : 'Chili'}</span>
                 <p className="openclaw-message-body">{message.text}</p>
               </article>

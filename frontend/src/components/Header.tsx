@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
 import chiliLogo from '../assets/chili-logo.svg'
 import { EnvironmentBadge } from './EnvironmentBadge'
 import { WeatherWidget } from './WeatherWidget'
+import { useClock } from '../hooks/useClock'
 import { formatClock, formatDate } from '../lib/format'
 import type { VoiceStatus, WeatherForecast } from '../types'
 import { voiceLabels } from './VoicePipelinePanel'
@@ -14,12 +14,7 @@ type HeaderProps = {
 }
 
 export function Header({ voiceStatus, temperature, humidity, weather }: HeaderProps) {
-  const [now, setNow] = useState(() => new Date())
-
-  useEffect(() => {
-    const interval = window.setInterval(() => setNow(new Date()), 1_000)
-    return () => window.clearInterval(interval)
-  }, [])
+  const now = useClock()
 
   return (
     <header className="dashboard-header">

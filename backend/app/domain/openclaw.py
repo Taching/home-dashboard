@@ -4,12 +4,13 @@ import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Protocol
 from uuid import uuid4
 
 from websockets.sync.client import connect
 
 from app.core.settings import settings
+from app.domain.json_types import JsonDict, JsonValue, as_dict, as_list
 
 
 class OpenClawError(RuntimeError):
@@ -22,6 +23,14 @@ class OpenClawMessage:
     role: str
     text: str
     created_at: str | None = None
+
+
+class WebSocketConnection(Protocol):
+    def recv(self) -> str | bytes:
+        ...
+
+    def send(self, message: str | bytes) -> None:
+        ...
 
 
 class OpenClawService:
@@ -45,7 +54,11 @@ class OpenClawService:
                 "chat.history",
                 {"sessionKey": self._session_key(), "limit": limit},
             )
-            messages = [self._normalise_message(message) for message in payload.get("messages", [])]
+            messages = [
+                self._normalise_message(message)
+                for message in as_list(payload.get("messages"))
+                if isinstance(message, dict)
+            ]
             messages = [message for message in messages if message.text]
             messages = self._dedupe_messages(messages)
             self._last_error = None
@@ -108,14 +121,14 @@ class OpenClawService:
         except Exception:
             return settings.openclaw_session_key
 
-    def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+    def _request(self, method: str, params: JsonDict) -> JsonDict:
         if not self.configured():
             raise OpenClawError("OpenClaw is not configured.")
         assert settings.openclaw_gateway_ws_url and settings.openclaw_gateway_token
         with connect(settings.openclaw_gateway_ws_url, open_timeout=5, close_timeout=2) as socket:
-            challenge = json.loads(socket.recv())
-            nonce = challenge.get("payload", {}).get("nonce")
-            if not nonce:
+            challenge = self._json_object(socket.recv())
+            nonce = as_dict(challenge.get("payload")).get("nonce")
+            if not isinstance(nonce, str) or not nonce:
                 raise OpenClawError("OpenClaw did not provide a connection challenge.")
             connect_id = str(uuid4())
             socket.send(json.dumps({
@@ -135,18 +148,23 @@ class OpenClawService:
             return self._receive_response(socket, request_id)
 
     @staticmethod
-    def _receive_response(socket: Any, request_id: str) -> dict[str, Any]:
+    def _receive_response(socket: WebSocketConnection, request_id: str) -> JsonDict:
         while True:
-            frame = json.loads(socket.recv())
+            frame = OpenClawService._json_object(socket.recv())
             if frame.get("type") != "res" or frame.get("id") != request_id:
                 continue
             if not frame.get("ok"):
-                error = frame.get("error", {})
-                raise OpenClawError(error.get("message", "OpenClaw rejected the request."))
-            return frame.get("payload") or {}
+                message = as_dict(frame.get("error")).get("message")
+                raise OpenClawError(str(message or "OpenClaw rejected the request."))
+            return as_dict(frame.get("payload"))
 
     @staticmethod
-    def _normalise_message(message: dict[str, Any]) -> OpenClawMessage:
+    def _json_object(raw: str | bytes) -> JsonDict:
+        value = json.loads(raw)
+        return value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _normalise_message(message: JsonDict) -> OpenClawMessage:
         content = OpenClawService._message_text(message)
         role = str(message.get("role", "assistant"))
         if role == "toolResult":
@@ -186,7 +204,7 @@ class OpenClawService:
         return deduped
 
     @staticmethod
-    def _message_text(message: dict[str, Any]) -> str:
+    def _message_text(message: JsonDict) -> str:
         content = message.get("content", message.get("text", ""))
         if isinstance(content, str):
             return content
@@ -198,14 +216,14 @@ class OpenClawService:
         return str(content)
 
     @staticmethod
-    def _content_part_text(part: Any) -> str:
+    def _content_part_text(part: JsonValue) -> str:
         if not isinstance(part, dict):
             return str(part)
         if part.get("type") == "toolCall":
             if part.get("name") != "message":
                 return ""
-            arguments = part.get("arguments") if isinstance(part.get("arguments"), dict) else {}
-            input_data = part.get("input") if isinstance(part.get("input"), dict) else {}
+            arguments = as_dict(part.get("arguments"))
+            input_data = as_dict(part.get("input"))
             message = arguments.get("message", input_data.get("message", ""))
             return str(message)
         if part.get("type") == "toolResult":
@@ -214,16 +232,13 @@ class OpenClawService:
         return value if isinstance(value, str) else ""
 
     @staticmethod
-    def _find_preferred_session_key(payload: dict[str, Any]) -> str | None:
-        sessions = payload.get("sessions", [])
-        if not isinstance(sessions, list):
-            return None
-        telegram_sessions = []
-        for session in sessions:
+    def _find_preferred_session_key(payload: JsonDict) -> str | None:
+        telegram_sessions: list[JsonDict] = []
+        for session in as_list(payload.get("sessions")):
             if not isinstance(session, dict):
                 continue
-            origin = session.get("origin") if isinstance(session.get("origin"), dict) else {}
-            delivery = session.get("deliveryContext") if isinstance(session.get("deliveryContext"), dict) else {}
+            origin = as_dict(session.get("origin"))
+            delivery = as_dict(session.get("deliveryContext"))
             is_telegram = (
                 session.get("lastChannel") == "telegram"
                 or origin.get("provider") == "telegram"
@@ -234,20 +249,28 @@ class OpenClawService:
                 telegram_sessions.append(session)
         if not telegram_sessions:
             return None
-        selected = max(telegram_sessions, key=lambda item: int(item.get("updatedAt") or 0))
+        selected = max(telegram_sessions, key=lambda item: OpenClawService._integer_value(item.get("updatedAt")))
         return str(selected["key"])
 
     @staticmethod
-    def _find_delivery_status(payload: dict[str, Any]) -> str | None:
-        result = payload.get("result", payload)
-        if not isinstance(result, dict):
-            return None
-        return result.get("deliveryStatus", result.get("delivery_status", result.get("status", "accepted")))
+    def _integer_value(value: JsonValue | None) -> int:
+        if isinstance(value, bool) or value is None:
+            return 0
+        if isinstance(value, int | float | str):
+            try:
+                return int(value)
+            except ValueError:
+                return 0
+        return 0
 
     @staticmethod
-    def _find_reply(payload: dict[str, Any]) -> str | None:
-        result = payload.get("result", payload)
-        if not isinstance(result, dict):
-            return None
+    def _find_delivery_status(payload: JsonDict) -> str | None:
+        result = as_dict(payload.get("result")) or payload
+        value = result.get("deliveryStatus", result.get("delivery_status", result.get("status", "accepted")))
+        return str(value) if value else None
+
+    @staticmethod
+    def _find_reply(payload: JsonDict) -> str | None:
+        result = as_dict(payload.get("result")) or payload
         value = result.get("reply", result.get("text"))
         return str(value) if value else None

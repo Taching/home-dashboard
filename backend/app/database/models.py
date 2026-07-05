@@ -85,3 +85,30 @@ class CalendarBridgeEvent(Base):
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     is_all_day: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class ChiliNotifyDedupe(Base):
+    __tablename__ = "chili_notify_dedupe"
+
+    dedupe_key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class WalkingPadSession(Base):
+    __tablename__ = "walkingpad_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    external_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    distance_km: Mapped[float] = mapped_column(Float, default=0.0)
+    steps: Mapped[int] = mapped_column(Integer, default=0)
+    calories: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class WalkingPadCollectorSync(Base):
+    __tablename__ = "walkingpad_collector_syncs"
+
+    source: Mapped[str] = mapped_column(String(32), primary_key=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

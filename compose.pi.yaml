@@ -8,3 +8,11 @@ services:
       PULSE_SERVER: unix:/run/pulse/native
     volumes:
       - /run/user/1000/pulse:/run/pulse:ro
+
+  walkingpad-collector:
+    network_mode: host
+    volumes:
+      - /var/run/dbus:/var/run/dbus
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN

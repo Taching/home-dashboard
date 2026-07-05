@@ -1,9 +1,12 @@
 import chiliLogo from '../assets/chili-logo.svg'
+import { ChiliNotificationBanner } from './ChiliNotificationBanner'
 import { EnvironmentBadge } from './EnvironmentBadge'
+import { WalkingPadBadge } from './WalkingPadBadge'
 import { WeatherWidget } from './WeatherWidget'
 import { useClock } from '../hooks/useClock'
 import { formatClock, formatDate } from '../lib/format'
-import type { VoiceStatus, WeatherForecast } from '../types'
+import type { ChiliNotification } from '../lib/chiliNotifications'
+import type { VoiceStatus, WalkingPadToday, WeatherForecast } from '../types'
 import { voiceLabels } from './VoicePipelinePanel'
 
 type HeaderProps = {
@@ -11,10 +14,22 @@ type HeaderProps = {
   temperature: number | null
   humidity: number | null
   weather: WeatherForecast
+  walkingPad: WalkingPadToday
+  notification: ChiliNotification | null
+  notificationExiting?: boolean
 }
 
-export function Header({ voiceStatus, temperature, humidity, weather }: HeaderProps) {
+export function Header({
+  voiceStatus,
+  temperature,
+  humidity,
+  weather,
+  walkingPad,
+  notification,
+  notificationExiting = false,
+}: HeaderProps) {
   const now = useClock()
+  const showNotification = Boolean(notification)
 
   return (
     <header className="dashboard-header">
@@ -27,9 +42,14 @@ export function Header({ voiceStatus, temperature, humidity, weather }: HeaderPr
           <img src={chiliLogo} alt="" className="brand-logo" />
           <span className="sr-only">{voiceLabels[voiceStatus.state]}</span>
         </a>
-        <span className={`voice-status-chip is-${voiceStatus.state}`}>{voiceLabels[voiceStatus.state]}</span>
+        {showNotification ? (
+          <ChiliNotificationBanner notification={notification} exiting={notificationExiting} />
+        ) : (
+          <span className={`voice-status-chip is-${voiceStatus.state}`}>{voiceLabels[voiceStatus.state]}</span>
+        )}
       </div>
       <div className="header-meta">
+        <WalkingPadBadge walkingPad={walkingPad} />
         <EnvironmentBadge temperature={temperature} humidity={humidity} />
         <WeatherWidget forecast={weather} />
         <time className="clock" dateTime={now.toISOString()}>

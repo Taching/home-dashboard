@@ -38,6 +38,37 @@ OPENCLAW_SESSION_KEY=agent:main:main
 
 Restart the dashboard with `docker compose up --build -d`. The token is read by the backend only; it is never sent to the browser. The OpenClaw Gateway must accept the dashboard backend as an authenticated local operator client.
 
+## WalkingPad S1
+
+The dashboard can track daily walking from a KingSmith WalkingPad S1 over BLE and show progress in the header. OpenClaw receives the same stats in its private context snapshot, and Chili can nudge you to walk when there is at least one hour free before your next meeting between 10:00 and 20:00.
+
+1. Find the pad BLE name on the Pi:
+
+   ```sh
+   bluetoothctl scan on
+   ```
+
+2. Add to `.env`:
+
+   ```env
+   WALKINGPAD_BLE_NAME=KS-HD-XXXX
+   WALKINGPAD_BRIDGE_TOKEN=<long random token>
+   WALKINGPAD_GOAL_MINUTES=45
+   WALKINGPAD_GOAL_DISTANCE_KM=3.0
+   WALKINGPAD_REMINDER_START_HOUR=10
+   WALKINGPAD_REMINDER_END_HOUR=20
+   WALKINGPAD_MIN_GAP_BEFORE_MEETING_MIN=60
+   WALKINGPAD_MIN_SESSION_MINUTES=15
+   ```
+
+3. Start the BLE collector alongside the dashboard:
+
+   ```sh
+   docker compose -f compose.yaml -f compose.pi.yaml --profile walkingpad up -d --build
+   ```
+
+Close the KS Fit app on your phone while the collector runs; the treadmill allows only one BLE client at a time. The collector uses host networking and D-Bus on the Pi so it can reach the pad reliably.
+
 ## Notion tasks
 
 The task rail reads incomplete Notion tasks due today or overdue. Create a

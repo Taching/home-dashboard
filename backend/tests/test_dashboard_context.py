@@ -51,6 +51,10 @@ class FakeLightService:
 
 class FakeCalendar:
     def today(self):
+        return self.upcoming(1)
+
+    def upcoming(self, days: int):
+        _ = days
         return "ready", datetime(2026, 7, 4, 0, 50, tzinfo=UTC), [
             FakeEvent("Lunch", datetime(2026, 7, 4, 3, 0, tzinfo=UTC), datetime(2026, 7, 4, 4, 0, tzinfo=UTC)),
         ]
@@ -74,6 +78,15 @@ class FakeSpotify:
         }
 
 
+class FakeWalkingPad:
+    def context_lines(self, calendar_events, now=None):
+        _ = calendar_events, now
+        return [
+            "- Walking: ready; today 18/45 min and 0.9/3.0 km; 1 session(s); idle.",
+            "- Walking goal: not yet met.",
+        ]
+
+
 class DashboardContextProviderTests(unittest.TestCase):
     def test_snapshot_includes_dashboard_data_for_openclaw(self):
         provider = DashboardContextProvider(
@@ -82,6 +95,7 @@ class DashboardContextProviderTests(unittest.TestCase):
             calendar_service=FakeCalendar(),
             notion_service=FakeNotion(),
             spotify_service=FakeSpotify(),
+            walkingpad_service=FakeWalkingPad(),
             now=lambda: datetime(2026, 7, 4, 1, 5, tzinfo=UTC),
         )
 
@@ -90,7 +104,9 @@ class DashboardContextProviderTests(unittest.TestCase):
         self.assertIn("Temperature: 24.3 C", context)
         self.assertIn("Light: last command on", context)
         self.assertIn("Calendar: ready", context)
+        self.assertIn("2026-07-04 (Saturday): 1 event(s)", context)
         self.assertIn("Lunch", context)
+        self.assertIn("Walking: ready", context)
         self.assertIn("Tasks: ready", context)
         self.assertIn("Water plants", context)
         self.assertIn("Spotify: ready; playing; Summer Song by The Band", context)

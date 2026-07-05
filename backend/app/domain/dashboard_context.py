@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Protocol
+from zoneinfo import ZoneInfo
 
+from app.core.settings import settings
 from app.domain.calendar_bridge import CalendarEvent
 from app.domain.lights import LightSnapshot
 from app.domain.notion import NotionStatus, NotionTask
 from app.domain.sensors import Reading
+
+
+class WalkingPadContextService(Protocol):
+    def context_lines(self, calendar_events: list[CalendarEvent], now: datetime | None = None) -> list[str]: ...
 
 
 class SensorContextService(Protocol):
@@ -22,6 +28,8 @@ class LightContextService(Protocol):
 class CalendarContextService(Protocol):
     def today(self) -> tuple[str, datetime | None, list[CalendarEvent]]: ...
 
+    def upcoming(self, days: int) -> tuple[str, datetime | None, list[CalendarEvent]]: ...
+
 
 class NotionContextService(Protocol):
     def today(self) -> tuple[NotionStatus, datetime | None, list[NotionTask]]: ...
@@ -32,6 +40,9 @@ class SpotifyContextService(Protocol):
 
 
 class DashboardContextProvider:
+    CALENDAR_LOOKAHEAD_DAYS = 14
+    MAX_EVENTS_PER_DAY = 8
+
     def __init__(
         self,
         *,
@@ -40,6 +51,7 @@ class DashboardContextProvider:
         calendar_service: CalendarContextService,
         notion_service: NotionContextService,
         spotify_service: SpotifyContextService,
+        walkingpad_service: WalkingPadContextService | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._sensor_service = sensor_service
@@ -47,6 +59,7 @@ class DashboardContextProvider:
         self._calendar_service = calendar_service
         self._notion_service = notion_service
         self._spotify_service = spotify_service
+        self._walkingpad_service = walkingpad_service
         self._now = now or (lambda: datetime.now(UTC))
 
     def __call__(self) -> str:
@@ -57,6 +70,7 @@ class DashboardContextProvider:
         lines.extend(self._sensor_lines())
         lines.extend(self._light_lines())
         lines.extend(self._calendar_lines())
+        lines.extend(self._walking_lines())
         lines.extend(self._task_lines())
         lines.extend(self._spotify_lines())
         return "\n".join(lines)
@@ -93,17 +107,60 @@ class DashboardContextProvider:
 
     def _calendar_lines(self) -> list[str]:
         try:
-            status, synced_at, events = self._calendar_service.today()
+            status, synced_at, events = self._calendar_service.upcoming(self.CALENDAR_LOOKAHEAD_DAYS)
             synced = synced_at.isoformat() if synced_at else "never"
-            lines = [f"- Calendar: {status}; synced at {synced}; {len(events)} event(s) today."]
-            for event in events[:8]:
-                label = "all day" if event.is_all_day else f"{event.start_at.isoformat()} to {event.end_at.isoformat()}"
-                lines.append(f"  - {event.title}: {label}.")
-            if len(events) > 8:
-                lines.append(f"  - {len(events) - 8} more event(s) omitted.")
+            tz = ZoneInfo(settings.timezone)
+            today = self._now().astimezone(tz).date()
+            weekday = today.strftime("%A")
+            lines = [
+                (
+                    f"- Calendar: {status}; synced at {synced}; local date today is "
+                    f"{today.isoformat()} ({weekday}); {self.CALENDAR_LOOKAHEAD_DAYS}-day schedule:"
+                ),
+            ]
+            grouped = self._group_events_by_local_date(events, tz)
+            for offset in range(self.CALENDAR_LOOKAHEAD_DAYS):
+                day = today + timedelta(days=offset)
+                day_events = grouped.get(day, [])
+                day_label = day.strftime("%A")
+                lines.append(f"  - {day.isoformat()} ({day_label}): {len(day_events)} event(s).")
+                for event in day_events[: self.MAX_EVENTS_PER_DAY]:
+                    lines.append(f"    - {event.title}: {self._format_event_time(event, tz)}.")
+                if len(day_events) > self.MAX_EVENTS_PER_DAY:
+                    lines.append(f"    - {len(day_events) - self.MAX_EVENTS_PER_DAY} more on this day omitted.")
             return lines
         except Exception:
             return ["- Calendar: unavailable."]
+
+    def _walking_lines(self) -> list[str]:
+        if self._walkingpad_service is None:
+            return ["- Walking: not configured."]
+        try:
+            _, _, events = self._calendar_service.today()
+            return self._walkingpad_service.context_lines(events, self._now())
+        except Exception:
+            return ["- Walking: unavailable."]
+
+    @staticmethod
+    def _group_events_by_local_date(
+        events: list[CalendarEvent],
+        tz: ZoneInfo,
+    ) -> dict[date, list[CalendarEvent]]:
+        grouped: dict[date, list[CalendarEvent]] = {}
+        for event in events:
+            day = event.start_at.astimezone(tz).date()
+            grouped.setdefault(day, []).append(event)
+        for day_events in grouped.values():
+            day_events.sort(key=lambda event: event.start_at)
+        return grouped
+
+    @staticmethod
+    def _format_event_time(event: CalendarEvent, tz: ZoneInfo) -> str:
+        if event.is_all_day:
+            return "all day"
+        start = event.start_at.astimezone(tz)
+        end = event.end_at.astimezone(tz)
+        return f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
 
     def _task_lines(self) -> list[str]:
         try:

@@ -44,3 +44,15 @@ services:
         condition: service_started
     profiles: [voice]
     restart: unless-stopped
+
+  walkingpad-collector:
+    build:
+      context: ./walkingpad-collector
+    env_file: .env
+    environment:
+      DASHBOARD_URL: http://127.0.0.1:8080
+    depends_on:
+      backend:
+        condition: service_started
+    profiles: [walkingpad]
+    restart: unless-stopped

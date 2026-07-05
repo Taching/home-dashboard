@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Header } from './components/Header'
 import { RegionBlock } from './components/RegionBlock'
@@ -10,6 +10,7 @@ import { OpenClawChat } from './components/OpenClawChat'
 import { addDays, dayKey, PlanningRegion } from './components/PlanningRegion'
 import { StartupSplash } from './components/StartupSplash'
 import { SystemHealthPanel } from './components/SystemHealthPanel'
+import { useChiliNotifications } from './hooks/useChiliNotifications'
 import { useDashboardCommand } from './hooks/useDashboardCommand'
 import { useDashboardData, type DashboardInitialData } from './hooks/useDashboardData'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
@@ -55,6 +56,8 @@ function DashboardApp({
   initialData: DashboardInitialData
 }) {
   const [djPending, setDjPending] = useState(false)
+  const [spotifyIntentToken, setSpotifyIntentToken] = useState(0)
+  const processedActivityCountRef = useRef(0)
   const { execute, pendingIntent } = useDashboardCommand()
   const { voiceStatus, activityEvents } = useVoiceMonitor()
   const chromeless = useMemo(isPresentationMode, [])
@@ -65,6 +68,8 @@ function DashboardApp({
     spotify,
     openclaw,
     weather,
+    walkingPad,
+    walkReminder,
     openclawPending,
     openclawFeedback,
     selectedCalendarDate,
@@ -78,6 +83,33 @@ function DashboardApp({
     sendToOpenClaw,
   } = useDashboardData(today, initialData)
   const spotifyPlayback = useSpotifyPlayback(spotify.status === 'ready')
+
+  const markSpotifyIntent = useCallback(() => {
+    setSpotifyIntentToken((token) => token + 1)
+  }, [])
+
+  useEffect(() => {
+    if (activityEvents.length <= processedActivityCountRef.current) return
+    const fresh = activityEvents.slice(processedActivityCountRef.current)
+    processedActivityCountRef.current = activityEvents.length
+    const wantsSpotifyIntent = fresh.some((event) => {
+      if (event.service !== 'spotify') return false
+      const detail = event.detail.toLowerCase()
+      return detail.includes('start dj') || detail.includes('transfer playback')
+    })
+    if (wantsSpotifyIntent) setSpotifyIntentToken((token) => token + 1)
+  }, [activityEvents])
+
+  const { active: chiliNotification, exiting: chiliNotificationExiting } = useChiliNotifications({
+    today,
+    calendar,
+    notion,
+    spotify,
+    openclaw,
+    voiceStatus,
+    spotifyIntentToken,
+    walkReminder,
+  })
 
   const toggleLight = useCallback(() => {
     const previousLight = dashboard.light
@@ -145,6 +177,9 @@ function DashboardApp({
           temperature={dashboard.temperature_c}
           humidity={dashboard.humidity_percent}
           weather={weather}
+          walkingPad={walkingPad}
+          notification={chiliNotification}
+          notificationExiting={chiliNotificationExiting}
         />
       )}
       <div className="dashboard-workspace">
@@ -176,12 +211,16 @@ function DashboardApp({
             playerPaused={spotifyPlayback.paused}
             playerTrack={spotifyPlayback.track}
             playerError={spotifyPlayback.error}
-            onPlayHere={() => void spotifyPlayback.playHere()}
+            onPlayHere={() => {
+              markSpotifyIntent()
+              void spotifyPlayback.playHere()
+            }}
             onTogglePlayback={() => void spotifyPlayback.togglePlayback()}
             onPrevious={() => void spotifyPlayback.previousTrack()}
             onNext={() => void spotifyPlayback.nextTrack()}
             djPending={djPending}
             onStartDj={() => {
+              markSpotifyIntent()
               setDjPending(true)
               void spotifyPlayback.startDj().finally(() => setDjPending(false))
             }}
@@ -200,7 +239,7 @@ function DashboardApp({
             conversation={openclaw}
             pending={openclawPending}
             feedback={openclawFeedback}
-            onSend={(message) => void sendToOpenClaw(message)}
+            onSend={(message) => sendToOpenClaw(message)}
             onRefresh={() => void refreshOpenClaw()}
           />
         </aside>

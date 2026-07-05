@@ -63,3 +63,13 @@ class CalendarBridgeServiceTests(unittest.TestCase):
 
         self.assertEqual(status, "unavailable")
         self.assertEqual(len(events), 1)
+
+    def test_sync_and_fetch_log_cache_skip_unchanged_snapshots(self) -> None:
+        events = [
+            CalendarEvent("one", "Standup", self.now, self.now + timedelta(hours=1)),
+        ]
+
+        self.assertTrue(self.service.should_log_sync(events))
+        self.assertFalse(self.service.should_log_sync(events))
+        self.assertTrue(self.service.should_log_fetch("2026-06-22:30", events))
+        self.assertFalse(self.service.should_log_fetch("2026-06-22:30", events))

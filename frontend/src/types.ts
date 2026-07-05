@@ -106,6 +106,35 @@ export type SpotifyNowPlaying = {
   is_playing: boolean
 }
 
+export type WalkingPadStatus = IntegrationStatus | 'walking'
+
+export type WalkingPadToday = {
+  status: WalkingPadStatus
+  synced_at: string | null
+  total_minutes: number
+  total_distance_km: number
+  total_steps: number
+  total_calories: number
+  goal_minutes: number
+  goal_distance_km: number
+  session_count: number
+  goal_met: boolean
+  active_session: {
+    external_id: string
+    started_at: string
+    duration_seconds: number
+    distance_km: number
+    steps: number
+    calories: number
+  } | null
+}
+
+export type WalkReminder = {
+  active: boolean
+  message: string
+  dedupe_key: string
+}
+
 export type OpenClawMessage = {
   id: string
   role: 'user' | 'assistant' | 'system'

@@ -11,6 +11,8 @@ import type {
   ActivityEvent,
   VoiceStatus,
   WeatherForecast,
+  WalkReminder,
+  WalkingPadToday,
 } from '../types'
 
 async function requireJson<T>(response: Response): Promise<T> {
@@ -75,6 +77,14 @@ export async function fetchWeather() {
   return requireJson<WeatherForecast>(await fetch('/api/v1/weather'))
 }
 
+export async function fetchWalkingPadToday() {
+  return requireJson<WalkingPadToday>(await fetch('/api/v1/walkingpad/today'))
+}
+
+export async function fetchWalkingPadReminder() {
+  return requireJson<WalkReminder>(await fetch('/api/v1/walkingpad/reminder'))
+}
+
 export async function sendOpenClawMessage(message: string) {
   return requireJson<OpenClawSendResult>(await fetch('/api/v1/openclaw/messages', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -120,4 +130,14 @@ export async function sendCommand(intent: CommandIntent): Promise<CommandResult>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ intent, source: 'ui' }),
   }))
+}
+
+export async function notifyChili(message: string, dedupeKey: string) {
+  return requireJson<{ status: 'sent' | 'skipped' | 'not_configured' | 'failed', message?: string | null }>(
+    await fetch('/api/v1/chili/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, dedupe_key: dedupeKey }),
+    }),
+  )
 }

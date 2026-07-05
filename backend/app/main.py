@@ -7,6 +7,7 @@ from app.api.router import api_router
 from app.core.settings import settings
 from app.database.session import initialise_database
 from app.domain.activity_feed import ActivityFeedService
+from app.domain.chili_notify import ChiliNotifyService
 from app.domain.dashboard_context import DashboardContextProvider
 from app.domain.lights import LightService
 from app.domain.openclaw import OpenClawService
@@ -22,6 +23,7 @@ from app.domain.voice_state import VoiceStateService
 from app.domain.voice_commands import VoiceCommandInterpreter
 from app.domain.system_volume import PiVolumeService
 from app.domain.water_pump import WaterPumpService
+from app.domain.walkingpad import WalkingPadService
 from app.jobs.sensor_polling import run_sensor_poller
 
 
@@ -35,9 +37,11 @@ async def lifespan(application: FastAPI):
     light_service.restore_latest()
     application.state.light_service = light_service
     application.state.calendar_bridge_service = CalendarBridgeService()
+    application.state.walkingpad_service = WalkingPadService()
     application.state.notion_service = NotionService()
     application.state.spotify_service = SpotifyService()
     application.state.activity_feed_service = ActivityFeedService()
+    application.state.chili_notify_service = ChiliNotifyService()
     application.state.voice_state_service = VoiceStateService()
     application.state.weather_service = WeatherService()
     application.state.voice_log_service = VoiceLogService()
@@ -55,6 +59,7 @@ async def lifespan(application: FastAPI):
             calendar_service=application.state.calendar_bridge_service,
             notion_service=application.state.notion_service,
             spotify_service=application.state.spotify_service,
+            walkingpad_service=application.state.walkingpad_service,
         )
     )
     poller = asyncio.create_task(run_sensor_poller(sensor_service))

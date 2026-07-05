@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     switchbot_plug_device_id: str | None = None
     water_pump_duration_seconds: int = 20
     dashboard_automation_token: str | None = None
+    walkingpad_ble_name: str | None = None
+    walkingpad_bridge_token: str | None = None
+    walkingpad_goal_minutes: int = 45
+    walkingpad_goal_distance_km: float = 3.0
+    walkingpad_reminder_start_hour: int = 10
+    walkingpad_reminder_end_hour: int = 20
+    walkingpad_min_gap_before_meeting_min: int = 60
+    walkingpad_min_session_minutes: int = 15
 
 
 settings = Settings()

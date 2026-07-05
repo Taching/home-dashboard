@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -28,6 +29,31 @@ class CalendarBridgeService:
         self._session_factory = session_factory
         self._bridge_token = bridge_token
         self._timezone = ZoneInfo(settings.timezone)
+        self._sync_fingerprint: str | None = None
+        self._fetch_fingerprints: dict[str, str] = {}
+
+    @staticmethod
+    def events_fingerprint(events: list[CalendarEvent]) -> str:
+        parts = sorted(
+            f"{event.external_id}|{event.title}|{event.start_at.isoformat()}|{event.end_at.isoformat()}|{event.is_all_day}"
+            for event in events
+        )
+        digest = hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
+        return f"{len(parts)}:{digest}"
+
+    def should_log_sync(self, events: list[CalendarEvent]) -> bool:
+        fingerprint = self.events_fingerprint(events)
+        if fingerprint == self._sync_fingerprint:
+            return False
+        self._sync_fingerprint = fingerprint
+        return True
+
+    def should_log_fetch(self, cache_key: str, events: list[CalendarEvent]) -> bool:
+        fingerprint = self.events_fingerprint(events)
+        if self._fetch_fingerprints.get(cache_key) == fingerprint:
+            return False
+        self._fetch_fingerprints[cache_key] = fingerprint
+        return True
 
     def configured(self) -> bool:
         return bool(self._bridge_token if self._bridge_token is not None else settings.apple_calendar_bridge_token)
@@ -87,6 +113,9 @@ class CalendarBridgeService:
 
     def today(self) -> tuple[str, datetime | None, list[CalendarEvent]]:
         return self.events_for_range(datetime.now(self._timezone).date(), 1)
+
+    def upcoming(self, days: int) -> tuple[str, datetime | None, list[CalendarEvent]]:
+        return self.events_for_range(datetime.now(self._timezone).date(), days)
 
     def _status(self) -> tuple[str, datetime | None]:
         if not self.configured():

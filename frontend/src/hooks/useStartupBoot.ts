@@ -6,9 +6,11 @@ import {
   fetchNotionToday,
   fetchOpenClawMessages,
   fetchSpotifyNowPlaying,
+  fetchWalkingPadReminder,
+  fetchWalkingPadToday,
   fetchWeather,
 } from '../lib/api'
-import type { IntegrationStatus } from '../types'
+import type { IntegrationStatus, WalkingPadStatus } from '../types'
 import type { DashboardInitialData } from './useDashboardData'
 import {
   initialCalendar,
@@ -16,6 +18,8 @@ import {
   initialNotion,
   initialOpenClaw,
   initialSpotify,
+  initialWalkReminder,
+  initialWalkingPad,
   initialWeather,
 } from './useDashboardData'
 
@@ -43,6 +47,7 @@ const CHECK_DEFS = [
   { id: 'spotify', label: 'Spotify' },
   { id: 'openclaw', label: 'OpenClaw' },
   { id: 'weather', label: 'Weather' },
+  { id: 'walkingpad', label: 'Walking pad' },
 ] as const
 
 function initialChecks(): StartupCheck[] {
@@ -51,6 +56,12 @@ function initialChecks(): StartupCheck[] {
 
 function integrationState(status: IntegrationStatus): StartupCheckState {
   if (status === 'ready') return 'ok'
+  if (status === 'not_configured') return 'optional'
+  return 'failed'
+}
+
+function walkingPadCheckState(status: WalkingPadStatus): StartupCheckState {
+  if (status === 'ready' || status === 'walking') return 'ok'
   if (status === 'not_configured') return 'optional'
   return 'failed'
 }
@@ -72,6 +83,8 @@ type ServiceCheckResult = {
   spotify?: typeof initialSpotify
   openclaw?: typeof initialOpenClaw
   weather?: typeof initialWeather
+  walkingPad?: typeof initialWalkingPad
+  walkReminder?: typeof initialWalkReminder
 }
 
 async function runBackendCheck(): Promise<{ check: CheckResult, dashboard: typeof initialDashboard }> {
@@ -146,6 +159,37 @@ async function runOpenClawCheck(): Promise<{ check: CheckResult, openclaw: typeo
   }
 }
 
+async function runWalkingPadCheck(): Promise<{
+  check: CheckResult
+  walkingPad: typeof initialWalkingPad
+  walkReminder: typeof initialWalkReminder
+}> {
+  try {
+    const [walkingPad, walkReminder] = await Promise.all([
+      fetchWalkingPadToday(),
+      fetchWalkingPadReminder(),
+    ])
+    return {
+      check: {
+        state: walkingPadCheckState(walkingPad.status),
+        detail: walkingPad.status === 'not_configured'
+          ? 'Optional'
+          : walkingPad.status === 'walking'
+            ? 'In progress'
+            : undefined,
+      },
+      walkingPad,
+      walkReminder,
+    }
+  } catch {
+    return {
+      check: { state: 'failed', detail: 'Unreachable' },
+      walkingPad: initialWalkingPad,
+      walkReminder: initialWalkReminder,
+    }
+  }
+}
+
 async function runWeatherCheck(): Promise<{ check: CheckResult, weather: typeof initialWeather }> {
   try {
     const weather = await fetchWeather()
@@ -192,6 +236,7 @@ export function useStartupBoot(today: string) {
         case 'spotify': return runSpotifyCheck()
         case 'openclaw': return runOpenClawCheck()
         case 'weather': return runWeatherCheck()
+        case 'walkingpad': return runWalkingPadCheck()
         default: return null
       }
     }
@@ -206,6 +251,8 @@ export function useStartupBoot(today: string) {
       let spotify = initialSpotify
       let openclaw = initialOpenClaw
       let weather = initialWeather
+      let walkingPad = initialWalkingPad
+      let walkReminder = initialWalkReminder
       const results = new Map<string, CheckResult>()
 
       const applyResult = (id: string, result: ServiceCheckResult | null) => {
@@ -221,6 +268,8 @@ export function useStartupBoot(today: string) {
         if (result.spotify) spotify = result.spotify
         if (result.openclaw) openclaw = result.openclaw
         if (result.weather) weather = result.weather
+        if (result.walkingPad) walkingPad = result.walkingPad
+        if (result.walkReminder) walkReminder = result.walkReminder
         results.set(id, result.check)
         updateCheck(id, result.check)
       }
@@ -266,6 +315,8 @@ export function useStartupBoot(today: string) {
         spotify,
         openclaw,
         weather,
+        walkingPad,
+        walkReminder,
         selectedCalendarDate: resolveSelectedCalendarDate(calendar, today),
       })
       setPhase('fading')

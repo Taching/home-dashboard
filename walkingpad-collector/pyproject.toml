@@ -1,0 +1,14 @@
+[project]
+name = "chili-walkingpad-collector"
+version = "0.1.0"
+description = "BLE collector for KingSmith WalkingPad sessions"
+requires-python = ">=3.12"
+dependencies = [
+  "walkingpad-controller>=0.4.11",
+  "bleak>=0.22,<2.0",
+  "httpx>=0.27,<1.0",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"

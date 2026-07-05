@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useOptimistic, useState, useTransition, type FormEvent } from 'react'
 import openClawLogo from '../assets/openclaw-logo.svg'
 import type { OpenClawConversation } from '../types'
 
@@ -6,7 +6,7 @@ type Props = {
   conversation: OpenClawConversation
   pending: boolean
   feedback: string | null
-  onSend: (message: string) => void
+  onSend: (message: string) => Promise<void>
   onRefresh: () => void
 }
 
@@ -16,13 +16,30 @@ function scrollLatestMessageIntoView(element: HTMLElement | null) {
 
 export function OpenClawChat({ conversation, pending, feedback, onSend, onRefresh }: Props) {
   const [draft, setDraft] = useState('')
+  const [, startTransition] = useTransition()
+
+  const [messages, addOptimisticMessage] = useOptimistic(
+    conversation.messages,
+    (current, newText: string) => [
+      ...current,
+      {
+        id: `optimistic-${Date.now()}`,
+        role: 'user' as const,
+        text: newText,
+        created_at: new Date().toISOString(),
+      },
+    ],
+  )
 
   function submit(event: FormEvent) {
     event.preventDefault()
     const message = draft.trim()
     if (!message || pending) return
-    onSend(message)
     setDraft('')
+    startTransition(async () => {
+      addOptimisticMessage(message)
+      await onSend(message)
+    })
   }
 
   return (
@@ -37,7 +54,9 @@ export function OpenClawChat({ conversation, pending, feedback, onSend, onRefres
             <h2>Ask Chili</h2>
           </div>
         </div>
-        <p className={`openclaw-status is-${conversation.status}`}>{conversation.status === 'ready' ? 'Shared with Telegram' : conversation.status === 'not_configured' ? 'Setup needed' : 'Unavailable'}</p>
+        <p className={`openclaw-status is-${conversation.status}`}>
+          {conversation.status === 'ready' ? 'Shared with Telegram' : conversation.status === 'not_configured' ? 'Setup needed' : 'Unavailable'}
+        </p>
       </div>
       {conversation.status === 'not_configured' ? (
         <div className="panel-empty-state">
@@ -54,12 +73,12 @@ export function OpenClawChat({ conversation, pending, feedback, onSend, onRefres
       ) : (
         <>
           <div className="openclaw-transcript" aria-live="polite">
-            {conversation.messages.length === 0 ? (
+            {messages.length === 0 ? (
               <p className="openclaw-empty-hint">Say “Hey Chili” or type below. Messages sync with your Telegram chat.</p>
-            ) : conversation.messages.map((message, index) => (
+            ) : messages.map((message, index) => (
               <article
                 key={message.id}
-                ref={index === conversation.messages.length - 1 ? scrollLatestMessageIntoView : undefined}
+                ref={index === messages.length - 1 ? scrollLatestMessageIntoView : undefined}
                 className={`openclaw-message is-${message.role}`}
               >
                 <span className="openclaw-message-label">{message.role === 'user' ? 'You' : 'Chili'}</span>

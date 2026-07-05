@@ -272,6 +272,94 @@ button { font: inherit; }
 .voice-status-chip.is-complete { border-color: color-mix(in srgb, #79e6bd 34%, transparent); color: #79e6bd; }
 .voice-status-chip.is-error { border-color: color-mix(in srgb, #ff9b9e 34%, transparent); color: #ff9b9e; }
 .voice-status-chip.is-offline { opacity: .72; }
+.chili-notice {
+  --notice-duration: 8000ms;
+  --notice-accent: #79e6bd;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: .52rem;
+  min-width: 0;
+  max-width: min(100%, 30rem);
+  padding: .34rem .78rem .38rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--notice-accent) 22%, #263554);
+  border-radius: 999px;
+  background: color-mix(in srgb, #111a30 82%, transparent);
+  box-shadow:
+    0 .28rem .75rem rgba(0, 0, 0, .16),
+    inset 0 1px 0 rgba(255, 255, 255, .04);
+  animation: chili-notice-in 320ms cubic-bezier(.22, 1, .36, 1);
+}
+.chili-notice-mark {
+  flex: 0 0 auto;
+  width: .38rem;
+  height: .38rem;
+  border-radius: 50%;
+  background: var(--notice-accent);
+  box-shadow: 0 0 .55rem color-mix(in srgb, var(--notice-accent) 55%, transparent);
+}
+.chili-notice-text {
+  margin: 0;
+  min-width: 0;
+  color: #e8eef8;
+  font-size: clamp(.62rem, .82vw, .72rem);
+  font-weight: 560;
+  line-height: 1.3;
+  letter-spacing: .01em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.chili-notice-ttl {
+  position: absolute;
+  inset: auto 0 0;
+  height: 1.5px;
+  background: color-mix(in srgb, #263554 80%, transparent);
+}
+.chili-notice-ttl::after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--notice-accent);
+  opacity: .72;
+  transform-origin: left center;
+  animation: chili-notice-ttl var(--notice-duration) linear forwards;
+}
+.chili-notice.is-meeting_soon { --notice-accent: #79b9ff; }
+.chili-notice.is-task_completed { --notice-accent: #79e6bd; }
+.chili-notice.is-spotify_playing { --notice-accent: #1ed760; }
+.chili-notice.is-voice_error { --notice-accent: #ff9b9e; }
+.chili-notice.is-voice_complete { --notice-accent: #79e6bd; }
+.chili-notice.is-walk_reminder { --notice-accent: #c4a7ff; }
+.chili-notice.is-openclaw_message { --notice-accent: #5dd6ff; }
+.chili-notice.is-exiting {
+  animation: chili-notice-out 300ms ease forwards;
+}
+.dashboard-shell.is-lite-motion .chili-notice {
+  animation: none;
+}
+.dashboard-shell.is-lite-motion .chili-notice.is-exiting {
+  opacity: 0;
+}
+.dashboard-shell.is-lite-motion .chili-notice-ttl::after {
+  animation: none;
+  transform: scaleX(0);
+}
+@keyframes chili-notice-in {
+  from { opacity: 0; transform: translateX(-.35rem); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes chili-notice-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(-.2rem); }
+}
+@keyframes chili-notice-ttl {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
 .brand-mark {
   position: relative;
   display: grid;
@@ -554,6 +642,90 @@ button { font: inherit; }
   font-size: clamp(.62rem, .85vw, .74rem);
 }
 .environment-badge.is-empty span { color: #536582; }
+
+.walking-pad-badge {
+  display: grid;
+  gap: .08rem;
+  min-width: 0;
+  padding-inline-end: clamp(.75rem, 1.4vw, 1.35rem);
+  border-inline-end: 1px solid color-mix(in srgb, #263554 55%, transparent);
+  text-align: right;
+  line-height: 1;
+}
+.walking-pad-badge-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .32rem;
+}
+.walking-pad-badge-icon {
+  width: .82rem;
+  height: .82rem;
+  color: #79e6bd;
+  opacity: .92;
+}
+.walking-pad-badge-label {
+  color: #536582;
+  font-size: clamp(.56rem, .74vw, .64rem);
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.walking-pad-badge-stat strong {
+  color: #e8eef8;
+  font-size: clamp(1.35rem, 2.2vw, 2rem);
+  font-weight: 540;
+  letter-spacing: -.06em;
+}
+.walking-pad-badge-stat strong small {
+  margin-left: .08em;
+  color: #96a5c2;
+  font-size: .38em;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+.walking-pad-badge-meta {
+  color: #96a5c2;
+  font-size: clamp(.62rem, .85vw, .74rem);
+  white-space: nowrap;
+}
+.walking-pad-badge-progress {
+  width: 100%;
+  max-width: 7.5rem;
+  justify-self: end;
+  height: .14rem;
+  margin-top: .12rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, #263554 80%, transparent);
+}
+.walking-pad-badge-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #79e6bd, #5dd6ff);
+  transition: width .45s ease;
+}
+.walking-pad-badge.is-walking .walking-pad-badge-icon { color: #c4a7ff; animation: walking-pad-pulse 1.4s ease-in-out infinite; }
+.walking-pad-badge.is-walking .walking-pad-badge-stat strong { color: #f0e8ff; }
+.walking-pad-badge.is-walking .walking-pad-badge-meta { color: #c4a7ff; }
+.walking-pad-badge.is-walking .walking-pad-badge-progress-fill {
+  background: linear-gradient(90deg, #c4a7ff, #79b9ff);
+  animation: walking-pad-progress 1.6s ease-in-out infinite;
+}
+.walking-pad-badge.is-goal-met .walking-pad-badge-icon,
+.walking-pad-badge.is-goal-met .walking-pad-badge-stat strong { color: #79e6bd; }
+.walking-pad-badge.is-goal-met .walking-pad-badge-meta { color: #79e6bd; }
+.walking-pad-badge.is-unavailable .walking-pad-badge-icon { color: #536582; opacity: .65; }
+.walking-pad-badge.is-unavailable .walking-pad-badge-stat strong { color: #96a5c2; }
+@keyframes walking-pad-pulse {
+  0%, 100% { opacity: .55; transform: scale(.96); }
+  50% { opacity: 1; transform: scale(1); }
+}
+@keyframes walking-pad-progress {
+  0%, 100% { opacity: .72; }
+  50% { opacity: 1; }
+}
 
 .weather-widget {
   display: grid;
@@ -1299,6 +1471,13 @@ button { font: inherit; }
     justify-items: start;
     gap: .55rem;
   }
+  .brand-cluster {
+    width: 100%;
+  }
+  .chili-notice {
+    flex: 1;
+    max-width: none;
+  }
   .header-meta {
     width: 100%;
     justify-self: stretch;
@@ -1306,6 +1485,13 @@ button { font: inherit; }
     align-items: start;
   }
   .environment-badge { text-align: left; }
+  .walking-pad-badge {
+    text-align: left;
+    padding-inline-end: 0;
+    border-inline-end: 0;
+  }
+  .walking-pad-badge-head { justify-content: flex-start; }
+  .walking-pad-badge-progress { justify-self: start; }
   .weather-widget { border-inline: 0; padding-inline: 0; }
   .clock { display: grid; gap: .25rem; text-align: right; }
   .readings strong { font-size: 4.8rem; }

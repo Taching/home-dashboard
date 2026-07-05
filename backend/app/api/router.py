@@ -257,6 +257,61 @@ class OpenClawSendResponse(BaseModel):
     message: str | None = None
 
 
+class ChiliNotifyRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+    dedupe_key: str = Field(min_length=1, max_length=200)
+
+
+class ChiliNotifyResponse(BaseModel):
+    status: Literal["sent", "skipped", "not_configured", "failed"]
+    message: str | None = None
+
+
+class WalkingPadActiveSessionResponse(BaseModel):
+    external_id: str
+    started_at: datetime
+    duration_seconds: int
+    distance_km: float
+    steps: int
+    calories: float
+
+
+class WalkingPadTodayResponse(BaseModel):
+    status: IntegrationStatus | Literal["walking"]
+    synced_at: datetime | None = None
+    total_minutes: float = 0
+    total_distance_km: float = 0
+    total_steps: int = 0
+    total_calories: float = 0
+    goal_minutes: int = 45
+    goal_distance_km: float = 3.0
+    session_count: int = 0
+    goal_met: bool = False
+    active_session: WalkingPadActiveSessionResponse | None = None
+
+
+class WalkingPadSessionSyncRequest(BaseModel):
+    external_id: str
+    started_at: datetime
+    ended_at: datetime | None = None
+    duration_seconds: int = 0
+    distance_km: float = 0
+    steps: int = 0
+    calories: float = 0
+    in_progress: bool = False
+
+
+class WalkingPadSyncRequest(BaseModel):
+    synced_at: datetime
+    session: WalkingPadSessionSyncRequest
+
+
+class WalkReminderResponse(BaseModel):
+    active: bool
+    message: str = ""
+    dedupe_key: str = ""
+
+
 class WeatherDayResponse(BaseModel):
     date: date
     label: str
@@ -396,6 +451,7 @@ async def dashboard(request: Request) -> dict[str, object]:
             "spotify": spotify_status,
             "openclaw": openclaw_status,
             "water_pump": "ready" if water_pump.available else "not_configured",
+            "walkingpad": request.app.state.walkingpad_service.today().status,
         },
     }
 
@@ -411,16 +467,18 @@ async def calendar_events(
     start: date = Query(...),
     days: int = Query(default=30, ge=1, le=30),
 ) -> CalendarTodayResponse:
-    response = _calendar_response(
-        *request.app.state.calendar_bridge_service.events_for_range(start, days)
-    )
-    log_activity(
-        request,
-        "out",
-        "calendar",
-        f"{len(response.events)} events ({response.status})",
-        dedupe_key=f"{start}:{days}:{response.status}:{len(response.events)}",
-    )
+    service = request.app.state.calendar_bridge_service
+    status, synced_at, events = service.events_for_range(start, days)
+    response = _calendar_response(status, synced_at, events)
+    cache_key = f"{start}:{days}"
+    if service.should_log_fetch(cache_key, events):
+        log_activity(
+            request,
+            "out",
+            "calendar",
+            f"{len(response.events)} events ({response.status})",
+            dedupe_key=cache_key,
+        )
     return response
 
 
@@ -458,24 +516,99 @@ async def sync_apple_calendar(
         raise HTTPException(status_code=401, detail="Invalid calendar bridge token.")
     from app.domain.calendar_bridge import CalendarEvent
 
-    request.app.state.calendar_bridge_service.replace_snapshot(
-        [
-            CalendarEvent(
-                external_id=event.id,
-                title=event.title,
-                start_at=event.start_at,
-                end_at=event.end_at,
-                is_all_day=event.is_all_day,
-            )
-            for event in body.events
-        ],
-        body.synced_at,
+    snapshot = [
+        CalendarEvent(
+            external_id=event.id,
+            title=event.title,
+            start_at=event.start_at,
+            end_at=event.end_at,
+            is_all_day=event.is_all_day,
+        )
+        for event in body.events
+    ]
+    service = request.app.state.calendar_bridge_service
+    service.replace_snapshot(snapshot, body.synced_at)
+    if service.should_log_sync(snapshot):
+        log_activity(
+            request,
+            "in",
+            "calendar",
+            f"bridge sync {len(body.events)} events",
+        )
+
+
+def _walkingpad_response(snapshot) -> WalkingPadTodayResponse:
+    active = None
+    if snapshot.active_session is not None:
+        session = snapshot.active_session
+        active = WalkingPadActiveSessionResponse(
+            external_id=session.external_id,
+            started_at=session.started_at,
+            duration_seconds=session.duration_seconds,
+            distance_km=session.distance_km,
+            steps=session.steps,
+            calories=session.calories,
+        )
+    return WalkingPadTodayResponse(
+        status=snapshot.status,
+        synced_at=snapshot.synced_at,
+        total_minutes=snapshot.total_minutes,
+        total_distance_km=snapshot.total_distance_km,
+        total_steps=snapshot.total_steps,
+        total_calories=snapshot.total_calories,
+        goal_minutes=snapshot.goal_minutes,
+        goal_distance_km=snapshot.goal_distance_km,
+        session_count=snapshot.session_count,
+        goal_met=snapshot.goal_met,
+        active_session=active,
     )
-    log_activity(
-        request,
-        "in",
-        "calendar",
-        f"bridge sync {len(body.events)} events",
+
+
+@api_router.post("/walkingpad/sync", status_code=204)
+async def sync_walkingpad(
+    request: Request,
+    body: WalkingPadSyncRequest,
+) -> None:
+    expected = request.app.state.walkingpad_service.configured() and settings.walkingpad_bridge_token
+    provided = request.headers.get("X-Chili-Bridge-Token", "")
+    if not expected or not hmac.compare_digest(provided, expected):
+        raise HTTPException(status_code=401, detail="Invalid walking pad bridge token.")
+    service = request.app.state.walkingpad_service
+    session = body.session
+    service.sync_session(
+        external_id=session.external_id,
+        started_at=session.started_at,
+        ended_at=None if session.in_progress else session.ended_at,
+        duration_seconds=session.duration_seconds,
+        distance_km=session.distance_km,
+        steps=session.steps,
+        calories=session.calories,
+        synced_at=body.synced_at,
+    )
+    detail = (
+        f"session {session.duration_seconds}s"
+        if session.in_progress
+        else f"session complete {session.duration_seconds}s"
+    )
+    log_activity(request, "in", "walkingpad", detail)
+
+
+@api_router.get("/walkingpad/today", response_model=WalkingPadTodayResponse)
+async def walkingpad_today(request: Request) -> WalkingPadTodayResponse:
+    snapshot = request.app.state.walkingpad_service.today()
+    return _walkingpad_response(snapshot)
+
+
+@api_router.get("/walkingpad/reminder", response_model=WalkReminderResponse)
+async def walkingpad_reminder(request: Request) -> WalkReminderResponse:
+    service = request.app.state.walkingpad_service
+    calendar = request.app.state.calendar_bridge_service
+    _, _, events = calendar.today()
+    reminder = service.reminder(events)
+    return WalkReminderResponse(
+        active=reminder.active,
+        message=reminder.message,
+        dedupe_key=reminder.dedupe_key,
     )
 
 
@@ -552,6 +685,32 @@ async def send_openclaw_message(
         return OpenClawSendResponse(status="success", **result)
     except Exception as error:
         return OpenClawSendResponse(status="failed", message=str(error))
+
+
+@api_router.post("/chili/notify", response_model=ChiliNotifyResponse)
+async def chili_notify(request: Request, body: ChiliNotifyRequest) -> ChiliNotifyResponse:
+    message = body.message.strip()
+    dedupe_key = body.dedupe_key.strip()
+    if not message or not dedupe_key:
+        raise HTTPException(status_code=400, detail="Message and dedupe_key are required.")
+
+    openclaw = request.app.state.openclaw_service
+    if not openclaw.configured():
+        return ChiliNotifyResponse(status="not_configured")
+
+    notify_service = request.app.state.chili_notify_service
+    if not notify_service.should_send(dedupe_key):
+        return ChiliNotifyResponse(status="skipped")
+
+    try:
+        openclaw.send(message)
+        notify_service.mark_sent(dedupe_key)
+        log_activity(request, "out", "chili", message, dedupe_key=dedupe_key)
+        return ChiliNotifyResponse(status="sent")
+    except Exception as error:
+        notify_service.release(dedupe_key)
+        logger.exception("Chili notify failed")
+        return ChiliNotifyResponse(status="failed", message=str(error))
 
 
 @api_router.get("/spotify/now-playing", response_model=SpotifyNowPlayingResponse)

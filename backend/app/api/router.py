@@ -312,6 +312,20 @@ class WalkReminderResponse(BaseModel):
     dedupe_key: str = ""
 
 
+class AutomationWalkLogRequest(BaseModel):
+    duration_minutes: float | None = Field(default=None, gt=0, le=600)
+    distance_km: float | None = Field(default=None, gt=0, le=100)
+    steps: int | None = Field(default=None, ge=0)
+    calories: float | None = Field(default=None, ge=0)
+    message: str | None = Field(default=None, min_length=1, max_length=500)
+
+
+class AutomationWalkLogResponse(BaseModel):
+    status: Literal["logged", "failed"]
+    message: str
+    today: WalkingPadTodayResponse | None = None
+
+
 class WeatherDayResponse(BaseModel):
     date: date
     label: str
@@ -612,6 +626,45 @@ async def walkingpad_reminder(request: Request) -> WalkReminderResponse:
     )
 
 
+def _log_manual_walk(request: Request, body: AutomationWalkLogRequest) -> AutomationWalkLogResponse:
+    service = request.app.state.walkingpad_service
+    if not service.configured():
+        return AutomationWalkLogResponse(status="failed", message="Walking pad is not configured.")
+    try:
+        if body.message and not body.duration_minutes and not body.distance_km:
+            snapshot = service.log_manual_message(body.message)
+        else:
+            snapshot = service.log_manual(
+                duration_minutes=body.duration_minutes,
+                distance_km=body.distance_km,
+                steps=body.steps or 0,
+                calories=body.calories or 0.0,
+            )
+    except ValueError as error:
+        return AutomationWalkLogResponse(status="failed", message=str(error))
+    detail = f"manual {snapshot.total_minutes} min {snapshot.total_distance_km} km"
+    log_activity(request, "in", "walkingpad", detail)
+    return AutomationWalkLogResponse(
+        status="logged",
+        message=(
+            f"Logged walk: {snapshot.total_minutes} min and "
+            f"{snapshot.total_distance_km} km total today."
+        ),
+        today=_walkingpad_response(snapshot),
+    )
+
+
+@api_router.post("/automation/walkingpad/log", response_model=AutomationWalkLogResponse)
+async def automation_walkingpad_log(
+    request: Request,
+    body: AutomationWalkLogRequest,
+    authorization: str | None = Header(default=None),
+) -> AutomationWalkLogResponse:
+    if not _automation_authorized(authorization):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return _log_manual_walk(request, body)
+
+
 @api_router.get("/notion/today", response_model=NotionTodayResponse)
 async def notion_today(request: Request) -> NotionTodayResponse:
     status, synced_at, tasks = request.app.state.notion_service.today()
@@ -677,6 +730,18 @@ async def send_openclaw_message(
     message = body.message.strip()
     if not message or len(message) > 3_000:
         raise HTTPException(status_code=400, detail="Message must contain 1 to 3000 characters.")
+    walkingpad = request.app.state.walkingpad_service
+    if walkingpad.configured() and walkingpad.try_parse_manual_message(message) is not None:
+        result = _log_manual_walk(
+            request,
+            AutomationWalkLogRequest(message=message),
+        )
+        if result.status == "logged":
+            return OpenClawSendResponse(
+                status="success",
+                reply=result.message,
+                message=result.message,
+            )
     service = request.app.state.openclaw_service
     if not service.configured():
         return OpenClawSendResponse(status="failed", message="OpenClaw is not configured.")

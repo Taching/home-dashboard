@@ -108,5 +108,35 @@ class WalkingPadServiceTests(unittest.TestCase):
         self.assertFalse(reminder.active)
 
 
+class WalkingPadManualLogTests(unittest.TestCase):
+    def setUp(self) -> None:
+        engine = create_engine("sqlite://")
+        Base.metadata.create_all(engine)
+        self.session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+        self.service = WalkingPadService(
+            session_factory=self.session_factory,
+            bridge_token="test-token",
+        )
+        self.now = datetime(2026, 7, 6, 3, 0, tzinfo=UTC)
+
+    def test_log_manual_adds_session(self) -> None:
+        snapshot = self.service.log_manual(
+            duration_minutes=30,
+            distance_km=2.0,
+            now=self.now,
+        )
+        self.assertEqual(snapshot.total_minutes, 30.0)
+        self.assertEqual(snapshot.total_distance_km, 2.0)
+        self.assertEqual(snapshot.session_count, 1)
+
+    def test_log_manual_message(self) -> None:
+        snapshot = self.service.log_manual_message(
+            "I walked 15 min and 1.2 km today",
+            now=self.now,
+        )
+        self.assertEqual(snapshot.total_minutes, 15.0)
+        self.assertEqual(snapshot.total_distance_km, 1.2)
+
+
 if __name__ == "__main__":
     unittest.main()

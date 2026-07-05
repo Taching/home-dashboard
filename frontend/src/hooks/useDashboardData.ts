@@ -186,6 +186,11 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
     try {
       const result = await sendOpenClawMessage(message)
       if (result.status !== 'success') throw new Error(result.message ?? 'Telegram delivery failed.')
+      if (result.reply?.startsWith('Logged walk:')) {
+        await refreshWalkingPad()
+        setOpenClawFeedback(result.reply)
+        return
+      }
       setOpenClawFeedback(null)
       setOpenClaw(await fetchOpenClawMessages())
     } catch (error) {
@@ -193,7 +198,7 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
     } finally {
       setOpenClawPending(false)
     }
-  }, [])
+  }, [refreshWalkingPad])
 
   const dashboardRefreshMs = dashboard.water_pump.state === 'running' ? DASHBOARD_FAST_REFRESH_MS : DASHBOARD_REFRESH_MS
   usePolling(refresh, dashboardRefreshMs, !skipImmediatePoll)

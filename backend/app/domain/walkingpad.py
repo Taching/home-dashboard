@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -11,6 +12,7 @@ from app.core.settings import settings
 from app.database.models import WalkingPadCollectorSync, WalkingPadSession
 from app.database.session import SessionLocal
 from app.domain.calendar_bridge import CalendarEvent
+from app.domain.walkingpad_manual import ParsedManualWalk, parse_manual_walk_message
 
 WALKINGPAD_SOURCE = "walkingpad"
 STALE_AFTER = timedelta(minutes=15)
@@ -58,6 +60,53 @@ class WalkingPadService:
     def configured(self) -> bool:
         token = self._bridge_token if self._bridge_token is not None else settings.walkingpad_bridge_token
         return bool(token)
+
+    def log_manual(
+        self,
+        *,
+        duration_minutes: float | None = None,
+        distance_km: float | None = None,
+        steps: int = 0,
+        calories: float = 0,
+        now: datetime | None = None,
+    ) -> WalkingPadTodaySnapshot:
+        current = self._as_utc(now or datetime.now(UTC))
+        if not self.configured():
+            raise ValueError("Walking pad is not configured.")
+        duration_seconds = int(round((duration_minutes or 0) * 60))
+        distance = float(distance_km or 0)
+        if duration_seconds <= 0 and distance <= 0:
+            raise ValueError("Provide at least walk duration or distance.")
+        if duration_seconds <= 0 and distance > 0:
+            duration_seconds = int(round((distance / 5.0) * 3600))
+        started_at = current - timedelta(seconds=duration_seconds)
+        self.sync_session(
+            external_id=f"manual-{uuid4()}",
+            started_at=started_at,
+            ended_at=current,
+            duration_seconds=duration_seconds,
+            distance_km=distance,
+            steps=steps,
+            calories=calories,
+            synced_at=current,
+        )
+        return self.today(current)
+
+    def log_manual_message(self, text: str, now: datetime | None = None) -> WalkingPadTodaySnapshot:
+        parsed = parse_manual_walk_message(text)
+        if parsed is None:
+            raise ValueError("Could not parse walk duration or distance from the message.")
+        return self.log_manual(
+            duration_minutes=parsed.duration_minutes,
+            distance_km=parsed.distance_km,
+            steps=parsed.steps or 0,
+            calories=parsed.calories or 0.0,
+            now=now,
+        )
+
+    @staticmethod
+    def try_parse_manual_message(text: str) -> ParsedManualWalk | None:
+        return parse_manual_walk_message(text)
 
     def sync_session(
         self,
@@ -206,6 +255,12 @@ class WalkingPadService:
         reminder = self.reminder(calendar_events, current)
         if reminder.active:
             lines.append(f"- Walk reminder: {reminder.message}")
+        lines.append(
+            "- Manual walk log: POST /api/v1/automation/walkingpad/log with "
+            "Authorization Bearer DASHBOARD_AUTOMATION_TOKEN; JSON "
+            '{"duration_minutes":30,"distance_km":2} or {"message":"walked 30 min 2 km"}. '
+            "Ask Chili chat on the dashboard also accepts natural-language walk logs."
+        )
         next_event = self._next_timed_event(calendar_events, current)
         if next_event is not None:
             local_start = next_event.start_at.astimezone(self._timezone)

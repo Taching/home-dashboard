@@ -69,6 +69,28 @@ The dashboard can track daily walking from a KingSmith WalkingPad S1 over BLE an
 
 Close the KS Fit app on your phone while the collector runs; the treadmill allows only one BLE client at a time. The collector uses host networking and D-Bus on the Pi so it can reach the pad reliably.
 
+### Manual walk logs
+
+When BLE tracking misses a session, log it manually:
+
+- **Ask Chili chat** on the dashboard: `I walked 30 min and 2 km today`
+- **OpenClaw / Telegram**: ask Chili to log the walk; it can call the automation API using `DASHBOARD_AUTOMATION_TOKEN`
+- **Script**:
+
+  ```sh
+  deploy/openclaw-log-walk.sh 30 2
+  deploy/openclaw-log-walk.sh "walked 30 min and 2 km today"
+  ```
+
+  ```sh
+  curl -fsS -X POST http://127.0.0.1:8080/api/v1/automation/walkingpad/log \
+    -H "Authorization: Bearer $DASHBOARD_AUTOMATION_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"duration_minutes":30,"distance_km":2}'
+  ```
+
+Manual sessions are added to today's totals in the header and OpenClaw context.
+
 ## Notion tasks
 
 The task rail reads incomplete Notion tasks due today or overdue. Create a

@@ -74,7 +74,7 @@ export function OpenClawChat({ conversation, pending, feedback, onSend, onRefres
         <>
           <div className="openclaw-transcript" aria-live="polite">
             {messages.length === 0 ? (
-              <p className="openclaw-empty-hint">Say “Hey Chili” or type below. Messages sync with your Telegram chat.</p>
+              <p className="openclaw-empty-hint">Say “Hey Chili” or type below. Log walks like “I walked 30 min and 2 km today”. Messages sync with Telegram.</p>
             ) : messages.map((message, index) => (
               <article
                 key={message.id}

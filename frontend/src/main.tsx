@@ -18,7 +18,8 @@ import { useSpotifyPlayback } from './hooks/useSpotifyPlayback'
 import { useStartupBoot } from './hooks/useStartupBoot'
 import { useVoiceMonitor } from './hooks/useVoiceMonitor'
 import { getMotionMode } from './lib/motionMode'
-import type { Light, WaterPump } from './types'
+import { setDisplaySchedule, fetchDashboard } from './lib/api'
+import type { Light, WaterPump, Display } from './types'
 import './styles.css'
 
 function isPresentationMode() {
@@ -56,6 +57,7 @@ function DashboardApp({
   initialData: DashboardInitialData
 }) {
   const [djPending, setDjPending] = useState(false)
+  const [schedulePending, setSchedulePending] = useState(false)
   const [spotifyIntentToken, setSpotifyIntentToken] = useState(0)
   const processedActivityCountRef = useRef(0)
   const { execute, pendingIntent } = useDashboardCommand()
@@ -158,18 +160,58 @@ function DashboardApp({
     })
   }, [dashboard.water_pump.state, execute, setDashboard])
 
+  const applyDisplay = useCallback((display: Display) => {
+    setDashboard((current) => ({ ...current, display }))
+  }, [setDashboard])
+
+  const toggleDisplay = useCallback(() => {
+    const intent = dashboard.display.state === 'visible' ? 'display.hide' : 'display.show'
+    void execute(intent, {
+      onSuccess: (result) => {
+        if (result.display) applyDisplay(result.display)
+      },
+    })
+  }, [applyDisplay, dashboard.display.state, execute])
+
+  const toggleDisplaySchedule = useCallback(() => {
+    const target = !dashboard.display.schedule_enabled
+    setSchedulePending(true)
+    void setDisplaySchedule(target)
+      .then(applyDisplay)
+      .finally(() => setSchedulePending(false))
+  }, [applyDisplay, dashboard.display.schedule_enabled])
+
+  const screenHidden = dashboard.display.state === 'hidden'
+
+  useEffect(() => {
+    if (!dashboard.display.schedule_enabled) return
+    const interval = window.setInterval(() => {
+      void fetchDashboard().then((data) => {
+        setDashboard((current) => ({ ...current, display: data.display }))
+      })
+    }, 30_000)
+    return () => window.clearInterval(interval)
+  }, [dashboard.display.schedule_enabled, setDashboard])
+
   const shortcuts = useMemo(() => ({
     l: toggleLight,
     r: () => {
       void refresh()
       void refreshCalendar()
     },
-    s: () => void execute('display.hide'),
-  }), [execute, refresh, refreshCalendar, toggleLight])
+    s: toggleDisplay,
+  }), [refresh, refreshCalendar, toggleDisplay, toggleLight])
   useKeyboardShortcuts(shortcuts)
 
   return (
-    <main className={`dashboard-shell${chromeless ? ' is-chromeless' : ''}${motionMode === 'lite' ? ' is-lite-motion' : ''}`}>
+    <main className={`dashboard-shell${chromeless ? ' is-chromeless' : ''}${motionMode === 'lite' ? ' is-lite-motion' : ''}${screenHidden ? ' is-display-hidden' : ''}`}>
+      <button
+        type="button"
+        className="display-blanket"
+        aria-label="Screen is off. Press S or tap to turn on."
+        onClick={toggleDisplay}
+        tabIndex={screenHidden ? 0 : -1}
+      />
       <MotionModeToggle mode={motionMode} />
       {!chromeless && (
         <Header
@@ -191,10 +233,15 @@ function DashboardApp({
             <DeviceControls
               light={dashboard.light}
               pump={dashboard.water_pump}
+              display={dashboard.display}
               lightPending={pendingIntent === 'light.turn_on' || pendingIntent === 'light.turn_off'}
               pumpPending={pendingIntent === 'water.run' || pendingIntent === 'water.stop'}
+              displayPending={pendingIntent === 'display.show' || pendingIntent === 'display.hide'}
+              schedulePending={schedulePending}
               onToggleLight={toggleLight}
               onTogglePump={togglePlantPump}
+              onToggleDisplay={toggleDisplay}
+              onToggleSchedule={toggleDisplaySchedule}
             />
           </RegionBlock>
           <RegionBlock label="System">

@@ -28,7 +28,33 @@ button { font: inherit; }
   display: none;
 }
 
-/* Lite motion: drop GPU-heavy effects, keep transform/opacity animations. */
+.dashboard-shell.is-display-hidden > :not(.display-blanket) {
+  visibility: hidden;
+}
+
+.display-blanket {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: #000;
+  cursor: default;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 420ms ease;
+}
+
+.dashboard-shell.is-display-hidden .display-blanket {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .display-blanket { transition: none; }
+}
+
 .dashboard-shell.is-lite-motion .spotify-player.is-playing {
   animation: none;
   box-shadow: inset 0 0 0 1px rgba(30,215,96,.18), 0 0 .75rem rgba(30,215,96,.1);

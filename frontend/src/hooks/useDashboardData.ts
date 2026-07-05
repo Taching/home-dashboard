@@ -39,7 +39,14 @@ export const initialDashboard: Dashboard = {
     volume_available: false,
     volume_output_label: 'Audio output',
   },
-  display: { state: 'visible' },
+  display: {
+    state: 'visible',
+    schedule_enabled: true,
+    schedule_on_hour: 8,
+    schedule_off_hour: 22,
+    power_available: false,
+    manual_override: false,
+  },
   integrations: { sensor: 'pending', broadlink: 'pending', calendar: 'not_configured', notion: 'not_configured', spotify: 'not_configured', openclaw: 'not_configured' },
 }
 

@@ -17,8 +17,12 @@ class Settings(BaseSettings):
     broadlink_mac: str | None = None
     broadlink_device_type: int | None = None
     broadlink_codes_path: str = "/data/learned-codes/lights.json"
-    screen_on_hour: int = 10
-    screen_off_hour: int = 19
+    screen_on_hour: int = 8
+    screen_off_hour: int = 22
+    display_schedule_enabled: bool = True
+    display_power_script: str = "/deploy/display-power.sh"
+    display_x_display: str = ":0"
+    display_xauthority: str | None = "/home/takatoshi/.Xauthority"
     spotify_client_id: str | None = None
     spotify_client_secret: str | None = None
     spotify_redirect_uri: str = "http://127.0.0.1:8080/api/v1/spotify/callback"

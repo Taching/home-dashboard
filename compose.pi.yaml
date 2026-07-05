@@ -6,8 +6,13 @@ services:
       - /dev/i2c-1:/dev/i2c-1
     environment:
       PULSE_SERVER: unix:/run/pulse/native
+      DISPLAY: ":0"
+      XAUTHORITY: /home/takatoshi/.Xauthority
     volumes:
       - /run/user/1000/pulse:/run/pulse:ro
+      - ./deploy/display-power.sh:/deploy/display-power.sh:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - /home/takatoshi/.Xauthority:/home/takatoshi/.Xauthority:ro
 
   walkingpad-collector:
     network_mode: host

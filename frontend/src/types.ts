@@ -14,6 +14,15 @@ export type WaterPump = {
   available: boolean
 }
 
+export type Display = {
+  state: 'visible' | 'hidden'
+  schedule_enabled: boolean
+  schedule_on_hour: number
+  schedule_off_hour: number
+  power_available: boolean
+  manual_override: boolean
+}
+
 export type Dashboard = {
   temperature_c: number | null
   humidity_percent: number | null
@@ -21,7 +30,7 @@ export type Dashboard = {
   light: Light
   water_pump: WaterPump
   system: SystemStatus
-  display: { state: string }
+  display: Display
   integrations: Record<string, string>
 }
 
@@ -63,6 +72,7 @@ export type CommandResult = {
   message: string | null
   light: Light | null
   water_pump: WaterPump | null
+  display: Display | null
 }
 
 export type CalendarEvent = {

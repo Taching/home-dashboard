@@ -3,6 +3,7 @@ import type {
   CommandIntent,
   CommandResult,
   Dashboard,
+  Display,
   NotionToday,
   Reading,
   SpotifyNowPlaying,
@@ -129,6 +130,14 @@ export async function sendCommand(intent: CommandIntent): Promise<CommandResult>
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ intent, source: 'ui' }),
+  }))
+}
+
+export async function setDisplaySchedule(enabled: boolean) {
+  return requireJson<Display>(await fetch('/api/v1/display/schedule', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
   }))
 }
 

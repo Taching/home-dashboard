@@ -24,6 +24,8 @@ from app.domain.voice_commands import VoiceCommandInterpreter
 from app.domain.system_volume import PiVolumeService
 from app.domain.water_pump import WaterPumpService
 from app.domain.walkingpad import WalkingPadService
+from app.domain.display import DisplayService
+from app.jobs.display_scheduler import run_display_scheduler
 from app.jobs.sensor_polling import run_sensor_poller
 
 
@@ -62,15 +64,21 @@ async def lifespan(application: FastAPI):
             walkingpad_service=application.state.walkingpad_service,
         )
     )
+    display_service = DisplayService()
+    display_service.restore()
+    application.state.display_service = display_service
     poller = asyncio.create_task(run_sensor_poller(sensor_service))
+    display_scheduler = asyncio.create_task(run_display_scheduler(display_service))
     try:
         yield
     finally:
+        display_scheduler.cancel()
         poller.cancel()
-        try:
-            await poller
-        except asyncio.CancelledError:
-            pass
+        for task in (display_scheduler, poller):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(

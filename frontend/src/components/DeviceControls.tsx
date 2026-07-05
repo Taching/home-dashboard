@@ -1,4 +1,4 @@
-import type { Light, LightState, WaterPump } from '../types'
+import type { Display, Light, LightState, WaterPump } from '../types'
 
 type DevicePillProps = {
   active: boolean
@@ -24,13 +24,24 @@ function DevicePill({ active, pending, disabled, onClick, ariaLabel }: DevicePil
   )
 }
 
+function formatHour(hour: number) {
+  const suffix = hour >= 12 ? 'p.m.' : 'a.m.'
+  const normalized = hour % 12 || 12
+  return `${normalized} ${suffix}`
+}
+
 type Props = {
   light: Light
   pump: WaterPump
+  display: Display
   lightPending: boolean
   pumpPending: boolean
+  displayPending: boolean
+  schedulePending: boolean
   onToggleLight: () => void
   onTogglePump: () => void
+  onToggleDisplay: () => void
+  onToggleSchedule: () => void
 }
 
 function lightAction(state: LightState) {
@@ -44,13 +55,20 @@ function pumpAction(pump: WaterPump) {
 export function DeviceControls({
   light,
   pump,
+  display,
   lightPending,
   pumpPending,
+  displayPending,
+  schedulePending,
   onToggleLight,
   onTogglePump,
+  onToggleDisplay,
+  onToggleSchedule,
 }: Props) {
   const lightOn = light.last_command_state === 'on'
   const pumpOn = pump.state === 'running'
+  const screenOn = display.state === 'visible'
+  const scheduleLabel = `${formatHour(display.schedule_on_hour)}–${formatHour(display.schedule_off_hour)}`
 
   return (
     <section className="device-controls" aria-label="Home controls">
@@ -72,6 +90,28 @@ export function DeviceControls({
           disabled={!pump.available && !pumpOn}
           onClick={onTogglePump}
           ariaLabel={pumpAction(pump)}
+        />
+      </div>
+      <div className="device-row">
+        <p className="device-label">Screen</p>
+        <DevicePill
+          active={screenOn}
+          pending={displayPending}
+          onClick={onToggleDisplay}
+          ariaLabel={screenOn ? 'Turn screen off' : 'Turn screen on'}
+        />
+      </div>
+      <div className="device-row">
+        <p className="device-label">Auto schedule · {scheduleLabel}</p>
+        <DevicePill
+          active={display.schedule_enabled}
+          pending={schedulePending}
+          onClick={onToggleSchedule}
+          ariaLabel={
+            display.schedule_enabled
+              ? `Turn off automatic screen schedule (${scheduleLabel})`
+              : `Turn on automatic screen schedule (${scheduleLabel})`
+          }
         />
       </div>
     </section>

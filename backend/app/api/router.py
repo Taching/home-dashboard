@@ -46,12 +46,22 @@ class WaterPumpResponse(BaseModel):
     available: bool
 
 
+class DisplayResponse(BaseModel):
+    state: Literal["visible", "hidden"]
+    schedule_enabled: bool
+    schedule_on_hour: int
+    schedule_off_hour: int
+    power_available: bool
+    manual_override: bool
+
+
 class CommandResponse(BaseModel):
     status: Literal["success", "failed", "skipped"]
     intent: str
     message: str | None = None
     light: LightResponse | None = None
     water_pump: WaterPumpResponse | None = None
+    display: DisplayResponse | None = None
 
 
 class AutomationWaterResponse(BaseModel):
@@ -134,6 +144,10 @@ class SystemVolumeResponse(BaseModel):
     output_label: str = "Audio output"
 
 
+class DisplayScheduleRequest(BaseModel):
+    enabled: bool
+
+
 def _volume_snapshot(request: Request) -> dict[str, object]:
     service = request.app.state.pi_volume_service
     try:
@@ -148,6 +162,18 @@ def _volume_snapshot(request: Request) -> dict[str, object]:
             "volume_available": False,
             "volume_output_label": "Audio output",
         }
+
+
+def _display_response(request: Request) -> DisplayResponse:
+    snapshot = request.app.state.display_service.snapshot()
+    return DisplayResponse(
+        state=snapshot.state,
+        schedule_enabled=snapshot.schedule_enabled,
+        schedule_on_hour=snapshot.schedule_on_hour,
+        schedule_off_hour=snapshot.schedule_off_hour,
+        power_available=snapshot.power_available,
+        manual_override=snapshot.manual_override,
+    )
 
 
 class VoiceTranscriptRequest(BaseModel):
@@ -456,7 +482,7 @@ async def dashboard(request: Request) -> dict[str, object]:
             "volume_available": volume["volume_available"],
             "volume_output_label": volume["volume_output_label"],
         },
-        "display": {"state": "visible"},
+        "display": _display_response(request).model_dump(),
         "integrations": {
             "sensor": sensor.status(),
             "broadlink": "ready" if light.available else "unavailable",
@@ -849,6 +875,24 @@ async def set_system_volume(request: Request, body: SystemVolumeRequest) -> Syst
         raise HTTPException(status_code=503, detail="Raspberry Pi volume control is unavailable.") from error
 
 
+@api_router.post("/display/schedule", response_model=DisplayResponse)
+async def set_display_schedule(request: Request, body: DisplayScheduleRequest) -> DisplayResponse:
+    display = request.app.state.display_service
+    action = "enabled" if body.enabled else "disabled"
+    log_activity(request, "in", "dashboard", f"display schedule {action}")
+    snapshot = display.set_schedule_enabled(body.enabled)
+    response = DisplayResponse(
+        state=snapshot.state,
+        schedule_enabled=snapshot.schedule_enabled,
+        schedule_on_hour=snapshot.schedule_on_hour,
+        schedule_off_hour=snapshot.schedule_off_hour,
+        power_available=snapshot.power_available,
+        manual_override=snapshot.manual_override,
+    )
+    log_activity(request, "out", "dashboard", f"display state={response.state}")
+    return response
+
+
 @api_router.get("/spotify/connect", include_in_schema=False)
 async def spotify_connect(request: Request) -> RedirectResponse:
     try:
@@ -943,6 +987,43 @@ async def command(request: CommandRequest, api_request: Request) -> CommandRespo
             intent=request.intent,
             message=result.message,
             water_pump=_water_pump_response(result.water_pump),
+        )
+        log_activity(api_request, "out", "dashboard", f"{request.intent} status={response.status}")
+        return response
+
+    display = api_request.app.state.display_service
+    if request.intent == "display.show":
+        snapshot = display.show(request.source)
+        response = CommandResponse(
+            status="success",
+            intent=request.intent,
+            message="Screen is on.",
+            display=DisplayResponse(
+                state=snapshot.state,
+                schedule_enabled=snapshot.schedule_enabled,
+                schedule_on_hour=snapshot.schedule_on_hour,
+                schedule_off_hour=snapshot.schedule_off_hour,
+                power_available=snapshot.power_available,
+                manual_override=snapshot.manual_override,
+            ),
+        )
+        log_activity(api_request, "out", "dashboard", f"{request.intent} status={response.status}")
+        return response
+
+    if request.intent == "display.hide":
+        snapshot = display.hide(request.source)
+        response = CommandResponse(
+            status="success",
+            intent=request.intent,
+            message="Screen is off.",
+            display=DisplayResponse(
+                state=snapshot.state,
+                schedule_enabled=snapshot.schedule_enabled,
+                schedule_on_hour=snapshot.schedule_on_hour,
+                schedule_off_hour=snapshot.schedule_off_hour,
+                power_available=snapshot.power_available,
+                manual_override=snapshot.manual_override,
+            ),
         )
         log_activity(api_request, "out", "dashboard", f"{request.intent} status={response.status}")
         return response

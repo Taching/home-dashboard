@@ -24,7 +24,7 @@ Apple Calendar is available through a read-only macOS bridge. The dashboard alre
    docker compose -f compose.yaml -f compose.pi.yaml -f compose.apple-calendar-bridge.yaml up --build -d
    ```
 
-2. On the Mac that contains the calendars, build and authorize the bundled helper, then install its LaunchAgent for five-minute syncs. macOS must grant **Calendar Full Access** and the Mac must remain logged in. Follow the exact commands in [macos/apple-calendar-bridge/README.md](macos/apple-calendar-bridge/README.md).
+2. On the Mac that contains the calendars, build and authorize the bundled helper, then install its LaunchAgent for fifteen-minute syncs. macOS must grant **Calendar Full Access** and the Mac must remain logged in. Follow the exact commands in [macos/apple-calendar-bridge/README.md](macos/apple-calendar-bridge/README.md).
 
 ## OpenClaw shared chat
 
@@ -123,9 +123,10 @@ docker compose -f compose.yaml -f compose.pi.yaml up --build -d
 ```
 
 The dashboard binds to `127.0.0.1:8080` by default. For a cleaner
-dashboard-only view, add `?mode=kiosk` to the dashboard URL. For phone access
-away from the Pi, use the Tailscale Serve setup below instead of exposing the
-dashboard directly to the LAN or internet.
+dashboard-only view, add `?mode=kiosk` to the dashboard URL. Add
+`&performance=1` for the Pi kiosk to disable nonessential motion and reduce
+Chromium CPU use. For phone access away from the Pi, use the Tailscale Serve
+setup below instead of exposing the dashboard directly to the LAN or internet.
 
 ## BroadLink RM4 Mini setup
 

@@ -45,7 +45,7 @@ export function useVoiceMonitor() {
     }
 
     refresh()
-    const pollMs = voiceStatus.state === 'idle' || voiceStatus.state === 'offline' ? 1_000 : 500
+    const pollMs = voiceStatus.state === 'idle' || voiceStatus.state === 'offline' ? 3_000 : 750
     const interval = window.setInterval(refresh, pollMs)
     return () => window.clearInterval(interval)
   }, [voiceStatus.state])

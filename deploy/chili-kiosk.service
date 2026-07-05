@@ -5,12 +5,14 @@ Wants=chili-dashboard.service
 
 [Service]
 Type=simple
+User=takatoshi
+Group=takatoshi
 Environment=DISPLAY=:0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
 ExecStartPre=/bin/sleep 5
-ExecStart=/usr/bin/chromium --kiosk --noerrdialogs --disable-session-crashed-bubble http://127.0.0.1:8080
+ExecStart=/usr/bin/chromium --kiosk --user-data-dir=/tmp/chili-dashboard-kiosk --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --noerrdialogs --disable-session-crashed-bubble http://127.0.0.1:8080?performance=1
 Restart=always
 RestartSec=5
 
 [Install]
 WantedBy=graphical-session.target
-

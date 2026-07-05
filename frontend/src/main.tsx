@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Header } from './components/Header'
 import { RegionBlock } from './components/RegionBlock'
@@ -9,61 +9,12 @@ import { OpenClawChat } from './components/OpenClawChat'
 import { addDays, dayKey, PlanningRegion } from './components/PlanningRegion'
 import { SystemHealthPanel } from './components/SystemHealthPanel'
 import { useDashboardCommand } from './hooks/useDashboardCommand'
+import { useDashboardData } from './hooks/useDashboardData'
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useSpotifyPlayback } from './hooks/useSpotifyPlayback'
 import { useVoiceMonitor } from './hooks/useVoiceMonitor'
-import {
-  fetchCalendarEvents,
-  fetchDashboard,
-  fetchNotionToday,
-  fetchOpenClawMessages,
-  openOpenClawMessageStream,
-  sendOpenClawMessage,
-  fetchSpotifyNowPlaying,
-  fetchWeather,
-  setSystemVolume,
-} from './lib/api'
-import type { CalendarToday, Dashboard, Light, NotionToday, OpenClawConversation, SpotifyNowPlaying, WaterPump, WeatherForecast } from './types'
+import type { Light, WaterPump } from './types'
 import './styles.css'
-
-const initialState: Dashboard = {
-  temperature_c: null,
-  humidity_percent: null,
-  last_updated_at: null,
-  light: { last_command_state: 'unknown', last_command_at: null, available: false },
-  water_pump: { state: 'idle', last_run_at: null, last_run_status: null, available: false },
-  system: {
-    cpu_temperature_c: null,
-    load_1m: null,
-    load_percent: null,
-    memory_used_percent: null,
-    memory_used_mb: null,
-    memory_total_mb: null,
-    storage_used_percent: null,
-    storage_free_gb: null,
-    storage_total_gb: null,
-    bluetooth_status: 'unavailable',
-    bluetooth_device_name: null,
-    bluetooth_is_default_output: false,
-    volume_percent: null,
-    volume_available: false,
-    volume_output_label: 'Audio output',
-  },
-  display: { state: 'visible' },
-  integrations: { sensor: 'pending', broadlink: 'pending', calendar: 'not_configured', notion: 'not_configured', spotify: 'not_configured', openclaw: 'not_configured' },
-}
-
-const initialCalendar: CalendarToday = { status: 'not_configured', synced_at: null, events: [] }
-const initialNotion: NotionToday = { status: 'not_configured', synced_at: null, tasks: [] }
-const initialSpotify: SpotifyNowPlaying = { status: 'not_configured', synced_at: null, track: null, artist: null, artwork_url: null, device_name: null, is_playing: false }
-const initialOpenClaw: OpenClawConversation = { status: 'not_configured', messages: [], message: null }
-const initialWeather: WeatherForecast = { status: 'not_configured', location: '', synced_at: null, today: null, tomorrow: null }
-
-function isTypingTarget(target: EventTarget | null) {
-  return target instanceof HTMLInputElement
-    || target instanceof HTMLTextAreaElement
-    || target instanceof HTMLSelectElement
-    || (target instanceof HTMLElement && target.isContentEditable)
-}
 
 function isPresentationMode() {
   const params = new URLSearchParams(window.location.search)
@@ -72,48 +23,39 @@ function isPresentationMode() {
     || params.get('chromeless') === '1'
 }
 
+function isPerformanceMode() {
+  const params = new URLSearchParams(window.location.search)
+  return params.get('performance') === '1'
+    || params.get('lowMotion') === '1'
+}
+
 function App() {
-  const [dashboard, setDashboard] = useState<Dashboard>(initialState)
-  const [calendar, setCalendar] = useState<CalendarToday>(initialCalendar)
-  const [notion, setNotion] = useState<NotionToday>(initialNotion)
-  const [spotify, setSpotify] = useState<SpotifyNowPlaying>(initialSpotify)
-  const [openclaw, setOpenClaw] = useState<OpenClawConversation>(initialOpenClaw)
-  const [weather, setWeather] = useState<WeatherForecast>(initialWeather)
-  const [openclawPending, setOpenClawPending] = useState(false)
-  const [openclawFeedback, setOpenClawFeedback] = useState<string | null>(null)
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null)
   const [djPending, setDjPending] = useState(false)
-  const [volumePending, setVolumePending] = useState(false)
   const { execute, pendingIntent } = useDashboardCommand()
   const { voiceStatus, activityEvents } = useVoiceMonitor()
-  const spotifyPlayback = useSpotifyPlayback(spotify.status === 'ready')
   const today = dayKey(new Date())
   const chromeless = useMemo(isPresentationMode, [])
-
-  const refresh = useCallback(async () => {
-    try {
-      const results = await Promise.allSettled([
-        fetchDashboard(), fetchCalendarEvents(today), fetchNotionToday(), fetchSpotifyNowPlaying(), fetchOpenClawMessages(),
-      ])
-      if (results[0].status === 'fulfilled') setDashboard(results[0].value)
-      if (results[1].status === 'fulfilled') {
-        const nextCalendar = results[1].value
-        setCalendar(nextCalendar)
-        setSelectedCalendarDate((current) => {
-          if (current || nextCalendar.status !== 'ready') return current
-          const nextScheduled = nextCalendar.events
-            .map((event) => dayKey(event.start_at))
-            .find((eventDate) => eventDate >= today)
-          return nextScheduled ?? today
-        })
-      }
-      if (results[2].status === 'fulfilled') setNotion(results[2].value)
-      if (results[3].status === 'fulfilled') setSpotify(results[3].value)
-      if (results[4].status === 'fulfilled') setOpenClaw(results[4].value)
-    } catch {
-      // Existing state remains visible while the next scheduled refresh retries.
-    }
-  }, [today])
+  const performanceMode = useMemo(isPerformanceMode, [])
+  const {
+    dashboard,
+    calendar,
+    notion,
+    spotify,
+    openclaw,
+    weather,
+    openclawPending,
+    openclawFeedback,
+    selectedCalendarDate,
+    volumePending,
+    setDashboard,
+    setSelectedCalendarDate,
+    refresh,
+    refreshCalendar,
+    refreshOpenClaw,
+    setVolume,
+    sendToOpenClaw,
+  } = useDashboardData(today)
+  const spotifyPlayback = useSpotifyPlayback(spotify.status === 'ready')
 
   const toggleLight = useCallback(() => {
     const previousLight = dashboard.light
@@ -130,7 +72,7 @@ function App() {
       },
       onFailure: () => setDashboard((current) => ({ ...current, light: previousLight })),
     })
-  }, [dashboard.light, execute])
+  }, [dashboard.light, execute, setDashboard])
 
   const togglePlantPump = useCallback(() => {
     const intent = dashboard.water_pump.state === 'running' ? 'water.stop' : 'water.run'
@@ -160,81 +102,20 @@ function App() {
         }
       },
     })
-  }, [dashboard.water_pump.state, execute])
+  }, [dashboard.water_pump.state, execute, setDashboard])
 
-  const setVolume = useCallback((volumePercent: number) => {
-    setVolumePending(true)
-    void setSystemVolume(volumePercent)
-      .then((result) => {
-        if (result.volume_percent === null) return
-        setDashboard((current) => ({
-          ...current,
-          system: {
-            ...current.system,
-            volume_percent: result.volume_percent,
-            volume_available: result.available,
-            volume_output_label: result.output_label,
-          },
-        }))
-      })
-      .finally(() => setVolumePending(false))
-  }, [])
-
-  useEffect(() => {
-    void refresh()
-    const intervalMs = dashboard.water_pump.state === 'running' ? 2_000 : 60_000
-    const interval = window.setInterval(() => void refresh(), intervalMs)
-    return () => window.clearInterval(interval)
-  }, [refresh, dashboard.water_pump.state])
-
-  useEffect(() => {
-    void fetchWeather().then(setWeather).catch(() => undefined)
-    const interval = window.setInterval(() => {
-      void fetchWeather().then(setWeather).catch(() => undefined)
-    }, 30 * 60_000)
-    return () => window.clearInterval(interval)
-  }, [])
-
-  useEffect(() => {
-    if (typeof EventSource === 'undefined') {
-      const interval = window.setInterval(async () => {
-        try { setOpenClaw(await fetchOpenClawMessages()) } catch { /* retry on next interval */ }
-      }, 5_000)
-      return () => window.clearInterval(interval)
-    }
-
-    const stream = openOpenClawMessageStream(setOpenClaw)
-    return () => stream.close()
-  }, [])
-
-  const sendToOpenClaw = useCallback(async (message: string) => {
-    setOpenClawPending(true)
-    setOpenClawFeedback(null)
-    try {
-      const result = await sendOpenClawMessage(message)
-      if (result.status !== 'success') throw new Error(result.message ?? 'Telegram delivery failed.')
-      setOpenClawFeedback(null)
-      setOpenClaw(await fetchOpenClawMessages())
-    } catch (error) {
-      setOpenClawFeedback(error instanceof Error ? error.message : 'Telegram delivery failed.')
-    } finally {
-      setOpenClawPending(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (isTypingTarget(event.target)) return
-      if (event.key.toLowerCase() === 'l') toggleLight()
-      if (event.key.toLowerCase() === 'r') void refresh()
-      if (event.key.toLowerCase() === 's') void execute('display.hide')
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [execute, refresh, toggleLight])
+  const shortcuts = useMemo(() => ({
+    l: toggleLight,
+    r: () => {
+        void refresh()
+        void refreshCalendar()
+    },
+    s: () => void execute('display.hide'),
+  }), [execute, refresh, refreshCalendar, toggleLight])
+  useKeyboardShortcuts(shortcuts)
 
   return (
-    <main className={`dashboard-shell${chromeless ? ' is-chromeless' : ''}`}>
+    <main className={`dashboard-shell${chromeless ? ' is-chromeless' : ''}${performanceMode ? ' is-performance-mode' : ''}`}>
       {!chromeless && (
         <Header
           voiceStatus={voiceStatus}
@@ -297,7 +178,7 @@ function App() {
             pending={openclawPending}
             feedback={openclawFeedback}
             onSend={(message) => void sendToOpenClaw(message)}
-            onRefresh={() => void fetchOpenClawMessages().then(setOpenClaw).catch(() => setOpenClaw({ status: 'unavailable', messages: [], message: 'OpenClaw is unavailable.' }))}
+            onRefresh={() => void refreshOpenClaw()}
           />
         </aside>
       </div>

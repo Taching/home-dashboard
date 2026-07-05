@@ -33,7 +33,7 @@ Run this first command while logged into the Mac. macOS will ask for Calendar ac
 
 All-day events appear in a compact strip above the kiosk timeline.
 
-## 3. Sync every five minutes
+## 3. Sync every fifteen minutes
 
 Copy `com.chili.calendar-bridge.plist` to `~/Library/LaunchAgents/`, replace all three `REPLACE_WITH_...` values (use the full path to `build/Chili Calendar Bridge.app` for `REPLACE_WITH_APP_PATH`), then load it:
 

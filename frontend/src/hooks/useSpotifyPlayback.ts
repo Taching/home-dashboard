@@ -3,8 +3,52 @@ import { fetchSpotifyWebPlaybackToken, registerSpotifyDevice, startSpotifyDj, tr
 
 export type PlaybackTrack = { track: string, artist: string, artworkUrl: string | null }
 
+type SpotifyPlayerOptions = {
+  name: string
+  getOAuthToken: (callback: (token: string) => void) => void | Promise<void>
+  volume: number
+  enableMediaSession: boolean
+}
+
+type SpotifyListenerPayloads = {
+  ready: { device_id: string }
+  initialization_error: { message: string }
+  authentication_error: { message: string }
+  account_error: { message: string }
+  not_ready: { device_id?: string }
+  player_state_changed: SpotifyPlayerState | null
+}
+
+type SpotifyTrack = {
+  name: string
+  artists?: Array<{ name: string }>
+  album?: { images?: Array<{ url: string }> }
+}
+
+type SpotifyPlayerState = {
+  paused: boolean
+  track_window?: { current_track?: SpotifyTrack }
+}
+
+type SpotifyPlayer = {
+  addListener<EventName extends keyof SpotifyListenerPayloads>(
+    event: EventName,
+    listener: (payload: SpotifyListenerPayloads[EventName]) => void,
+  ): boolean
+  connect(): Promise<boolean>
+  disconnect(): void
+  activateElement(): Promise<void>
+  togglePlay(): Promise<void>
+  previousTrack(): Promise<void>
+  nextTrack(): Promise<void>
+}
+
+type SpotifySdk = {
+  Player: new (options: SpotifyPlayerOptions) => SpotifyPlayer
+}
+
 declare global {
-  interface Window { Spotify?: any }
+  interface Window { Spotify?: SpotifySdk }
 }
 
 function loadSdk() {
@@ -22,17 +66,18 @@ function loadSdk() {
 export function useSpotifyPlayback(enabled: boolean) {
   const [deviceId, setDeviceId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [player, setPlayer] = useState<any>(null)
+  const [player, setPlayer] = useState<SpotifyPlayer | null>(null)
   const [active, setActive] = useState(false)
   const [paused, setPaused] = useState(true)
   const [track, setTrack] = useState<PlaybackTrack | null>(null)
 
   useEffect(() => {
     if (!enabled) return
-    let localPlayer: any
+    let localPlayer: SpotifyPlayer | undefined
     void (async () => {
       try {
         await loadSdk()
+        if (!window.Spotify) throw new Error('Spotify SDK is unavailable')
         localPlayer = new window.Spotify.Player({
           name: 'Chili Dashboard',
           getOAuthToken: async (callback: (token: string) => void) => callback((await fetchSpotifyWebPlaybackToken()).access_token),
@@ -50,7 +95,7 @@ export function useSpotifyPlayback(enabled: boolean) {
           setActive(false)
           setDeviceId(null)
         })
-        localPlayer.addListener('player_state_changed', (state: { paused: boolean, track_window?: { current_track?: { name: string, artists?: Array<{ name: string }>, album?: { images?: Array<{ url: string }> } } } } | null) => {
+        localPlayer.addListener('player_state_changed', (state) => {
           setActive(Boolean(state))
           setPaused(state?.paused ?? true)
           const current = state?.track_window?.current_track

@@ -1,19 +1,45 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import Protocol
+
+from app.domain.calendar_bridge import CalendarEvent
+from app.domain.lights import LightSnapshot
+from app.domain.notion import NotionStatus, NotionTask
+from app.domain.sensors import Reading
+
+
+class SensorContextService(Protocol):
+    def current(self) -> Reading | None: ...
+    def status(self) -> str: ...
+
+
+class LightContextService(Protocol):
+    def snapshot(self) -> LightSnapshot: ...
+
+
+class CalendarContextService(Protocol):
+    def today(self) -> tuple[str, datetime | None, list[CalendarEvent]]: ...
+
+
+class NotionContextService(Protocol):
+    def today(self) -> tuple[NotionStatus, datetime | None, list[NotionTask]]: ...
+
+
+class SpotifyContextService(Protocol):
+    def now_playing(self) -> Mapping[str, object]: ...
 
 
 class DashboardContextProvider:
     def __init__(
         self,
         *,
-        sensor_service: Any,
-        light_service: Any,
-        calendar_service: Any,
-        notion_service: Any,
-        spotify_service: Any,
+        sensor_service: SensorContextService,
+        light_service: LightContextService,
+        calendar_service: CalendarContextService,
+        notion_service: NotionContextService,
+        spotify_service: SpotifyContextService,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._sensor_service = sensor_service

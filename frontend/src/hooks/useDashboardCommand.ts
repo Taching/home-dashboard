@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { sendCommand } from '../lib/api'
 import type { CommandIntent, CommandResult } from '../types'
 
@@ -12,7 +12,7 @@ export function useDashboardCommand() {
   const [pendingIntent, setPendingIntent] = useState<CommandIntent | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
 
-  async function execute(intent: CommandIntent, options: ExecuteOptions = {}) {
+  const execute = useCallback(async (intent: CommandIntent, options: ExecuteOptions = {}) => {
     if (pendingIntent) return
     options.optimistic?.()
     setPendingIntent(intent)
@@ -31,7 +31,7 @@ export function useDashboardCommand() {
     } finally {
       setPendingIntent(null)
     }
-  }
+  }, [pendingIntent])
 
   return { execute, feedback, pendingIntent }
 }

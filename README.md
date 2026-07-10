@@ -144,6 +144,13 @@ If it triggers repeatedly, increase `VOICE_WAKEWORD_THRESHOLD` and restart the
 voice container. The worker will not accept another wake detection until the
 model score has been below that threshold for `VOICE_WAKEWORD_REARM_SECONDS`.
 
+**Hey Chili not responsive?** The bundled model is custom-trained; official
+models like Hey Jarvis are tuned on much more data. Retrain with the
+[openWakeWord Colab notebook](https://colab.research.google.com/drive/1q1oe2zOyZp7UsB3jJiQ1IFn8z5YfjwEb?usp=sharing)
+and install via `./deploy/install-wakeword-model.sh`. See
+[docs/voice-wakeword-training.md](docs/voice-wakeword-training.md) for the full
+workflow and a mic benchmark tool to compare models.
+
 ## Local development
 
 1. Copy `.env.example` to `.env` and fill only values required for the active phase.

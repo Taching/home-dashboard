@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { dayKey } from '../components/PlanningRegion'
 import {
   fetchCalendarEvents,
   fetchDashboard,
@@ -101,9 +100,7 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
   const [walkReminder, setWalkReminder] = useState(initialData?.walkReminder ?? initialWalkReminder)
   const [openclawPending, setOpenClawPending] = useState(false)
   const [openclawFeedback, setOpenClawFeedback] = useState<string | null>(null)
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(
-    initialData?.selectedCalendarDate ?? null,
-  )
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(today)
   const [volumePending, setVolumePending] = useState(false)
   const skipImmediatePoll = Boolean(initialData)
 
@@ -126,15 +123,7 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
 
   const refreshCalendar = useCallback(async () => {
     try {
-      const nextCalendar = await fetchCalendarEvents(today)
-      setCalendar(nextCalendar)
-      setSelectedCalendarDate((current) => {
-        if (current || nextCalendar.status !== 'ready') return current
-        const nextScheduled = nextCalendar.events
-          .map((event) => dayKey(event.start_at))
-          .find((eventDate) => eventDate >= today)
-        return nextScheduled ?? today
-      })
+      setCalendar(await fetchCalendarEvents(today))
     } catch {
       // Keep the last calendar snapshot visible until the next bridge sync lands.
     }
@@ -213,6 +202,11 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
   usePolling(refreshCalendar, CALENDAR_REFRESH_MS, !skipImmediatePoll)
   usePolling(refreshWeather, WEATHER_REFRESH_MS, !skipImmediatePoll)
   usePolling(refreshWalkingPad, WALKINGPAD_REFRESH_MS, true)
+
+  useEffect(() => {
+    setSelectedCalendarDate(today)
+    void refreshCalendar()
+  }, [today, refreshCalendar])
 
   useEffect(() => {
     if (typeof EventSource === 'undefined') {

@@ -7,7 +7,7 @@ import { VoicePipelinePanel } from './components/VoicePipelinePanel'
 import { MediaRegion } from './components/MediaRegion'
 import { MotionModeToggle } from './components/MotionModeToggle'
 import { OpenClawChat } from './components/OpenClawChat'
-import { addDays, dayKey, PlanningRegion } from './components/PlanningRegion'
+import { addDays, PlanningRegion } from './components/PlanningRegion'
 import { StartupSplash } from './components/StartupSplash'
 import { SystemHealthPanel } from './components/SystemHealthPanel'
 import { useChiliNotifications } from './hooks/useChiliNotifications'
@@ -16,6 +16,7 @@ import { useDashboardData, type DashboardInitialData } from './hooks/useDashboar
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useSpotifyPlayback } from './hooks/useSpotifyPlayback'
 import { useStartupBoot } from './hooks/useStartupBoot'
+import { useToday } from './hooks/useClock'
 import { useVoiceMonitor } from './hooks/useVoiceMonitor'
 import { getMotionMode } from './lib/motionMode'
 import { setDisplaySchedule, fetchDashboard } from './lib/api'
@@ -30,9 +31,8 @@ function isPresentationMode() {
 }
 
 function AppShell() {
-  const today = dayKey(new Date())
   const motionMode = useMemo(getMotionMode, [])
-  const boot = useStartupBoot(today)
+  const boot = useStartupBoot()
 
   if (!boot.isReady || !boot.data) {
     return (
@@ -44,18 +44,17 @@ function AppShell() {
     )
   }
 
-  return <DashboardApp today={today} motionMode={motionMode} initialData={boot.data} />
+  return <DashboardApp motionMode={motionMode} initialData={boot.data} />
 }
 
 function DashboardApp({
-  today,
   motionMode,
   initialData,
 }: {
-  today: string
   motionMode: ReturnType<typeof getMotionMode>
   initialData: DashboardInitialData
 }) {
+  const today = useToday()
   const [djPending, setDjPending] = useState(false)
   const [schedulePending, setSchedulePending] = useState(false)
   const [spotifyIntentToken, setSpotifyIntentToken] = useState(0)

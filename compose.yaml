@@ -36,7 +36,7 @@ services:
       VOICE_WAKEWORD_MODEL: ${VOICE_WAKEWORD_MODEL:-/models/hey_chili.tflite}
       VOICE_WAKEWORD_LABEL: ${VOICE_WAKEWORD_LABEL:-Hey Chili}
     volumes:
-      - ./assets/voice/hey_chili.tflite:/models/hey_chili.tflite:ro
+      - ./assets/voice:/models
     devices:
       - /dev/snd:/dev/snd
     depends_on:

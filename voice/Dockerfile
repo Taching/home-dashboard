@@ -15,5 +15,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY download_openwakeword_resources.py ./
 RUN python download_openwakeword_resources.py
 COPY worker.py wakeword.py monitor.py ./
+COPY tools ./tools
 
 CMD ["python", "worker.py"]

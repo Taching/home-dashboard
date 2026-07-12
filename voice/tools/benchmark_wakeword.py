@@ -38,7 +38,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Stream wake-word scores from the USB mic.")
     parser.add_argument("models", nargs="+", help="Paths to .tflite wake-word models")
     parser.add_argument("--device", default=os.environ.get("VOICE_AUDIO_DEVICE", "plughw:2,0"))
-    parser.add_argument("--threshold", type=float, default=0.4)
+    parser.add_argument("--threshold", type=float, default=0.30)
     parser.add_argument("--print-every", type=float, default=0.25, help="Seconds between score lines")
     args = parser.parse_args()
 

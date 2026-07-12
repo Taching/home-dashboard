@@ -9,8 +9,13 @@ User=takatoshi
 Group=takatoshi
 Environment=DISPLAY=:0
 Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=WAYLAND_DISPLAY=wayland-0
+# Hide the pointer for the wall display (CSS alone is not enough on labwc/XWayland).
 ExecStartPre=/bin/sleep 5
-ExecStart=/usr/bin/chromium --kiosk --user-data-dir=/tmp/chili-dashboard-kiosk --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --noerrdialogs --disable-session-crashed-bubble http://127.0.0.1:8080?mode=kiosk
+ExecStartPre=/bin/sh -c '/usr/bin/pgrep -f unclutter-xfixes >/dev/null || /usr/bin/unclutter-xfixes --timeout 0 --jitter 0 --start-hidden --fork'
+ExecStart=/usr/bin/chromium --kiosk --user-data-dir=/tmp/chili-dashboard-kiosk --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --noerrdialogs --disable-session-crashed-bubble http://127.0.0.1:8080?performance=1
+# Hide the Wayland compositor cursor after Chromium is up.
+ExecStartPost=/bin/sh -c 'sleep 2; /usr/bin/wtype -M alt -M logo -P h -m logo -m alt || true'
 Restart=always
 RestartSec=5
 

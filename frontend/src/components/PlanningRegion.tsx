@@ -1,10 +1,12 @@
-import type { CalendarEvent, CalendarToday, NotionToday } from '../types'
-import { TaskPriorityBars } from './TaskPriorityBars'
+import { useClock } from '../hooks/useClock'
+import type { CalendarEvent, CalendarToday, NotionTask, NotionToday } from '../types'
+import { priorityLevel } from './TaskPriorityBars'
 
 const TIME_ZONE = 'Asia/Tokyo'
 const START_HOUR = 7
 const END_HOUR = 20
 const TOTAL_MINUTES = (END_HOUR - START_HOUR) * 60
+const TASK_VISIBLE_LIMIT = 14
 
 type PositionedEvent = CalendarEvent & {
   startMinute: number
@@ -47,6 +49,14 @@ function eventTime(event: CalendarEvent) {
   return new Intl.DateTimeFormat('en-GB', {
     timeZone: TIME_ZONE, hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(new Date(event.start_at))
+}
+
+function overflowHint(events: CalendarEvent[], direction: 'earlier' | 'later') {
+  if (events.length === 0) return null
+  const arrow = direction === 'earlier' ? '↑' : '↓'
+  const first = events[0]?.title?.trim() || 'Event'
+  if (events.length === 1) return `${arrow} ${first}`
+  return `${arrow} ${first} · +${events.length - 1} ${direction}`
 }
 
 function taskDueDateKey(value: string | null) {
@@ -112,16 +122,32 @@ function taskTypeLabel(taskType: string | null) {
 }
 
 function taskSummary(tasks: NotionToday['tasks']) {
-  let work = 0
-  let personal = 0
   let overdue = 0
   for (const task of tasks) {
     if (task.is_overdue) overdue += 1
-    const kind = taskTypeClass(task.task_type)
-    if (kind === 'is-work') work += 1
-    else if (kind === 'is-personal') personal += 1
   }
-  return { total: tasks.length, work, personal, overdue }
+  return { total: tasks.length, overdue }
+}
+
+function priorityMetaLabel(priority: string | null) {
+  const level = priorityLevel(priority)
+  if (!level) return null
+  if (level === 'urgent') return 'Urgent'
+  if (level === 'high') return 'High'
+  if (level === 'medium') return 'Med'
+  return 'Low'
+}
+
+function taskMetaLine(task: NotionTask, todayKey: string) {
+  const dueKey = taskDueDateKey(task.due_at)
+  const dueLabel = taskDueGroupLabel(dueKey, todayKey)
+  const type = taskTypeLabel(task.task_type)
+  const priority = priorityMetaLabel(task.priority)
+  return [dueLabel, type, priority].filter(Boolean).join(' · ')
+}
+
+function flattenTasksByDue(tasks: NotionToday['tasks']) {
+  return groupTasksByDue(tasks).flatMap((group) => group.tasks)
 }
 
 function layoutEvents(events: CalendarEvent[], selectedDate: string): PositionedEvent[] {
@@ -182,12 +208,38 @@ function CalendarSchedule({
   onToday: () => void
   onNext: () => void
 }) {
+  const now = useClock()
+  const todayKey = dayKey(now)
+  const isToday = selectedDate === todayKey
   const dayEvents = calendar.events.filter((event) => eventIntersectsDay(event, selectedDate))
   const allDayEvents = dayEvents.filter((event) => event.is_all_day)
   const timedEvents = layoutEvents(dayEvents, selectedDate)
-  const before = dayEvents.filter((event) => !event.is_all_day && new Date(event.start_at).getTime() < dateAtStartOfDay(selectedDate).getTime() + START_HOUR * 3_600_000)
-  const after = dayEvents.filter((event) => !event.is_all_day && new Date(event.end_at).getTime() > dateAtStartOfDay(selectedDate).getTime() + END_HOUR * 3_600_000)
+  const dayStartMs = dateAtStartOfDay(selectedDate).getTime()
+  const before = dayEvents
+    .filter((event) => !event.is_all_day && new Date(event.start_at).getTime() < dayStartMs + START_HOUR * 3_600_000)
+    .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+  const after = dayEvents
+    .filter((event) => !event.is_all_day && new Date(event.end_at).getTime() > dayStartMs + END_HOUR * 3_600_000)
+    .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
   const hours = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, index) => START_HOUR + index)
+
+  const nowMinutes = (() => {
+    if (!isToday) return null
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: TIME_ZONE, hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(now)
+    const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0')
+    const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0')
+    const total = hour * 60 + minute
+    if (total < START_HOUR * 60 || total > END_HOUR * 60) return null
+    return total
+  })()
+  const nowTop = nowMinutes === null
+    ? null
+    : ((nowMinutes - START_HOUR * 60) / TOTAL_MINUTES) * 100
+
+  const beforeHint = overflowHint(before, 'earlier')
+  const afterHint = overflowHint(after, 'later')
 
   return (
     <section className="calendar-schedule" aria-label={`Calendar for ${dayLabel(selectedDate)}`}>
@@ -198,7 +250,15 @@ function CalendarSchedule({
         </div>
         <div className="calendar-navigation" aria-label="Calendar navigation">
           <button type="button" onClick={onPrevious} aria-label="Previous day">‹</button>
-          <button type="button" className="today-button" onClick={onToday}>Today</button>
+          <button
+            type="button"
+            className={`today-button${isToday ? ' is-active' : ''}`}
+            onClick={onToday}
+            disabled={isToday}
+            aria-current={isToday ? 'date' : undefined}
+          >
+            Today
+          </button>
           <button type="button" onClick={onNext} aria-label="Next day">›</button>
         </div>
       </div>
@@ -212,10 +272,17 @@ function CalendarSchedule({
 
       {calendar.status !== 'ready' ? <SetupState service="Apple Calendar" status={calendar.status} /> : (
         <>
-          {before.length > 0 && <p className="calendar-overflow">↑ {before.length} earlier event{before.length === 1 ? '' : 's'}</p>}
+          {beforeHint && <p className="calendar-overflow">{beforeHint}</p>}
           <div className="calendar-day-grid" aria-label="Hourly calendar grid from 07:00 to 20:00">
             <div className="calendar-hour-labels" aria-hidden="true">
-              {hours.map((hour) => <span key={hour} style={{ top: `${((hour - START_HOUR) / (END_HOUR - START_HOUR)) * 100}%` }}>{String(hour).padStart(2, '0')}:00</span>)}
+              {hours.map((hour) => (
+                <span
+                  key={hour}
+                  style={{ top: `${((hour - START_HOUR) / (END_HOUR - START_HOUR)) * 100}%` }}
+                >
+                  {String(hour).padStart(2, '0')}:00
+                </span>
+              ))}
             </div>
             <div className="calendar-canvas">
               {timedEvents.map((event) => {
@@ -231,24 +298,57 @@ function CalendarSchedule({
                       left: `calc(${(event.column / event.columns) * 100}% + 3px)`,
                       width: `calc(${100 / event.columns}% - 6px)`,
                     }}
-                    aria-label={`${event.title}, ${eventTime(event)}`}
+                    aria-label={`${event.title}, ${eventTime(event)}${event.is_current ? ', now' : ''}`}
                   >
                     <strong>{compact ? `${eventTime(event)} ${event.title}` : event.title}</strong>
-                    {!compact && <span>{eventTime(event)}</span>}
+                    {!compact && (
+                      <span>
+                        {eventTime(event)}
+                        {event.is_current ? ' · NOW' : ''}
+                      </span>
+                    )}
                   </article>
                 )
               })}
+              {nowTop !== null && (
+                <div
+                  className="calendar-now-line"
+                  style={{ top: `${nowTop}%` }}
+                  aria-hidden="true"
+                />
+              )}
               {timedEvents.length === 0 && <p className="calendar-empty">No timed events</p>}
             </div>
           </div>
-          {after.length > 0 && <p className="calendar-overflow">↓ {after.length} later event{after.length === 1 ? '' : 's'}</p>}
+          {afterHint && <p className="calendar-overflow">{afterHint}</p>}
         </>
       )}
     </section>
   )
 }
 
+function TaskRow({ task, todayKey }: { task: NotionTask, todayKey: string }) {
+  const typeClass = taskTypeClass(task.task_type)
+  const typeLabel = taskTypeLabel(task.task_type)
+  const meta = taskMetaLine(task, todayKey)
+
+  return (
+    <li
+      className={`task-row is-clean ${typeClass}${task.is_overdue ? ' is-overdue' : ''}`}
+      aria-label={`${typeLabel}: ${task.title}. ${meta}`}
+    >
+      <span className="task-rail" aria-hidden="true" />
+      <div className="task-copy">
+        <span className="task-title">{task.title}</span>
+        <span className={`task-meta-line${task.is_overdue ? ' is-overdue' : ''}`}>{meta}</span>
+      </div>
+    </li>
+  )
+}
+
 function TaskSection({ notion }: { notion: NotionToday }) {
+  const todayKey = dayKey(new Date())
+
   if (notion.status !== 'ready') {
     return (
       <section className="task-section" aria-label="Tasks">
@@ -257,52 +357,43 @@ function TaskSection({ notion }: { notion: NotionToday }) {
     )
   }
 
-  const tasks = notion.tasks.slice(0, 8)
-  const summary = taskSummary(tasks)
+  const allTasks = notion.tasks
+  const summary = taskSummary(allTasks)
+  const ordered = flattenTasksByDue(allTasks)
+  const visibleTasks = ordered.slice(0, TASK_VISIBLE_LIMIT)
+  const hiddenCount = Math.max(0, ordered.length - visibleTasks.length)
 
   return (
     <section className="task-section" aria-label="Tasks">
-      <div className="task-heading">
+      <div className="task-heading is-clean">
         <div>
           <p className="eyebrow">TASKS</p>
-          {summary.overdue > 0 && (
-            <p className="task-summary">
-              <span className="is-overdue">{summary.overdue} overdue</span>
-            </p>
-          )}
+          <p className="task-summary">
+            <strong>{summary.total} open</strong>
+          </p>
         </div>
-        <div className="task-type-pills" aria-label="Task types">
-          <span className="task-type-pill is-work">Work {summary.work}</span>
-          <span className="task-type-pill is-personal">Personal {summary.personal}</span>
-        </div>
+        {summary.overdue > 0 && (
+          <p className="task-summary is-end">
+            <span className="is-overdue">{summary.overdue} overdue</span>
+          </p>
+        )}
       </div>
 
-      {tasks.length === 0 ? (
+      {allTasks.length === 0 ? (
         <p className="setup-state">No open tasks</p>
       ) : (
-        <div className="task-groups">
-          {groupTasksByDue(tasks).map((group) => (
-            <section className={`task-group${group.isOverdue ? ' is-overdue' : ''}`} key={group.key} aria-label={group.label}>
-              <h3 className="task-group-heading">{group.label}</h3>
-              <ul className="task-list">
-                {group.tasks.map((task) => {
-                  const typeClass = taskTypeClass(task.task_type)
-                  const typeLabel = taskTypeLabel(task.task_type)
-                  return (
-                    <li
-                      className={`task-row ${typeClass}${task.is_overdue ? ' is-overdue' : ''}`}
-                      key={task.id}
-                      aria-label={`${typeLabel}: ${task.title}`}
-                    >
-                      <span className="task-title">{task.title}</span>
-                      <TaskPriorityBars priority={task.priority} />
-                    </li>
-                  )
-                })}
-              </ul>
-            </section>
-          ))}
-        </div>
+        <>
+          <ul className="task-list is-clean">
+            {visibleTasks.map((task) => (
+              <TaskRow key={task.id} task={task} todayKey={todayKey} />
+            ))}
+          </ul>
+          {hiddenCount > 0 && (
+            <p className="task-more" aria-label={`${hiddenCount} more tasks not shown`}>
+              +{hiddenCount} more
+            </p>
+          )}
+        </>
       )}
     </section>
   )

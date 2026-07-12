@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { addDays } from '../components/PlanningRegion'
 import {
   fetchCalendarEvents,
   fetchDashboard,
@@ -9,11 +10,14 @@ import {
   fetchWalkingPadToday,
   fetchWeather,
   openOpenClawMessageStream,
-  sendOpenClawMessage,
   setSystemVolume,
 } from '../lib/api'
 import type { CalendarToday, Dashboard, NotionToday, OpenClawConversation, SpotifyNowPlaying, WalkReminder, WalkingPadToday, WeatherForecast } from '../types'
 import { usePolling } from './usePolling'
+
+/** Calendar API max is 30 days; anchor 7 days before the selected day. */
+const CALENDAR_LOOKBACK_DAYS = 7
+const CALENDAR_WINDOW_DAYS = 30
 
 export const initialDashboard: Dashboard = {
   temperature_c: null,
@@ -98,8 +102,6 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
   const [weather, setWeather] = useState(initialData?.weather ?? initialWeather)
   const [walkingPad, setWalkingPad] = useState(initialData?.walkingPad ?? initialWalkingPad)
   const [walkReminder, setWalkReminder] = useState(initialData?.walkReminder ?? initialWalkReminder)
-  const [openclawPending, setOpenClawPending] = useState(false)
-  const [openclawFeedback, setOpenClawFeedback] = useState<string | null>(null)
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(today)
   const [volumePending, setVolumePending] = useState(false)
   const skipImmediatePoll = Boolean(initialData)
@@ -121,13 +123,14 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
     if (results[2].status === 'fulfilled') setOpenClaw(results[2].value)
   }, [])
 
-  const refreshCalendar = useCallback(async () => {
+  const refreshCalendar = useCallback(async (anchorDate = selectedCalendarDate) => {
     try {
-      setCalendar(await fetchCalendarEvents(today))
+      const start = addDays(anchorDate, -CALENDAR_LOOKBACK_DAYS)
+      setCalendar(await fetchCalendarEvents(start, CALENDAR_WINDOW_DAYS))
     } catch {
       // Keep the last calendar snapshot visible until the next bridge sync lands.
     }
-  }, [today])
+  }, [selectedCalendarDate])
 
   const refreshWeather = useCallback(async () => {
     try {
@@ -176,26 +179,6 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
       .finally(() => setVolumePending(false))
   }, [])
 
-  const sendToOpenClaw = useCallback(async (message: string) => {
-    setOpenClawPending(true)
-    setOpenClawFeedback(null)
-    try {
-      const result = await sendOpenClawMessage(message)
-      if (result.status !== 'success') throw new Error(result.message ?? 'Telegram delivery failed.')
-      if (result.reply?.startsWith('Logged walk:')) {
-        await refreshWalkingPad()
-        setOpenClawFeedback(result.reply)
-        return
-      }
-      setOpenClawFeedback(null)
-      setOpenClaw(await fetchOpenClawMessages())
-    } catch (error) {
-      setOpenClawFeedback(error instanceof Error ? error.message : 'Telegram delivery failed.')
-    } finally {
-      setOpenClawPending(false)
-    }
-  }, [refreshWalkingPad])
-
   const dashboardRefreshMs = dashboard.water_pump.state === 'running' ? DASHBOARD_FAST_REFRESH_MS : DASHBOARD_REFRESH_MS
   usePolling(refresh, dashboardRefreshMs, !skipImmediatePoll)
   usePolling(refreshNotion, NOTION_REFRESH_MS, !skipImmediatePoll)
@@ -205,8 +188,11 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
 
   useEffect(() => {
     setSelectedCalendarDate(today)
-    void refreshCalendar()
-  }, [today, refreshCalendar])
+  }, [today])
+
+  useEffect(() => {
+    void refreshCalendar(selectedCalendarDate)
+  }, [selectedCalendarDate, refreshCalendar])
 
   useEffect(() => {
     if (typeof EventSource === 'undefined') {
@@ -229,8 +215,6 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
     weather,
     walkingPad,
     walkReminder,
-    openclawPending,
-    openclawFeedback,
     selectedCalendarDate,
     volumePending,
     setDashboard,
@@ -239,6 +223,5 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
     refreshCalendar,
     refreshOpenClaw,
     setVolume,
-    sendToOpenClaw,
   }
 }

@@ -32,10 +32,10 @@ docker compose -f compose.yaml -f compose.pi.yaml --profile voice up -d --force-
 
 ### Tune threshold after install
 
-Official models often work well at **0.5**. Custom models vary — start at **0.4** and adjust in `.env`:
+Official models often work well at **0.5**. For `hey_chee_lee` in a quiet room, start near **0.30** and raise if you get false wakes:
 
 ```env
-VOICE_WAKEWORD_THRESHOLD=0.4   # lower = easier to trigger, more false positives
+VOICE_WAKEWORD_THRESHOLD=0.30  # lower = easier to trigger, more false positives
 VOICE_WAKEWORD_REARM_SECONDS=0.5
 ```
 

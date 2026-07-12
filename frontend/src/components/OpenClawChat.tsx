@@ -1,12 +1,8 @@
-import { useOptimistic, useState, useTransition, type FormEvent } from 'react'
 import openClawLogo from '../assets/openclaw-logo.svg'
 import type { OpenClawConversation } from '../types'
 
 type Props = {
   conversation: OpenClawConversation
-  pending: boolean
-  feedback: string | null
-  onSend: (message: string) => Promise<void>
   onRefresh: () => void
 }
 
@@ -14,33 +10,8 @@ function scrollLatestMessageIntoView(element: HTMLElement | null) {
   element?.scrollIntoView({ block: 'end' })
 }
 
-export function OpenClawChat({ conversation, pending, feedback, onSend, onRefresh }: Props) {
-  const [draft, setDraft] = useState('')
-  const [, startTransition] = useTransition()
-
-  const [messages, addOptimisticMessage] = useOptimistic(
-    conversation.messages,
-    (current, newText: string) => [
-      ...current,
-      {
-        id: `optimistic-${Date.now()}`,
-        role: 'user' as const,
-        text: newText,
-        created_at: new Date().toISOString(),
-      },
-    ],
-  )
-
-  function submit(event: FormEvent) {
-    event.preventDefault()
-    const message = draft.trim()
-    if (!message || pending) return
-    setDraft('')
-    startTransition(async () => {
-      addOptimisticMessage(message)
-      await onSend(message)
-    })
-  }
+export function OpenClawChat({ conversation, onRefresh }: Props) {
+  const messages = conversation.messages
 
   return (
     <section className={`openclaw-chat is-${conversation.status}`} aria-label="Ask Chili">
@@ -71,35 +42,20 @@ export function OpenClawChat({ conversation, pending, feedback, onSend, onRefres
           <button type="button" onClick={onRefresh}>Retry</button>
         </div>
       ) : (
-        <>
-          <div className="openclaw-transcript" aria-live="polite">
-            {messages.length === 0 ? (
-              <p className="openclaw-empty-hint">Say “Hey Chili” or type below. Log walks like “I walked 30 min and 2 km today”. Messages sync with Telegram.</p>
-            ) : messages.map((message, index) => (
-              <article
-                key={message.id}
-                ref={index === messages.length - 1 ? scrollLatestMessageIntoView : undefined}
-                className={`openclaw-message is-${message.role}`}
-              >
-                <span className="openclaw-message-label">{message.role === 'user' ? 'You' : 'Chili'}</span>
-                <p className="openclaw-message-body">{message.text}</p>
-              </article>
-            ))}
-          </div>
-          <form className="openclaw-form" onSubmit={submit}>
-            <label className="sr-only" htmlFor="chili-message">Message Chili</label>
-            <input
-              id="chili-message"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder="Message Chili…"
-              maxLength={3000}
-              disabled={pending}
-            />
-            <button type="submit" disabled={pending || !draft.trim()}>{pending ? 'Sending…' : 'Send'}</button>
-          </form>
-          <p className={`openclaw-feedback${feedback ? ' is-error' : ''}`} aria-live="polite">{feedback}</p>
-        </>
+        <div className="openclaw-transcript" aria-live="polite">
+          {messages.length === 0 ? (
+            <p className="openclaw-empty-hint">Say “Hey Chili” to talk. Log walks like “I walked 30 min and 2 km today”. Messages sync with Telegram.</p>
+          ) : messages.map((message, index) => (
+            <article
+              key={message.id}
+              ref={index === messages.length - 1 ? scrollLatestMessageIntoView : undefined}
+              className={`openclaw-message is-${message.role}`}
+            >
+              <span className="openclaw-message-label">{message.role === 'user' ? 'You' : 'Chili'}</span>
+              <p className="openclaw-message-body">{message.text}</p>
+            </article>
+          ))}
+        </div>
       )}
     </section>
   )

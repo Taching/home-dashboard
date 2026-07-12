@@ -319,7 +319,7 @@ def main() -> None:
     wakeword_model = os.environ.get("VOICE_WAKEWORD_MODEL", "/models/hey_chee_lee.tflite")
     wakeword_label = os.environ.get("VOICE_WAKEWORD_LABEL", "Hey Chili")
     backend_url = os.environ.get("BACKEND_URL", "http://backend:8000").rstrip("/")
-    threshold = float(os.environ.get("VOICE_WAKEWORD_THRESHOLD", "0.4"))
+    threshold = float(os.environ.get("VOICE_WAKEWORD_THRESHOLD", "0.30"))
     rearm_seconds = float(os.environ.get("VOICE_WAKEWORD_REARM_SECONDS", str(WAKEWORD_REARM_SECONDS)))
     transcription_model = os.environ.get("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe")
     ensure_mic_capture(device)

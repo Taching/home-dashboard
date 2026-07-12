@@ -2,7 +2,7 @@ type PriorityLevel = 'urgent' | 'high' | 'medium' | 'low'
 
 const SLOT_COUNT = 4
 
-function priorityLevel(priority: string | null): PriorityLevel | null {
+export function priorityLevel(priority: string | null): PriorityLevel | null {
   const value = priority?.toLowerCase() ?? ''
   if (value.includes('urgent')) return 'urgent'
   if (value.includes('high')) return 'high'
@@ -16,6 +16,13 @@ function filledCount(level: PriorityLevel) {
   if (level === 'medium') return 2
   if (level === 'high') return 3
   return 4
+}
+
+function priorityChipLabel(level: PriorityLevel) {
+  if (level === 'urgent') return 'Urgent'
+  if (level === 'high') return 'High'
+  if (level === 'medium') return 'Med'
+  return 'Low'
 }
 
 export function TaskPriorityBars({ priority }: { priority: string | null }) {
@@ -32,6 +39,21 @@ export function TaskPriorityBars({ priority }: { priority: string | null }) {
       {Array.from({ length: SLOT_COUNT }, (_, index) => (
         <i key={index} className={index < active ? 'is-filled' : 'is-empty'} />
       ))}
+    </span>
+  )
+}
+
+export function TaskPriorityChip({ priority }: { priority: string | null }) {
+  const level = priorityLevel(priority)
+  if (!level) return null
+
+  return (
+    <span
+      className={`priority-badge is-${level}`}
+      title={priority ?? undefined}
+      aria-label={`Priority ${priorityChipLabel(level)}`}
+    >
+      {priorityChipLabel(level)}
     </span>
   )
 }

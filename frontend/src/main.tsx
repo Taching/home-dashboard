@@ -71,8 +71,6 @@ function DashboardApp({
     weather,
     walkingPad,
     walkReminder,
-    openclawPending,
-    openclawFeedback,
     selectedCalendarDate,
     volumePending,
     setDashboard,
@@ -81,7 +79,6 @@ function DashboardApp({
     refreshCalendar,
     refreshOpenClaw,
     setVolume,
-    sendToOpenClaw,
   } = useDashboardData(today, initialData)
   const spotifyPlayback = useSpotifyPlayback(spotify.status === 'ready')
 
@@ -283,9 +280,6 @@ function DashboardApp({
         <aside className="assistant-region" aria-label="Assistant">
           <OpenClawChat
             conversation={openclaw}
-            pending={openclawPending}
-            feedback={openclawFeedback}
-            onSend={(message) => sendToOpenClaw(message)}
             onRefresh={() => void refreshOpenClaw()}
           />
         </aside>

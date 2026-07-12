@@ -117,14 +117,14 @@ the backend.
 ## Voice commands
 
 The voice worker listens locally for **Hey Chili** using the bundled
-`assets/voice/hey_chili.tflite` openWakeWord model. Only
+`assets/voice/hey_chee_lee.tflite` openWakeWord model. Only
 the short command recorded after a wake detection is sent to OpenAI for
 transcription.
 
 1. Set `OPENAI_API_KEY` in `.env`. The USB microphone is configured as
    `plughw:2,0`; change `VOICE_AUDIO_DEVICE` if ALSA assigns it differently.
-   By default, Compose mounts `./assets/voice/hey_chili.tflite` into the voice
-   container at `/models/hey_chili.tflite`.
+   By default, Compose mounts `./assets/voice/hey_chee_lee.tflite` into the voice
+   container at `/models/hey_chee_lee.tflite`.
 2. Start the worker alongside the dashboard:
 
    ```sh

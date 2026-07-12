@@ -26,12 +26,36 @@ active_hdmi_output() {
   '
 }
 
+output_enabled() {
+  local target="$1"
+  wlr-randr | awk -v target="$target" '
+    $0 ~ "^" target " " { show=1 }
+    show && /Enabled:/ { print $2; exit }
+  '
+}
+
+preferred_mode() {
+  local target="$1"
+  wlr-randr | awk -v target="$target" '
+    $0 ~ "^" target " " { show=1; next }
+    show && /^[^ ]/ { exit }
+    show && /\(preferred/ {
+      res=$1
+      hz=$3
+      gsub(/,/,"",hz)
+      if (res != "" && hz != "") {
+        print res "@" hz
+        exit
+      }
+    }
+  '
+}
+
 OUTPUT="${DISPLAY_HDMI_OUTPUT:-}"
 if [[ -z "$OUTPUT" ]]; then
   case "$ACTION" in
-    off) OUTPUT="$(active_hdmi_output || true)" ;;
-    on) OUTPUT="$(first_hdmi_output || true)" ;;
-    status) OUTPUT="$(active_hdmi_output || first_hdmi_output || true)" ;;
+    off) OUTPUT="$(active_hdmi_output || first_hdmi_output || true)" ;;
+    on|status) OUTPUT="$(first_hdmi_output || true)" ;;
   esac
 fi
 
@@ -42,16 +66,23 @@ fi
 
 case "$ACTION" in
   on)
-    wlr-randr --output "$OUTPUT" --on
+    mode="$(preferred_mode "$OUTPUT" || true)"
+    if [[ -n "$mode" ]]; then
+      wlr-randr --output "$OUTPUT" --on --mode "$mode"
+    else
+      wlr-randr --output "$OUTPUT" --on
+    fi
     ;;
   off)
+    # Idempotent: already-disabled outputs still count as success so the
+    # scheduler can re-assert power-off without failing.
+    if [[ "$(output_enabled "$OUTPUT" || true)" == "no" ]]; then
+      exit 0
+    fi
     wlr-randr --output "$OUTPUT" --off
     ;;
   status)
-    wlr-randr | awk -v target="$OUTPUT" '
-      $0 ~ "^" target " " { show=1 }
-      show && /Enabled:/ { print $2; exit }
-    '
+    output_enabled "$OUTPUT"
     ;;
   *)
     echo "Usage: $0 {on|off|status}" >&2

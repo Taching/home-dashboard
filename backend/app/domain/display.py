@@ -97,6 +97,9 @@ class DisplayService:
         if target != self._applied_state:
             self._apply(target)
             changed = True
+        elif target == "hidden" and self._power_available():
+            # Compositor/input can wake HDMI after we blank; keep asserting off.
+            self._apply(target)
         return changed
 
     def show(self, source: str) -> DisplaySnapshot:
@@ -166,18 +169,21 @@ class DisplayService:
                 timeout=5,
                 env=self._power_env(),
             )
+            logger.info("Display HDMI %s", action)
             if result.stderr.strip():
                 logger.debug("Display power stderr (%s): %s", action, result.stderr.strip())
         except (OSError, subprocess.SubprocessError) as error:
             logger.warning("Display power command failed (%s): %s", action, error)
+            self._power_ready = False
 
     def _power_command(self, action: str) -> list[str]:
         return [str(self._power_script), action]
 
     def _power_available(self) -> bool:
-        if self._power_ready is None:
-            return self._probe_power()
-        return self._power_ready
+        if self._power_ready is True:
+            return True
+        # Retry when unknown or previously unavailable (Wayland may start later).
+        return self._probe_power()
 
     def _probe_power(self) -> bool:
         if not os.access(self._power_script, os.X_OK):

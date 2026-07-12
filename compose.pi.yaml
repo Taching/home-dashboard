@@ -8,6 +8,7 @@ services:
       PULSE_SERVER: unix:/run/pulse/native
       WAYLAND_DISPLAY: wayland-0
       XDG_RUNTIME_DIR: /run/user/1000
+      DISPLAY_HDMI_OUTPUT: ${DISPLAY_HDMI_OUTPUT:-HDMI-A-2}
     volumes:
       - /run/user/1000/pulse:/run/pulse:ro
       - /run/user/1000:/run/user/1000

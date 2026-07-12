@@ -17,7 +17,7 @@ The history chart and manual control affordances arrive after live hardware data
 
 1. Current values update with a brief numeric crossfade when a fresh sensor reading arrives.
 2. Light state changes use a short accent-color transition, not a modal or toast.
-3. Screen blanking fades the dashboard out while leaving the application and voice service active.
+3. Screen off powers down the HDMI output (monitor sleep) while leaving the application and voice service active. The UI blackout is only a fallback when HDMI power control is unavailable.
 
 Motion remains optional and respects `prefers-reduced-motion`.
 

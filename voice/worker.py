@@ -316,7 +316,7 @@ def report_failure(
 def main() -> None:
     api_key = required("OPENAI_API_KEY")
     device = os.environ.get("VOICE_AUDIO_DEVICE", os.environ.get("AUDIO_DEVICE", "plughw:2,0"))
-    wakeword_model = os.environ.get("VOICE_WAKEWORD_MODEL", "/models/hey_chili.tflite")
+    wakeword_model = os.environ.get("VOICE_WAKEWORD_MODEL", "/models/hey_chee_lee.tflite")
     wakeword_label = os.environ.get("VOICE_WAKEWORD_LABEL", "Hey Chili")
     backend_url = os.environ.get("BACKEND_URL", "http://backend:8000").rstrip("/")
     threshold = float(os.environ.get("VOICE_WAKEWORD_THRESHOLD", "0.4"))

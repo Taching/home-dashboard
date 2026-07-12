@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC="${1:?Usage: $0 path/to/hey_chili.tflite}"
-DEST="${ROOT}/assets/voice/hey_chili.tflite"
+SRC="${1:?Usage: $0 path/to/hey_chee_lee.tflite}"
+DEST="${ROOT}/assets/voice/hey_chee_lee.tflite"
 
 if [[ ! -f "$SRC" ]]; then
   echo "Source file not found: $SRC" >&2

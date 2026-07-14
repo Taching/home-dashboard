@@ -1,5 +1,5 @@
 import asyncio
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 import hmac
 import logging
 from typing import Literal
@@ -309,7 +309,7 @@ class WalkingPadTodayResponse(BaseModel):
     total_distance_km: float = 0
     total_steps: int = 0
     total_calories: float = 0
-    goal_minutes: int = 45
+    goal_minutes: int = 120
     goal_distance_km: float = 3.0
     session_count: int = 0
     goal_met: bool = False
@@ -689,6 +689,46 @@ async def automation_walkingpad_log(
     if not _automation_authorized(authorization):
         raise HTTPException(status_code=401, detail="Unauthorized")
     return _log_manual_walk(request, body)
+
+
+def _parse_iso_date(value: str, field_name: str = "date") -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name}; use YYYY-MM-DD") from error
+
+
+@api_router.get("/db/{day}")
+async def read_db_for_day(
+    request: Request,
+    day: str,
+    end: str | None = Query(default=None, description="Optional inclusive end date YYYY-MM-DD"),
+    days: int | None = Query(default=None, ge=1, le=62, description="Inclusive day count starting at day"),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    """Read-only SQLite snapshot for OpenClaw/tools. Requires automation bearer token.
+
+    Examples:
+      GET /api/v1/db/2026-07-13
+      GET /api/v1/db/2026-07-07?days=7
+      GET /api/v1/db/2026-07-01?end=2026-07-31
+    """
+    if not _automation_authorized(authorization):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    start_day = _parse_iso_date(day, "day")
+    if end is not None and days is not None:
+        raise HTTPException(status_code=400, detail="Provide either end or days, not both")
+    if end is not None:
+        end_day = _parse_iso_date(end, "end")
+    elif days is not None:
+        end_day = start_day + timedelta(days=days - 1)
+    else:
+        end_day = start_day
+    service = request.app.state.db_read_service
+    try:
+        return service.snapshot_for_range(start_day, end_day)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @api_router.get("/notion/today", response_model=NotionTodayResponse)

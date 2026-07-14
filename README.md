@@ -53,7 +53,7 @@ The dashboard can track daily walking from a KingSmith WalkingPad S1 over BLE an
    ```env
    WALKINGPAD_BLE_NAME=KS-HD-XXXX
    WALKINGPAD_BRIDGE_TOKEN=<long random token>
-   WALKINGPAD_GOAL_MINUTES=45
+   WALKINGPAD_GOAL_MINUTES=120
    WALKINGPAD_GOAL_DISTANCE_KM=3.0
    WALKINGPAD_REMINDER_START_HOUR=10
    WALKINGPAD_REMINDER_END_HOUR=20
@@ -90,6 +90,33 @@ When BLE tracking misses a session, log it manually:
   ```
 
 Manual sessions are added to today's totals in the header and OpenClaw context.
+
+### Historical DB read for OpenClaw
+
+OpenClaw (or any automation client) can read date-scoped dashboard SQLite data
+with the same bearer token. Spotify OAuth secrets are excluded.
+
+```sh
+# One day
+curl -fsS -H "Authorization: Bearer $DASHBOARD_AUTOMATION_TOKEN" \
+  http://127.0.0.1:8080/api/v1/db/2026-07-13
+
+# Last 7 days starting from a date
+curl -fsS -H "Authorization: Bearer $DASHBOARD_AUTOMATION_TOKEN" \
+  'http://127.0.0.1:8080/api/v1/db/2026-07-07?days=7'
+
+# July (inclusive range)
+curl -fsS -H "Authorization: Bearer $DASHBOARD_AUTOMATION_TOKEN" \
+  'http://127.0.0.1:8080/api/v1/db/2026-07-01?end=2026-07-31'
+
+# Helper
+./deploy/openclaw-db-read.sh 2026-07-13
+./deploy/openclaw-db-read.sh 2026-07-07 days=7
+```
+
+The response includes a `summary` (walk minutes/km/steps, sensor averages, counts)
+plus full row lists for sensors, walks, lights, pump runs, voice logs, calendar
+events, and notify dedupe keys for that local-date range.
 
 ## Notion tasks
 

@@ -246,8 +246,9 @@ class WalkingPadService:
         lines = [
             (
                 f"- Walking: {snapshot.status}; synced at {synced}; "
-                f"today {snapshot.total_minutes}/{snapshot.goal_minutes} min and "
-                f"{snapshot.total_distance_km}/{snapshot.goal_distance_km} km; "
+                f"today {snapshot.total_minutes}/{snapshot.goal_minutes} min, "
+                f"{snapshot.total_distance_km}/{snapshot.goal_distance_km} km, "
+                f"{snapshot.total_steps} steps; "
                 f"{snapshot.session_count} session(s); {activity}."
             ),
             f"- Walking goal: {'met' if snapshot.goal_met else 'not yet met'}.",
@@ -260,6 +261,11 @@ class WalkingPadService:
             "Authorization Bearer DASHBOARD_AUTOMATION_TOKEN; JSON "
             '{"duration_minutes":30,"distance_km":2} or {"message":"walked 30 min 2 km"}. '
             "Ask Chili chat on the dashboard also accepts natural-language walk logs."
+        )
+        lines.append(
+            "- Historical dashboard DB read (auth required): GET /api/v1/db/YYYY-MM-DD "
+            "(optional ?days=7 or ?end=YYYY-MM-DD). Returns walks/steps, sensors, lights, "
+            "voice logs, calendar events for that local-date range."
         )
         next_event = self._next_timed_event(calendar_events, current)
         if next_event is not None:

@@ -24,6 +24,7 @@ from app.domain.voice_commands import VoiceCommandInterpreter
 from app.domain.system_volume import PiVolumeService
 from app.domain.water_pump import WaterPumpService
 from app.domain.walkingpad import WalkingPadService
+from app.domain.db_read import DbReadService
 from app.domain.display import DisplayService
 from app.jobs.display_scheduler import run_display_scheduler
 from app.jobs.sensor_polling import run_sensor_poller
@@ -40,6 +41,7 @@ async def lifespan(application: FastAPI):
     application.state.light_service = light_service
     application.state.calendar_bridge_service = CalendarBridgeService()
     application.state.walkingpad_service = WalkingPadService()
+    application.state.db_read_service = DbReadService()
     application.state.notion_service = NotionService()
     application.state.spotify_service = SpotifyService()
     application.state.activity_feed_service = ActivityFeedService()

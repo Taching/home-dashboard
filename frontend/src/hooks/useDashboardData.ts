@@ -65,7 +65,7 @@ export const initialWalkingPad: WalkingPadToday = {
   total_distance_km: 0,
   total_steps: 0,
   total_calories: 0,
-  goal_minutes: 45,
+  goal_minutes: 120,
   goal_distance_km: 3,
   session_count: 0,
   goal_met: false,

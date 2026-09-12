@@ -1,6 +1,6 @@
 # Apple Calendar bridge
 
-This macOS helper reads the calendars already visible in Apple Calendar and uploads a rolling 30-day snapshot, including all-day and timed events, to the Chili Dashboard. It is read-only: it does not alter Calendar events.
+This macOS helper reads the calendars already visible in Apple Calendar and uploads a rolling 30-day snapshot, including all-day and timed events, to the Chili Dashboard. It also synchronizes planner-owned events into one dedicated calendar; it never alters unrelated events.
 
 ## 1. Prepare the Pi
 
@@ -16,9 +16,14 @@ Put it in the Pi project's `.env` as `APPLE_CALENDAR_BRIDGE_TOKEN=<token>`. Also
 docker compose -f compose.yaml -f compose.pi.yaml -f compose.apple-calendar-bridge.yaml up --build -d
 ```
 
-This adds port `8081` on the Pi's home-network address. It accepts only `POST /api/v1/calendar/apple/sync`; every other route returns 404. The main dashboard remains local-only on port `8080`. The bridge binds to `127.0.0.1` by default, so it is not accidentally exposed on development machines.
+This adds port `8081` on the Pi's home-network address. It accepts only authenticated `POST /api/v1/calendar/apple/sync` and `GET /api/v1/calendar/apple/training-plan` requests; every other route returns 404. The main dashboard remains local-only on port `8080`. The bridge binds to `127.0.0.1` by default, so it is not accidentally exposed on development machines.
 
 ## 2. Build and authorize the Mac helper
+
+In Apple Calendar, create a calendar named **Chili Training** under your Google
+account. Because Apple Calendar already synchronizes that account, planner events
+written there also appear in Google Calendar. The helper refuses to write if the
+calendar is missing, read-only, or ambiguous.
 
 From this directory on the Mac that has your calendars:
 
@@ -29,7 +34,7 @@ CALENDAR_BRIDGE_TOKEN='<the same token>' \
 "build/Chili Calendar Bridge.app/Contents/MacOS/chili-calendar-bridge"
 ```
 
-Run this first command while logged into the Mac. macOS will ask for Calendar access; choose **Allow Full Access**. Verify the dashboard Calendar region then shows today’s events.
+Run this first command while logged into the Mac. macOS will ask for Calendar access; choose **Allow Full Access**. Verify the dashboard Calendar region then shows today’s events and the upcoming plan appears in **Chili Training**.
 
 All-day events appear in a compact strip above the kiosk timeline.
 
@@ -49,4 +54,5 @@ The bridge must run in the logged-in desktop session because macOS grants Calend
 - Confirm both personal and work accounts appear in the Mac Calendar app.
 - Use the Pi’s actual hostname or LAN IP if `raspberrypi.local` does not resolve.
 - Check `/tmp/chili-calendar-bridge.error.log` for launchd failures.
+- If training events are not written, confirm there is exactly one writable calendar named `Chili Training`.
 - Treat the bridge token as a password. Do not put it in a committed plist or send it in chat.

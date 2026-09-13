@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app.core.settings import settings
 from app.database.models import WeeklyReview, WeightLog
 from app.database.session import SessionLocal
-from app.domain.training import ExerciseDone, TrainingLogRecord, TrainingService
+from app.domain.training_logs import ExerciseDone, TrainingLogRecord, TrainingService
 from app.domain.training_plans import plan_for, suggested_kinds_for
 
 
@@ -136,7 +136,7 @@ class WeeklyService:
             raise RuntimeError("Sunday check-in could not be loaded.")
         return SundaySaveResult(
             check_in=check_in,
-            notify_message=self.notify_message(check_in, training.public_url(f"/daily/{day.isoformat()}")),
+            notify_message=self.notify_message(check_in, self.daily_url(day)),
             review_prompt=self.review_prompt(check_in),
         )
 
@@ -156,7 +156,13 @@ class WeeklyService:
                 return None
             return WeightRecord(logged_at=row.logged_at, weight_kg=row.weight_kg)
 
-    def week_sessions(self, sunday: date, training: TrainingService) -> tuple[WeekSession, ...]:
+    def daily_url(self, day: date) -> str:
+        base = (settings.chili_public_url or settings.daily_briefing_base_url).rstrip("/")
+        return f"{base}/daily/{day.isoformat()}"
+
+    def week_sessions(self, sunday: date, training) -> tuple[WeekSession, ...]:
+        if not hasattr(training, "logs_between"):
+            return self._week_sessions_from_overview(sunday, training)
         week_start = sunday - timedelta(days=6)
         logs = [row for row in training.logs_between(week_start, sunday) if row.kind != "sober"]
         by_day: dict[date, list[TrainingLogRecord]] = {}
@@ -201,6 +207,40 @@ class WeeklyService:
                 )
         return tuple(sessions)
 
+    def _week_sessions_from_overview(self, sunday: date, training) -> tuple[WeekSession, ...]:
+        now = datetime.combine(sunday, time(12), tzinfo=self._timezone)
+        overview = training.overview(now)
+        by_day: dict[date, list[dict]] = {}
+        for item in overview.get("week") or []:
+            day = date.fromisoformat(item["start_at"][:10]) if isinstance(item.get("start_at"), str) else sunday
+            try:
+                day = datetime.fromisoformat(item["start_at"]).astimezone(self._timezone).date()
+            except Exception:
+                pass
+            by_day.setdefault(day, []).append(item)
+        sessions: list[WeekSession] = []
+        week_start = sunday - timedelta(days=6)
+        for offset in range(7):
+            day = week_start + timedelta(days=offset)
+            for item in by_day.get(day, []):
+                status = item.get("status")
+                completed = status if status in {"completed", "partial", "skipped"} else None
+                sessions.append(
+                    WeekSession(
+                        date=day,
+                        kind=item.get("planned_type") or "rest",
+                        title=item.get("title") or item.get("planned_type") or "Session",
+                        completed=completed,
+                        note=item.get("notes"),
+                        exercises=tuple(
+                            ExerciseDone(name=exercise["name"], done=bool(exercise.get("done")))
+                            for exercise in item.get("exercises") or []
+                            if exercise.get("name")
+                        ),
+                    )
+                )
+        return tuple(sessions)
+
     def reminder_due(self, now: datetime | None = None) -> date | None:
         current = self._as_local(now or datetime.now(UTC))
         if current.weekday() != 6 or current.hour != 10:
@@ -223,6 +263,7 @@ class WeeklyService:
     def notify_message(check_in: SundayCheckIn, daily_url: str) -> str:
         weight = WeeklyService._weight_line(check_in)
         return (
+            f"{daily_url}\n\n"
             f"Sunday saved.\n"
             f"{weight}\n"
             "I'll reply if next week needs a change."

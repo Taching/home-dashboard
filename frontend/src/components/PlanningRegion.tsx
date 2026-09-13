@@ -1,12 +1,13 @@
 import { useClock } from '../hooks/useClock'
-import type { CalendarEvent, CalendarToday, NotionTask, NotionToday } from '../types'
+import type { CalendarEvent, CalendarToday, NotionTask, NotionToday, TrainingOverview } from '../types'
+import { TodayTrainingCard, TrainingWeekStrip } from './TrainingPlanner'
 import { priorityLevel } from './TaskPriorityBars'
 
 const TIME_ZONE = 'Asia/Tokyo'
 const START_HOUR = 7
 const END_HOUR = 20
 const TOTAL_MINUTES = (END_HOUR - START_HOUR) * 60
-const TASK_VISIBLE_LIMIT = 14
+const TASK_VISIBLE_LIMIT = 6
 
 type PositionedEvent = CalendarEvent & {
   startMinute: number
@@ -199,6 +200,16 @@ function SetupState({ service, status, emptyLabel }: { service: string, status: 
   return <p className="setup-state">{emptyLabel ?? 'No events on this day'}</p>
 }
 
+function syncAge(value: string | null) {
+  if (!value) return 'Cached schedule'
+  const minutes = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60_000))
+  if (minutes < 2) return 'Last synced just now'
+  if (minutes < 60) return `Last synced ${minutes} min ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `Last synced ${hours} hr ago`
+  return `Last synced ${Math.floor(hours / 24)} d ago`
+}
+
 function CalendarSchedule({
   calendar, selectedDate, onPrevious, onToday, onNext,
 }: {
@@ -248,19 +259,6 @@ function CalendarSchedule({
           <p className="eyebrow">SCHEDULE</p>
           <h2>{dayLabel(selectedDate)}</h2>
         </div>
-        <div className="calendar-navigation" aria-label="Calendar navigation">
-          <button type="button" onClick={onPrevious} aria-label="Previous day">‹</button>
-          <button
-            type="button"
-            className={`today-button${isToday ? ' is-active' : ''}`}
-            onClick={onToday}
-            disabled={isToday}
-            aria-current={isToday ? 'date' : undefined}
-          >
-            Today
-          </button>
-          <button type="button" onClick={onNext} aria-label="Next day">›</button>
-        </div>
       </div>
 
       <div className="all-day-strip" aria-label="All-day events">
@@ -270,7 +268,13 @@ function CalendarSchedule({
         ))}
       </div>
 
-      {calendar.status !== 'ready' ? <SetupState service="Apple Calendar" status={calendar.status} /> : (
+      {calendar.status === 'stale' && (
+        <p className="calendar-stale-notice" role="status">
+          Using cached events · {syncAge(calendar.synced_at)} · waiting for the Mac bridge
+        </p>
+      )}
+
+      {!['ready', 'stale'].includes(calendar.status) ? <SetupState service="Apple Calendar" status={calendar.status} /> : (
         <>
           {beforeHint && <p className="calendar-overflow">{beforeHint}</p>}
           <div className="calendar-day-grid" aria-label="Hourly calendar grid from 07:00 to 20:00">
@@ -291,7 +295,7 @@ function CalendarSchedule({
                 const compact = event.endMinute - event.startMinute < 45
                 return (
                   <article
-                    className={`calendar-event${compact ? ' is-compact' : ''}${event.is_current ? ' is-current' : ''}`}
+                    className={`calendar-event${compact ? ' is-compact' : ''}${event.is_current ? ' is-current' : ''}${event.source === 'training' ? ' is-training' : ''}`}
                     key={event.id}
                     style={{
                       top: `${top}%`, height: `${height}%`,
@@ -333,14 +337,13 @@ function TaskRow({ task, todayKey }: { task: NotionTask, todayKey: string }) {
   const meta = taskMetaLine(task, todayKey)
 
   return (
-    <li
-      className={`task-row is-clean ${typeClass}${task.is_overdue ? ' is-overdue' : ''}`}
-      aria-label={`${typeLabel}: ${task.title}. ${meta}`}
-    >
-      <span className="task-rail" aria-hidden="true" />
-      <div className="task-copy">
-        <span className="task-title">{task.title}</span>
-        <span className={`task-meta-line${task.is_overdue ? ' is-overdue' : ''}`}>{meta}</span>
+    <li className={`task-row is-clean ${typeClass}${task.is_overdue ? ' is-overdue' : ''}`}>
+      <div className="task-ask-button" aria-label={`${typeLabel} task: ${task.title}. ${meta}`}>
+        <span className="task-rail" aria-hidden="true" />
+        <span className="task-copy">
+          <span className="task-title">{task.title}</span>
+          <span className={`task-meta-line${task.is_overdue ? ' is-overdue' : ''}`}>{meta}</span>
+        </span>
       </div>
     </li>
   )
@@ -400,10 +403,10 @@ function TaskSection({ notion }: { notion: NotionToday }) {
 }
 
 export function PlanningRegion({
-  calendar, notion, selectedDate, onPrevious, onToday, onNext,
+  calendar, training, selectedDate, onPrevious, onToday, onNext,
 }: {
   calendar: CalendarToday
-  notion: NotionToday
+  training: TrainingOverview
   selectedDate: string
   onPrevious: () => void
   onToday: () => void
@@ -411,16 +414,23 @@ export function PlanningRegion({
 }) {
   return (
     <section className="planning-region" aria-label="Today’s plan">
-      <CalendarSchedule
-        calendar={calendar}
-        selectedDate={selectedDate}
-        onPrevious={onPrevious}
-        onToday={onToday}
-        onNext={onNext}
-      />
-      <TaskSection notion={notion} />
+      <TodayTrainingCard training={training} />
+      <TrainingWeekStrip training={training} />
+      <div className="compact-calendar">
+        <CalendarSchedule
+          calendar={calendar}
+          selectedDate={selectedDate}
+          onPrevious={onPrevious}
+          onToday={onToday}
+          onNext={onNext}
+        />
+      </div>
     </section>
   )
+}
+
+export function TaskRegion({ notion }: { notion: NotionToday }) {
+  return <TaskSection notion={notion} />
 }
 
 export { addDays, dayKey }

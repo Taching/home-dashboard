@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import delete, select
 
 from app.core.settings import settings
-from app.database.models import CalendarBridgeEvent, CalendarBridgeSync
+from app.database.models import CalendarBridgeEvent, CalendarBridgeSync, TrainingSession
 from app.database.session import SessionLocal
 
 APPLE_CALENDAR_SOURCE = "apple_calendar"
@@ -22,6 +22,9 @@ class CalendarEvent:
     start_at: datetime
     end_at: datetime
     is_all_day: bool = False
+    source: str = APPLE_CALENDAR_SOURCE
+    calendar_title: str | None = None
+    managed_session_id: str | None = None
 
 
 class CalendarBridgeService:
@@ -35,7 +38,7 @@ class CalendarBridgeService:
     @staticmethod
     def events_fingerprint(events: list[CalendarEvent]) -> str:
         parts = sorted(
-            f"{event.external_id}|{event.title}|{event.start_at.isoformat()}|{event.end_at.isoformat()}|{event.is_all_day}"
+            f"{event.external_id}|{event.title}|{event.start_at.isoformat()}|{event.end_at.isoformat()}|{event.is_all_day}|{event.source}"
             for event in events
         )
         digest = hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
@@ -74,6 +77,8 @@ class CalendarBridgeService:
                         start_at=event.start_at,
                         end_at=event.end_at,
                         is_all_day=event.is_all_day,
+                        calendar_title=event.calendar_title,
+                        managed_session_id=event.managed_session_id,
                     )
                     for event in events
                 ]
@@ -83,33 +88,63 @@ class CalendarBridgeService:
                 session.add(CalendarBridgeSync(source=APPLE_CALENDAR_SOURCE, synced_at=synced_at))
             else:
                 sync.synced_at = synced_at
+            for event in events:
+                if event.managed_session_id:
+                    training = session.get(TrainingSession, event.managed_session_id)
+                    if training is not None:
+                        training.apple_event_id = event.external_id
             session.commit()
 
     def events_for_range(
         self, start_date: date, days: int
     ) -> tuple[str, datetime | None, list[CalendarEvent]]:
         status, synced_at = self._status()
-        if status == "not_configured":
-            return status, synced_at, []
         start_at, end_at = self._range_bounds(start_date, days)
         with self._session_factory() as session:
-            rows = session.scalars(
+            rows = list(session.scalars(
                 select(CalendarBridgeEvent)
                 .where(CalendarBridgeEvent.source == APPLE_CALENDAR_SOURCE)
+                .where(CalendarBridgeEvent.managed_session_id.is_(None))
                 .where(CalendarBridgeEvent.start_at < end_at)
                 .where(CalendarBridgeEvent.end_at > start_at)
                 .order_by(CalendarBridgeEvent.start_at, CalendarBridgeEvent.end_at)
-            ).all()
-            return status, synced_at, [
+            ).all())
+            training_rows = list(session.scalars(
+                select(TrainingSession)
+                .where(TrainingSession.start_at < end_at)
+                .where(TrainingSession.end_at > start_at)
+                .where(TrainingSession.status.not_in(["cancelled", "skipped"]))
+                .order_by(TrainingSession.start_at, TrainingSession.end_at)
+            ).all())
+            events = [
                 CalendarEvent(
                     external_id=row.external_id,
                     title=row.title,
                     start_at=self._as_utc(row.start_at),
                     end_at=self._as_utc(row.end_at),
                     is_all_day=row.is_all_day,
+                    source=APPLE_CALENDAR_SOURCE,
+                    calendar_title=row.calendar_title,
                 )
                 for row in rows
             ]
+            events.extend(
+                CalendarEvent(
+                    external_id=f"training:{row.id}",
+                    title=self._training_title(row.planned_type),
+                    start_at=self._as_utc(row.start_at),
+                    end_at=self._as_utc(row.end_at),
+                    is_all_day=row.is_all_day,
+                    source="training",
+                    calendar_title=settings.training_calendar_name,
+                    managed_session_id=row.id,
+                )
+                for row in training_rows
+            )
+            events.sort(key=lambda item: (item.start_at, item.end_at, item.title))
+            if status == "not_configured" and events:
+                status = "ready"
+            return status, synced_at, events
 
     def today(self) -> tuple[str, datetime | None, list[CalendarEvent]]:
         return self.events_for_range(datetime.now(self._timezone).date(), 1)
@@ -136,3 +171,12 @@ class CalendarBridgeService:
     @staticmethod
     def _as_utc(value: datetime) -> datetime:
         return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+    @staticmethod
+    def _training_title(workout_type: str) -> str:
+        return {
+            "bjj_technical": "BJJ Technical", "bjj_normal": "BJJ Normal",
+            "bjj_hard": "BJJ Competition / Hard", "strength_a": "Strength A + Intervals",
+            "strength_b": "Strength B", "zone_2": "Zone 2", "recovery": "Recovery Day",
+            "rest": "Rest", "competition": "Gi BJJ Competition",
+        }.get(workout_type, workout_type.replace("_", " ").title())

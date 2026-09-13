@@ -9,6 +9,7 @@ import httpx
 
 from app.core.settings import settings
 from app.domain.json_types import JsonDict, as_dict, as_list
+from app.domain.progress_reports import ProgressReport
 
 NotionStatus = Literal["not_configured", "ready", "unavailable"]
 
@@ -37,6 +38,100 @@ class NotionService:
         if not self.configured():
             return "not_configured"
         return "unavailable" if self._last_error else "ready"
+
+    def progress_configured(self) -> bool:
+        return bool(settings.notion_token and settings.notion_progress_data_source_id)
+
+    def publish_progress(self, report: ProgressReport) -> str:
+        if not self.progress_configured():
+            raise ValueError("Notion progress reporting is not configured.")
+        weight = "Not recorded" if report.weight_kg is None else f"{report.weight_kg:.1f} kg"
+        change = "No comparison yet" if report.weight_change_kg is None else f"{report.weight_change_kg:+.1f} kg"
+        content = (
+            "# Progress summary\n"
+            f"<callout icon=\"⚖️\" color=\"blue_bg\">\n\t**Weight:** {weight} · **Change:** {change} · **Goal:** {settings.weight_goal_kg:g} kg\n</callout>\n"
+            "## Consistency\n"
+            f"- Sober check-ins: **{report.sober_days} days**\n"
+            f"- Gym: **{report.gym_sessions} sessions**\n"
+            f"- BJJ: **{report.jiujitsu_sessions} sessions**\n"
+            "## Walking\n"
+            f"- **{report.walk_minutes:g} minutes** · **{report.walk_distance_km:g} km** · **{report.steps:,} steps**\n"
+            "## Competition training\n"
+            f"- BJJ: **{report.jiujitsu_sessions}** · Strength: **{report.strength_sessions}** · Zone 2: **{report.zone2_sessions}** · Intervals: **{report.interval_sessions}**\n"
+            f"- Grip sessions: **{report.grip_sessions}** · Rest/recovery days: **{report.rest_days}** · Sparring rounds: **{report.sparring_rounds}**\n"
+            f"- Average sleep: **{report.average_sleep if report.average_sleep is not None else 'not recorded'}** · Average readiness: **{report.average_readiness if report.average_readiness is not None else 'not recorded'}**\n"
+            f"- Seven-day average weight: **{report.average_weight if report.average_weight is not None else 'not recorded'} kg**\n"
+            f"- Bike first-to-last decay: **{report.conditioning_decay_percent if report.conditioning_decay_percent is not None else 'not recorded'}%**\n"
+            f"- Skipped: **{report.skipped_workouts}**{(' · ' + '; '.join(report.skipped_reasons)) if report.skipped_reasons else ''}\n"
+            "## Next focus\n"
+            "- Keep weight loss gradual and judge the trend from consistent measurements, not a single day.\n"
+            "- Protect training quality, sobriety, sleep, and recovery while moving toward the goal."
+        )
+        properties: JsonDict = {
+            "Report": {"title": [{"text": {"content": report.title}}]},
+            "Period": {"select": {"name": report.period}},
+            "Start": {"date": {"start": report.start.isoformat()}},
+            "End": {"date": {"start": report.end.isoformat()}},
+            "Weight kg": {"number": report.weight_kg},
+            "Weight change kg": {"number": report.weight_change_kg},
+            "Sober days": {"number": report.sober_days},
+            "Gym sessions": {"number": report.gym_sessions},
+            "BJJ sessions": {"number": report.jiujitsu_sessions},
+            "Walk minutes": {"number": report.walk_minutes},
+            "Walk distance km": {"number": report.walk_distance_km},
+            "Steps": {"number": report.steps},
+            "Generated": {"date": {"start": datetime.now(self._timezone).date().isoformat()}},
+        }
+        children = self._markdown_blocks(content)
+        client = self._client or httpx.Client(timeout=15)
+        close_client = self._client is None
+        try:
+            response = client.post(
+                "https://api.notion.com/v1/pages",
+                headers=self._headers("2026-03-11"),
+                json={
+                    "parent": {"type": "data_source_id", "data_source_id": settings.notion_progress_data_source_id},
+                    "properties": properties,
+                    "children": children,
+                    "icon": {"type": "emoji", "emoji": "📈"},
+                },
+            )
+            response.raise_for_status()
+            page_id = response.json().get("id")
+            if not page_id:
+                raise ValueError("Notion did not return a progress page ID.")
+            return str(page_id)
+        finally:
+            if close_client:
+                client.close()
+
+    def _headers(self, notion_version: str) -> dict[str, str]:
+        assert settings.notion_token
+        return {
+            "Authorization": f"Bearer {settings.notion_token}",
+            "Notion-Version": notion_version,
+            "Content-Type": "application/json",
+        }
+
+    @staticmethod
+    def _markdown_blocks(content: str) -> list[JsonDict]:
+        # Keep API-authored reports deliberately simple and portable.
+        blocks: list[JsonDict] = []
+        for raw in content.splitlines():
+            line = raw.strip()
+            if not line or line.startswith(("<callout", "</callout>")):
+                continue
+            block_type = "paragraph"
+            text = line
+            if line.startswith("## "):
+                block_type, text = "heading_2", line[3:]
+            elif line.startswith("# "):
+                block_type, text = "heading_1", line[2:]
+            elif line.startswith("- "):
+                block_type, text = "bulleted_list_item", line[2:]
+            text = text.replace("**", "")
+            blocks.append({"object": "block", "type": block_type, block_type: {"rich_text": [{"type": "text", "text": {"content": text}}]}})
+        return blocks
 
     def today(self) -> tuple[NotionStatus, datetime | None, list[NotionTask]]:
         if not self.configured():

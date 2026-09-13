@@ -152,6 +152,21 @@ class DashboardContextProvider:
         if self._training_service is None:
             return []
         try:
+            overview = getattr(self._training_service, "overview", None)
+            if callable(overview):
+                data = overview(self._now())
+                if isinstance(data, dict) and "phase" in data:
+                    lines = [f"- Competition training phase: {data.get('phase', 'unknown')}."]
+                    for label in ("today", "tomorrow"):
+                        item = data.get(label)
+                        if not item:
+                            lines.append(f"  - {label.title()}: no prescribed session.")
+                            continue
+                        lines.append(
+                            f"  - {label.title()}: {item['title']} at {item['start_at']}; "
+                            f"status {item['status']}; reason: {item['reason']}"
+                        )
+                    return lines
             _, _, events = self._calendar_service.today()
             return self._training_service.context_lines(events, self._now())
         except Exception:

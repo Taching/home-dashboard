@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, Integer, String
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.session import Base
@@ -85,6 +85,8 @@ class CalendarBridgeEvent(Base):
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     is_all_day: Mapped[bool] = mapped_column(Boolean, default=False)
+    calendar_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    managed_session_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
 
 class ChiliNotifyDedupe(Base):
@@ -152,3 +154,153 @@ class WeeklyReview(Base):
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     summary: Mapped[str | None] = mapped_column(String, nullable=True)
     source: Mapped[str] = mapped_column(String(16))
+
+
+class DailyWellbeingCheckIn(Base):
+    __tablename__ = "daily_wellbeing_checkins"
+
+    local_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    trained: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    gym: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    jiujitsu: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    sober: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sleep_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sleep_quality: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fatigue: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    soreness: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    grip_fatigue: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pain: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    pain_notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    readiness: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    daily_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    advice: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    source: Mapped[str] = mapped_column(String(32), default="openclaw")
+
+
+class ProgressReportPublication(Base):
+    __tablename__ = "progress_report_publications"
+
+    period_key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    notion_page_id: Mapped[str] = mapped_column(String(64))
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class Competition(Base):
+    __tablename__ = "competitions"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    discipline: Mapped[str] = mapped_column(String(32), default="Gi BJJ")
+    start_date: Mapped[date] = mapped_column(Date, index=True)
+    end_date: Mapped[date] = mapped_column(Date)
+    taper_start: Mapped[date] = mapped_column(Date)
+    recovery_days: Mapped[int] = mapped_column(Integer, default=2)
+    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Tokyo")
+
+
+class TrainingPlannerSetting(Base):
+    __tablename__ = "training_planner_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Tokyo")
+    morning_checkin_time: Mapped[str] = mapped_column(String(5), default="06:00")
+    evening_plan_time: Mapped[str] = mapped_column(String(5), default="20:00")
+    preferred_training_time: Mapped[str] = mapped_column(String(5), default="07:30")
+    saturday_bjj_time: Mapped[str] = mapped_column(String(5), default="10:00")
+    pre_reminder_minutes: Mapped[int] = mapped_column(Integer, default=60)
+    post_check_minutes: Mapped[int] = mapped_column(Integer, default=30)
+    departure_buffer_minutes: Mapped[int] = mapped_column(Integer, default=30)
+    calendar_name: Mapped[str] = mapped_column(String(255), default="Chili Training")
+    bjj_title_keywords: Mapped[list[str]] = mapped_column(
+        JSON, default=lambda: ["bjj", "jiu jitsu", "jiujitsu", "open mat"]
+    )
+
+
+class TrainingSession(Base):
+    __tablename__ = "training_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    planned_type: Mapped[str] = mapped_column(String(40), index=True)
+    actual_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    original_planned_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), index=True, default="planned")
+    phase: Mapped[str] = mapped_column(String(32), index=True)
+    planned_week_start: Mapped[date] = mapped_column(Date, index=True)
+    start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    is_all_day: Mapped[bool] = mapped_column(Boolean, default=False)
+    estimated_minutes: Mapped[int] = mapped_column(Integer)
+    intensity: Mapped[str] = mapped_column(String(16), default="normal")
+    reason: Mapped[str] = mapped_column(Text)
+    coach_focus: Mapped[list[str]] = mapped_column(JSON, default=list)
+    preparation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_rounds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    round_length_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rest_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source: Mapped[str] = mapped_column(String(24), default="scheduler")
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    rescheduled_from_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("training_sessions.id"), nullable=True)
+    source_calendar_event_id: Mapped[str | None] = mapped_column(String(512), nullable=True, index=True)
+    apple_event_id: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    notion_page_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    notion_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    session_rpe: Mapped[float | None] = mapped_column(Float, nullable=True)
+    final_round_quality: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class TrainingExercise(Base):
+    __tablename__ = "training_exercises"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(36), ForeignKey("training_sessions.id"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String(120))
+    load_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    load_unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    sets: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reps: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    done: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class TrainingMetric(Base):
+    __tablename__ = "training_metrics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(36), ForeignKey("training_sessions.id"), index=True)
+    metric_type: Mapped[str] = mapped_column(String(40), index=True)
+    sequence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    value: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str] = mapped_column(String(20))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class TrainingReminder(Base):
+    __tablename__ = "training_reminders"
+    __table_args__ = (UniqueConstraint("session_id", "kind", "session_revision"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("training_sessions.id"), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(24), index=True)
+    session_revision: Mapped[int] = mapped_column(Integer, default=1)
+    scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    dedupe_key: Mapped[str] = mapped_column(String(200), unique=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TrainingSummaryPublication(Base):
+    __tablename__ = "training_summary_publications"
+
+    week_key: Mapped[str] = mapped_column(String(16), primary_key=True)
+    notion_page_id: Mapped[str] = mapped_column(String(64))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

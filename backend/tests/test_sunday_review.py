@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database.session import Base
 from app.domain.chili_notify import ChiliNotifyService
-from app.domain.training import TrainingService
+from app.domain.training_logs import TrainingService
 from app.domain.weekly import WeeklyService
 from app.jobs.sunday_review import maybe_send_sunday_review
 

@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database.session import Base
 from app.domain.calendar_bridge import CalendarEvent
-from app.domain.training import ExerciseDone, TrainingService
+from app.domain.training_logs import ExerciseDone, TrainingService
 from app.domain.training_plans import suggested_kinds_for
 from app.domain.weekly import WeeklyService
 

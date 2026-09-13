@@ -9,10 +9,11 @@ import {
   fetchWalkingPadReminder,
   fetchWalkingPadToday,
   fetchWeather,
+  fetchTrainingOverview,
   openOpenClawMessageStream,
   setSystemVolume,
 } from '../lib/api'
-import type { CalendarToday, Dashboard, NotionToday, OpenClawConversation, SpotifyNowPlaying, WalkReminder, WalkingPadToday, WeatherForecast } from '../types'
+import type { CalendarToday, Dashboard, NotionToday, OpenClawConversation, SpotifyNowPlaying, TrainingOverview, WalkReminder, WalkingPadToday, WeatherForecast } from '../types'
 import { usePolling } from './usePolling'
 
 /** Calendar API max is 30 days; anchor 7 days before the selected day. */
@@ -51,6 +52,20 @@ export const initialDashboard: Dashboard = {
     manual_override: false,
   },
   integrations: { sensor: 'pending', broadlink: 'pending', calendar: 'not_configured', notion: 'not_configured', spotify: 'not_configured', openclaw: 'not_configured' },
+  wellbeing: {
+    sober_days: 0,
+    workouts_this_week: 0,
+    gym_this_week: 0,
+    jiujitsu_this_week: 0,
+    gym_weekly_goal: 3,
+    jiujitsu_weekly_goal: 3,
+    week_start: '2026-09-07',
+    latest_checkin_date: null,
+    checkin_stale: true,
+    current_weight_kg: null,
+    weight_goal_kg: 74,
+    latest_weight_date: null,
+  },
 }
 
 export const initialCalendar: CalendarToday = { status: 'not_configured', synced_at: null, events: [] }
@@ -72,6 +87,11 @@ export const initialWalkingPad: WalkingPadToday = {
   active_session: null,
 }
 export const initialWalkReminder: WalkReminder = { active: false, message: '', dedupe_key: '' }
+export const initialTraining: TrainingOverview = {
+  generated_at: '', timezone: 'Asia/Tokyo', phase: 'build_october', today: null, tomorrow: null,
+  week_start: '2026-09-07', week: [], upcoming: [], countdowns: [], compliance: {},
+  trends: { bike_decay: [], bjj_capacity: [], weight_7d_average: null }, readiness: null,
+}
 
 const DASHBOARD_REFRESH_MS = 60_000
 const DASHBOARD_FAST_REFRESH_MS = 2_000
@@ -91,6 +111,7 @@ export type DashboardInitialData = {
   walkingPad?: WalkingPadToday
   walkReminder?: WalkReminder
   selectedCalendarDate?: string | null
+  training?: TrainingOverview
 }
 
 export function useDashboardData(today: string, initialData?: DashboardInitialData) {
@@ -102,6 +123,7 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
   const [weather, setWeather] = useState(initialData?.weather ?? initialWeather)
   const [walkingPad, setWalkingPad] = useState(initialData?.walkingPad ?? initialWalkingPad)
   const [walkReminder, setWalkReminder] = useState(initialData?.walkReminder ?? initialWalkReminder)
+  const [training, setTraining] = useState(initialData?.training ?? initialTraining)
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(today)
   const [volumePending, setVolumePending] = useState(false)
   const skipImmediatePoll = Boolean(initialData)
@@ -116,11 +138,17 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
 
   const refresh = useCallback(async () => {
     const results = await Promise.allSettled([
-      fetchDashboard(), fetchSpotifyNowPlaying(), fetchOpenClawMessages(),
+      fetchDashboard(), fetchSpotifyNowPlaying(), fetchTrainingOverview(),
     ])
-    if (results[0].status === 'fulfilled') setDashboard(results[0].value)
+    if (results[0].status === 'fulfilled') {
+      const value = results[0].value
+      setDashboard({
+        ...value,
+        wellbeing: value.wellbeing ?? initialDashboard.wellbeing,
+      })
+    }
     if (results[1].status === 'fulfilled') setSpotify(results[1].value)
-    if (results[2].status === 'fulfilled') setOpenClaw(results[2].value)
+    if (results[2].status === 'fulfilled') setTraining(results[2].value)
   }, [])
 
   const refreshCalendar = useCallback(async (anchorDate = selectedCalendarDate) => {
@@ -215,6 +243,7 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
     weather,
     walkingPad,
     walkReminder,
+    training,
     selectedCalendarDate,
     volumePending,
     setDashboard,

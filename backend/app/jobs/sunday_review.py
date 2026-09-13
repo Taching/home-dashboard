@@ -3,6 +3,7 @@ import logging
 from collections.abc import Callable
 from datetime import datetime
 
+from app.core.settings import settings
 from app.domain.chili_notify import ChiliNotifyService
 from app.domain.weekly import WeeklyService
 
@@ -48,12 +49,12 @@ async def run_sunday_review_reminder(application) -> None:
     while True:
         try:
             weekly = application.state.weekly_service
-            training = application.state.training_service
+            base = (settings.chili_public_url or settings.daily_briefing_base_url).rstrip("/")
             maybe_send_sunday_review(
                 weekly=weekly,
                 notify_service=application.state.chili_notify_service,
                 openclaw=application.state.openclaw_service,
-                public_url=training.public_url,
+                public_url=lambda path: f"{base}{path}",
             )
         except Exception:
             logger.exception("Sunday review reminder tick failed")

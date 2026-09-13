@@ -1,57 +1,58 @@
+import { useEffect, useMemo, useRef } from 'react'
 import openClawLogo from '../assets/openclaw-logo.svg'
 import type { OpenClawConversation } from '../types'
 
 type Props = {
   conversation: OpenClawConversation
-  onRefresh: () => void
 }
 
-function scrollLatestMessageIntoView(element: HTMLElement | null) {
-  element?.scrollIntoView({ block: 'end' })
-}
+export function OpenClawChat({ conversation }: Props) {
+  const messages = useMemo(() => conversation.messages.slice(-4), [conversation.messages])
+  const transcriptRef = useRef<HTMLDivElement | null>(null)
+  const ready = conversation.status === 'ready'
 
-export function OpenClawChat({ conversation, onRefresh }: Props) {
-  const messages = conversation.messages
+  useEffect(() => {
+    const transcript = transcriptRef.current
+    if (!transcript) return
+    const frame = window.requestAnimationFrame(() => {
+      transcript.scrollTop = transcript.scrollHeight
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [messages])
 
   return (
-    <section className={`openclaw-chat is-${conversation.status}`} aria-label="Ask Chili">
+    <section className={`openclaw-chat voice-assistant is-${conversation.status}`} aria-label="Assistant activity">
       <div className="openclaw-heading">
         <div className="openclaw-title">
           <span className="openclaw-brand">
-            <img src={openClawLogo} alt="OpenClaw" />
+            <img src={openClawLogo} alt="" />
           </span>
           <div>
             <p className="eyebrow">ASSISTANT</p>
-            <h2>Ask Chili</h2>
+            <h2>Recent activity</h2>
           </div>
         </div>
-        <p className={`openclaw-status is-${conversation.status}`}>
-          {conversation.status === 'ready' ? 'Shared with Telegram' : conversation.status === 'not_configured' ? 'Setup needed' : 'Unavailable'}
-        </p>
       </div>
-      {conversation.status === 'not_configured' ? (
+
+      {!ready ? (
         <div className="panel-empty-state">
-          <strong>OpenClaw not connected</strong>
-          <p>Configure the Pi gateway and Telegram bridge to enable this shared chat.</p>
-          <button type="button" onClick={onRefresh}>Check connection</button>
-        </div>
-      ) : conversation.status === 'unavailable' ? (
-        <div className="panel-empty-state is-error">
-          <strong>OpenClaw unavailable</strong>
-          <p>{conversation.message ?? 'OpenClaw is unavailable.'}</p>
-          <button type="button" onClick={onRefresh}>Retry</button>
+          <strong>Chili is offline</strong>
+          <p>{conversation.message ?? 'The assistant connection will retry automatically.'}</p>
         </div>
       ) : (
-        <div className="openclaw-transcript" aria-live="polite">
+        <div ref={transcriptRef} className="openclaw-transcript" aria-live="polite">
           {messages.length === 0 ? (
-            <p className="openclaw-empty-hint">Say “Hey Chili” to talk. Log walks like “I walked 30 min and 2 km today”. Messages sync with Telegram.</p>
-          ) : messages.map((message, index) => (
-            <article
-              key={message.id}
-              ref={index === messages.length - 1 ? scrollLatestMessageIntoView : undefined}
-              className={`openclaw-message is-${message.role}`}
-            >
-              <span className="openclaw-message-label">{message.role === 'user' ? 'You' : 'Chili'}</span>
+            <div className="voice-empty-state">
+              <strong>No recent messages</strong>
+              <p>Assistant activity will appear here.</p>
+            </div>
+          ) : messages.map((message) => (
+            <article key={message.id} className={`openclaw-message is-${message.role}`}>
+              <span className="openclaw-message-label">
+                {message.sender === 'home-dashboard-agent'
+                  ? 'Home Dashboard Agent'
+                  : message.role === 'user' ? 'You' : 'Chili'}
+              </span>
               <p className="openclaw-message-body">{message.text}</p>
             </article>
           ))}

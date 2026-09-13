@@ -1,5 +1,5 @@
 export type LightState = 'on' | 'off' | 'unknown'
-export type IntegrationStatus = 'not_configured' | 'ready' | 'unavailable'
+export type IntegrationStatus = 'not_configured' | 'ready' | 'stale' | 'unavailable'
 
 export type Light = {
   last_command_state: LightState
@@ -32,6 +32,22 @@ export type Dashboard = {
   system: SystemStatus
   display: Display
   integrations: Record<string, string>
+  wellbeing: WellbeingSummary
+}
+
+export type WellbeingSummary = {
+  sober_days: number
+  workouts_this_week: number
+  gym_this_week: number
+  jiujitsu_this_week: number
+  gym_weekly_goal: number
+  jiujitsu_weekly_goal: number
+  week_start: string
+  latest_checkin_date: string | null
+  checkin_stale: boolean
+  current_weight_kg: number | null
+  weight_goal_kg: number
+  latest_weight_date: string | null
 }
 
 export type SystemStatus = {
@@ -82,6 +98,8 @@ export type CalendarEvent = {
   end_at: string
   is_all_day: boolean
   is_current: boolean
+  source?: string
+  training_session_id?: string | null
 }
 
 export type CalendarToday = {
@@ -221,7 +239,7 @@ export type TrainingLogPayload = {
 }
 
 export type WorkoutLogPayload = {
-  kind?: TrainingKind
+  kind?: string
   exercises: TrainingExerciseDone[]
   note?: string
 }
@@ -244,10 +262,84 @@ export type DailyWorkout = {
 }
 
 export type DailyMeeting = {
+  id?: string
   title: string
   start_at: string
   end_at: string
   is_all_day: boolean
+}
+
+export type PlannedExercise = {
+  name: string
+  load_value: number | null
+  load_unit: string | null
+  sets: number | null
+  reps: string | null
+  duration_seconds: number | null
+  notes: string | null
+  done?: boolean
+}
+
+export type PlannedWorkout = {
+  id: string
+  planned_type: string
+  title: string
+  status: string
+  reason: string
+  coach_focus: string[]
+  exercises: PlannedExercise[]
+  estimated_minutes: number
+  intensity: string
+  is_all_day?: boolean
+  notes?: string | null
+}
+
+export type TrainingSession = PlannedWorkout & {
+  actual_type: string | null
+  original_planned_type: string | null
+  phase: string
+  start_at: string
+  end_at: string
+  preparation: string | null
+  target_rounds: number | null
+  round_length_seconds: number | null
+  rest_seconds: number | null
+  revision: number
+  session_rpe: number | null
+  final_round_quality: number | null
+  calendar_event_id: string | null
+}
+
+export type TrainingOverview = {
+  generated_at: string
+  timezone: string
+  phase: string
+  today: TrainingSession | null
+  tomorrow: TrainingSession | null
+  week_start: string
+  week: TrainingSession[]
+  upcoming: TrainingSession[]
+  countdowns: { id: string, name: string, start_date: string, end_date: string, days_remaining: number }[]
+  compliance: Record<string, { completed: number, target: number }>
+  trends: {
+    bike_decay: { session_id: string, decay_percent: number }[]
+    bjj_capacity: { date: string, rounds: number, final_quality: number | null }[]
+    weight_7d_average: number | null
+  }
+  readiness: {
+    date: string
+    level: string
+    alerts: string[]
+    sleep_hours: number | null
+    sleep_quality: number | null
+    fatigue: number | null
+    soreness: number | null
+    grip_fatigue: number | null
+    pain: boolean | null
+    pain_notes: string | null
+    motivation: number | null
+    weight_kg: number | null
+  } | null
 }
 
 export type DailyWeekSession = {
@@ -273,7 +365,8 @@ export type DailySunday = {
 export type DailyBriefing = {
   date: string
   timezone: string
-  workouts: DailyWorkout[]
+  workout: PlannedWorkout | null
+  workouts?: DailyWorkout[]
   calendar: {
     status: IntegrationStatus
     meetings: DailyMeeting[]
@@ -302,6 +395,7 @@ export type OpenClawMessage = {
   role: 'user' | 'assistant' | 'system'
   text: string
   created_at: string | null
+  sender?: 'user' | 'home-dashboard-agent' | 'assistant' | 'system' | null
 }
 
 export type OpenClawConversation = {

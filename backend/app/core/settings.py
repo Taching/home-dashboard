@@ -62,6 +62,20 @@ class Settings(BaseSettings):
     walkingpad_min_gap_before_meeting_min: int = 60
     walkingpad_min_session_minutes: int = 15
     chili_public_url: str = "http://127.0.0.1:8080"
+    daily_briefing_base_url: str = "https://chili-dashboard.tail95606b.ts.net"
+    notion_progress_data_source_id: str | None = None
+    notion_training_data_source_id: str | None = None
+    sober_baseline_date: str = "2026-08-22"
+    sober_baseline_days: int = 7
+    gym_weekly_goal: int = 3
+    jiujitsu_weekly_goal: int = 3
+    weight_goal_kg: float = 74.0
+    training_enabled: bool = True
+    training_calendar_name: str = "Chili Training"
+    training_morning_checkin_time: str = "06:00"
+    training_evening_plan_time: str = "20:00"
+    training_pre_reminder_minutes: int = 60
+    training_post_check_minutes: int = 30
 
 
 settings = Settings()

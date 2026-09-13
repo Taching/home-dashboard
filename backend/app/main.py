@@ -25,12 +25,18 @@ from app.domain.system_volume import PiVolumeService
 from app.domain.water_pump import WaterPumpService
 from app.domain.walkingpad import WalkingPadService
 from app.domain.training import TrainingService
+from app.domain.training_logs import TrainingService as TrainingLogService
+from app.domain.training.notion_sync import TrainingNotionSync
+from app.domain.wellbeing import WellbeingService
 from app.domain.weekly import WeeklyService
+from app.domain.progress_reports import ProgressReportService
 from app.domain.db_read import DbReadService
 from app.domain.display import DisplayService
 from app.jobs.display_scheduler import run_display_scheduler
 from app.jobs.sensor_polling import run_sensor_poller
 from app.jobs.sunday_review import run_sunday_review_reminder
+from app.jobs.progress_reporting import run_progress_reporting
+from app.jobs.training_sync import run_training_sync
 
 
 @asynccontextmanager
@@ -44,10 +50,17 @@ async def lifespan(application: FastAPI):
     application.state.light_service = light_service
     application.state.calendar_bridge_service = CalendarBridgeService()
     application.state.walkingpad_service = WalkingPadService()
-    application.state.training_service = TrainingService()
+    wellbeing_service = WellbeingService()
+    application.state.wellbeing_service = wellbeing_service
+    training_service = TrainingService()
+    application.state.training_service = training_service
+    training_service.bootstrap()
+    application.state.training_log_service = TrainingLogService()
     application.state.weekly_service = WeeklyService()
     application.state.db_read_service = DbReadService()
     application.state.notion_service = NotionService()
+    application.state.progress_report_service = ProgressReportService()
+    application.state.training_notion_sync = TrainingNotionSync()
     application.state.spotify_service = SpotifyService()
     application.state.activity_feed_service = ActivityFeedService()
     application.state.chili_notify_service = ChiliNotifyService()
@@ -78,13 +91,20 @@ async def lifespan(application: FastAPI):
     poller = asyncio.create_task(run_sensor_poller(sensor_service))
     display_scheduler = asyncio.create_task(run_display_scheduler(display_service))
     sunday_review = asyncio.create_task(run_sunday_review_reminder(application))
+    progress_reporting = asyncio.create_task(run_progress_reporting(
+        application.state.notion_service,
+        application.state.progress_report_service,
+    ))
+    training_sync = asyncio.create_task(run_training_sync(application.state.training_notion_sync))
     try:
         yield
     finally:
         display_scheduler.cancel()
         sunday_review.cancel()
         poller.cancel()
-        for task in (display_scheduler, sunday_review, poller):
+        progress_reporting.cancel()
+        training_sync.cancel()
+        for task in (display_scheduler, sunday_review, poller, progress_reporting, training_sync):
             try:
                 await task
             except asyncio.CancelledError:

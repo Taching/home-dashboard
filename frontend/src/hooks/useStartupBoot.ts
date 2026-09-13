@@ -7,6 +7,7 @@ import {
   fetchOpenClawMessages,
   fetchSpotifyNowPlaying,
   fetchWeather,
+  fetchTrainingOverview,
 } from '../lib/api'
 import type { IntegrationStatus } from '../types'
 import type { DashboardInitialData } from './useDashboardData'
@@ -16,6 +17,7 @@ import {
   initialNotion,
   initialOpenClaw,
   initialSpotify,
+  initialTraining,
   initialWeather,
 } from './useDashboardData'
 
@@ -203,6 +205,7 @@ export function useStartupBoot() {
       let spotify = initialSpotify
       let openclaw = initialOpenClaw
       let weather = initialWeather
+      let training = initialTraining
       const results = new Map<string, CheckResult>()
 
       const applyResult = (id: string, result: ServiceCheckResult | null) => {
@@ -229,6 +232,11 @@ export function useStartupBoot() {
       }
 
       await runAll()
+      try {
+        training = await fetchTrainingOverview()
+      } catch {
+        training = initialTraining
+      }
 
       for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
         const failed = CHECK_DEFS.filter((def) => results.get(def.id)?.state === 'failed')
@@ -263,6 +271,7 @@ export function useStartupBoot() {
         spotify,
         openclaw,
         weather,
+        training,
         selectedCalendarDate: resolveSelectedCalendarDate(calendar, today),
       })
       setPhase('fading')

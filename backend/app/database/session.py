@@ -23,7 +23,26 @@ def initialise_database() -> None:
     # `create_all` does not alter existing SQLite tables. Keep this small,
     # idempotent migration here until the project adopts a versioned migration tool.
     _ensure_column("calendar_bridge_events", "is_all_day", "BOOLEAN NOT NULL DEFAULT 0")
+    _ensure_column("calendar_bridge_events", "calendar_title", "VARCHAR(255)")
+    _ensure_column("calendar_bridge_events", "managed_session_id", "VARCHAR(36)")
     _ensure_column("training_logs", "exercises", "TEXT")
+    _ensure_column("training_exercises", "done", "BOOLEAN NOT NULL DEFAULT 0")
+    _ensure_column("daily_wellbeing_checkins", "gym", "BOOLEAN")
+    _ensure_column("daily_wellbeing_checkins", "jiujitsu", "BOOLEAN")
+    _ensure_column("daily_wellbeing_checkins", "weight_kg", "FLOAT")
+    for name, sql_type in {
+        "sleep_hours": "FLOAT",
+        "sleep_quality": "INTEGER",
+        "fatigue": "INTEGER",
+        "soreness": "INTEGER",
+        "grip_fatigue": "INTEGER",
+        "pain": "BOOLEAN",
+        "pain_notes": "VARCHAR(500)",
+        "readiness": "INTEGER",
+        "daily_notes": "TEXT",
+        "advice": "TEXT",
+    }.items():
+        _ensure_column("daily_wellbeing_checkins", name, sql_type)
 
 
 def _ensure_column(table: str, name: str, ddl: str) -> None:

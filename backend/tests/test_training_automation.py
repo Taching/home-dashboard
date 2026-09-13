@@ -1,5 +1,5 @@
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from unittest.mock import patch
 
 from fastapi import FastAPI
@@ -12,9 +12,10 @@ from app.api.router import api_router
 from app.database.session import Base
 from app.domain.activity_feed import ActivityFeedService
 from app.domain.calendar_bridge import CalendarBridgeService, CalendarEvent
-from app.domain.training import TrainingService
+from app.domain.training_logs import TrainingService
 from app.domain.walkingpad import WalkingPadService
 from app.domain.weekly import WeeklyService
+from app.domain.wellbeing import WellbeingService
 
 
 def test_session_factory():
@@ -25,6 +26,37 @@ def test_session_factory():
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)
+
+
+class FakePlanner:
+    def for_date(self, day):
+        return {
+            "id": "session-1",
+            "title": "Strength A + Intervals",
+            "reason": "Build.",
+            "coach_focus": [],
+            "exercises": [{"name": "Back Squat", "done": False}],
+            "estimated_minutes": 60,
+            "intensity": "normal",
+            "planned_type": "strength_a",
+            "status": "planned",
+            "notes": None,
+        }
+
+    def log_workout_check(self, session_id, *, exercises=None, note=None):
+        return {
+            "id": session_id,
+            "title": "Strength A + Intervals",
+            "status": "completed",
+            "planned_type": "strength_a",
+            "notes": note,
+        }
+
+    def overview(self, now=None):
+        return {"week": [], "phase": "build_october"}
+
+    def reconcile(self):
+        return None
 
 
 class FakeOpenClaw:
@@ -41,7 +73,12 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.app = FastAPI()
         self.app.include_router(api_router, prefix="/api/v1")
         self.app.state.activity_feed_service = ActivityFeedService()
-        self.app.state.training_service = TrainingService(session_factory=factory)
+        self.app.state.training_log_service = TrainingService(session_factory=factory)
+        self.app.state.training_service = FakePlanner()
+        self.app.state.wellbeing_service = WellbeingService(
+            factory, timezone_name="Asia/Tokyo",
+            sober_baseline_date=date(2026, 8, 22), sober_baseline_days=7,
+        )
         self.app.state.weekly_service = WeeklyService(session_factory=factory)
         self.app.state.walkingpad_service = WalkingPadService(
             session_factory=factory,
@@ -151,14 +188,15 @@ class TrainingAutomationApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(workout.status_code, 200)
-        self.assertEqual(workout.json()["log"]["completed"], "yes")
-        self.assertEqual(workout.json()["log"]["note"], "felt hard")
+        self.assertEqual(workout.json()["status"], "logged")
+        self.assertIn("Strength A", workout.json()["message"])
         sober = self.client.post(
             "/api/v1/daily/2026-09-15/sober",
             json={"sober": True, "note": "evening"},
         )
         self.assertEqual(sober.status_code, 200)
-        self.assertEqual(sober.json()["log"]["kind"], "sober")
+        self.assertEqual(sober.json()["status"], "logged")
+        self.assertEqual(sober.json()["briefing"]["sobriety"]["answered"], "yes")
         daily = self.client.get("/api/v1/daily/2026-09-13").json()
         self.assertIsNone(daily["sleep"])
         self.assertIsNotNone(daily["sunday"])

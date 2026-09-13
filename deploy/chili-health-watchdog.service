@@ -1,0 +1,10 @@
+[Unit]
+Description=Chili dashboard health watchdog
+After=network-online.target docker.service chili-dashboard.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+Environment=DOCKER_API_VERSION=1.41
+ExecStart=/home/takatoshi/Work/home-dashboard/deploy/health-watchdog.sh

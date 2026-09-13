@@ -14,6 +14,7 @@ import type {
   WeatherForecast,
   WalkReminder,
   WalkingPadToday,
+  TrainingOverview,
   TrainingPlan,
   TrainingToday,
   TrainingLogPayload,
@@ -90,6 +91,10 @@ export async function fetchWalkingPadToday() {
 
 export async function fetchWalkingPadReminder() {
   return requireJson<WalkReminder>(await fetch('/api/v1/walkingpad/reminder'))
+}
+
+export async function fetchTrainingOverview() {
+  return requireJson<TrainingOverview>(await fetch('/api/v1/training/overview'))
 }
 
 export async function fetchTrainingPlans() {

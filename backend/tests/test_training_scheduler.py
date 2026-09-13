@@ -1,10 +1,12 @@
 import unittest
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
+from app.domain.training.policy import assess_week_quality
 from app.domain.training.scheduler import TrainingScheduler, assess_readiness, phase_for_date
 from app.domain.training.types import (
-    ExistingSession, FixedBjjEvent, ReadinessInput, ReadinessLevel, SessionStatus, TrainingPhase, WorkoutType,
+    ExistingSession, FatigueState, FixedBjjEvent, ReadinessInput, ReadinessLevel,
+    SessionStatus, TrainingPhase, WeatherHint, WeekQuality, WorkoutType,
 )
 
 
@@ -16,25 +18,27 @@ class TrainingSchedulerTests(unittest.TestCase):
         self.scheduler = TrainingScheduler("Asia/Tokyo")
         self.now = datetime(2026, 9, 13, 20, tzinfo=TOKYO)
 
-    def test_normal_week_prioritises_bjj_and_preserves_rest(self) -> None:
+    def test_normal_week_proposes_bjj_and_places_gym_around_it(self) -> None:
         plan = self.scheduler.plan_week(date(2026, 9, 14), now=self.now)
         by_day = {item.local_date: item.type for item in plan.sessions}
+        candidate_days = {item.day for item in plan.candidates}
 
-        self.assertEqual(by_day[date(2026, 9, 14)], WorkoutType.BJJ_NORMAL)
+        self.assertEqual(candidate_days, {date(2026, 9, 14), date(2026, 9, 17), date(2026, 9, 19)})
+        self.assertFalse(any(item.type in {WorkoutType.BJJ_TECHNICAL, WorkoutType.BJJ_NORMAL, WorkoutType.BJJ_HARD} for item in plan.sessions))
         self.assertEqual(by_day[date(2026, 9, 15)], WorkoutType.STRENGTH_A)
-        self.assertEqual(by_day[date(2026, 9, 17)], WorkoutType.BJJ_NORMAL)
+        self.assertEqual(by_day[date(2026, 9, 17)] if date(2026, 9, 17) in by_day else None, None)
         self.assertEqual(by_day[date(2026, 9, 18)], WorkoutType.STRENGTH_B)
-        self.assertEqual(by_day[date(2026, 9, 19)], WorkoutType.BJJ_HARD)
         self.assertEqual(by_day[date(2026, 9, 20)], WorkoutType.REST)
         self.assertEqual(sum(item.type == WorkoutType.ZONE_2 for item in plan.sessions), 1)
 
-    def test_busy_monday_moves_bjj_to_tuesday_without_double(self) -> None:
+    def test_busy_monday_proposes_tuesday_instead_of_inventing_a_class(self) -> None:
         busy = ((datetime(2026, 9, 14, 7, tzinfo=TOKYO), datetime(2026, 9, 14, 10, tzinfo=TOKYO)),)
         plan = self.scheduler.plan_week(date(2026, 9, 14), now=self.now, busy=busy)
-        days = [item.local_date for item in plan.sessions]
+        candidate_days = {item.day for item in plan.candidates}
 
-        self.assertIn(date(2026, 9, 15), [item.local_date for item in plan.sessions if item.type == WorkoutType.BJJ_NORMAL])
-        self.assertEqual(len(days), len(set(days)))
+        self.assertIn(date(2026, 9, 15), candidate_days)
+        self.assertNotIn(date(2026, 9, 14), candidate_days)
+        self.assertFalse(any(item.type.value.startswith("bjj_") for item in plan.sessions))
 
     def test_four_bjj_sessions_reduce_strength_to_one(self) -> None:
         fixed = tuple(
@@ -49,22 +53,119 @@ class TrainingSchedulerTests(unittest.TestCase):
 
         strength = [item for item in plan.sessions if item.type in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B}]
         self.assertEqual([item.type for item in strength], [WorkoutType.STRENGTH_B])
+        self.assertFalse(any(item.type == WorkoutType.ZONE_2 for item in plan.sessions))
 
-    def test_red_readiness_replaces_tomorrow_with_recovery(self) -> None:
-        readiness = assess_readiness(ReadinessInput(sleep_hours=5, fatigue=5, soreness=5, readiness=2))
-        plan = self.scheduler.plan_week(date(2026, 9, 14), now=self.now, readiness=readiness)
+    def test_very_fatigued_replaces_tomorrow_with_recovery(self) -> None:
+        plan = self.scheduler.plan_week(date(2026, 9, 14), now=self.now, fatigue=FatigueState.VERY_FATIGUED)
         tomorrow = next(item for item in plan.sessions if item.local_date == date(2026, 9, 14))
 
-        self.assertEqual(readiness.level, ReadinessLevel.RED)
         self.assertEqual(tomorrow.type, WorkoutType.RECOVERY)
+        self.assertFalse(any(item.day == date(2026, 9, 14) for item in plan.candidates))
 
-    def test_single_bad_metric_does_not_downgrade(self) -> None:
+    def test_tired_keeps_bjj_and_strips_intervals(self) -> None:
+        monday_bjj = (
+            FixedBjjEvent(
+                "bjj-mon", "BJJ",
+                datetime(2026, 9, 14, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 14, 9, tzinfo=TOKYO),
+            ),
+        )
+        kept = self.scheduler.plan_week(date(2026, 9, 14), now=self.now, fixed_bjj=monday_bjj, fatigue=FatigueState.TIRED)
+        monday = next(item for item in kept.sessions if item.local_date == date(2026, 9, 14))
+        self.assertEqual(monday.type, WorkoutType.BJJ_NORMAL)
+
+        later = datetime(2026, 9, 15, 20, tzinfo=TOKYO)
+        existing = (
+            ExistingSession(
+                "mon", WorkoutType.BJJ_NORMAL,
+                datetime(2026, 9, 14, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 14, 9, 0, tzinfo=TOKYO),
+                SessionStatus.COMPLETED,
+            ),
+        )
+        fixed = (
+            FixedBjjEvent("thu", "BJJ", datetime(2026, 9, 17, 7, 30, tzinfo=TOKYO), datetime(2026, 9, 17, 9, tzinfo=TOKYO)),
+            FixedBjjEvent("sat", "BJJ", datetime(2026, 9, 19, 10, 0, tzinfo=TOKYO), datetime(2026, 9, 19, 11, 30, tzinfo=TOKYO)),
+        )
+        plan = self.scheduler.plan_week(
+            date(2026, 9, 14), now=later, fixed_bjj=fixed, existing=existing, fatigue=FatigueState.TIRED,
+        )
+        strength = next(item for item in plan.sessions if item.local_date == date(2026, 9, 16))
+        self.assertEqual(strength.type, WorkoutType.STRENGTH_A)
+        self.assertFalse(any(exercise.name == "Stationary bike intervals" for exercise in strength.exercises))
+
+    def test_pain_requires_recovery(self) -> None:
+        plan = self.scheduler.plan_week(date(2026, 9, 14), now=self.now, fatigue=FatigueState.PAIN)
+        tomorrow = next(item for item in plan.sessions if item.local_date == date(2026, 9, 14))
+        self.assertEqual(tomorrow.type, WorkoutType.RECOVERY)
+        self.assertIn("Pain", tomorrow.reason)
+
+    def test_skipped_strength_a_is_not_moved_forward(self) -> None:
+        existing = (
+            ExistingSession(
+                "sa", WorkoutType.STRENGTH_A,
+                datetime(2026, 9, 15, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 15, 8, 30, tzinfo=TOKYO),
+                SessionStatus.SKIPPED,
+            ),
+        )
+        plan = self.scheduler.plan_week(date(2026, 9, 14), now=self.now, existing=existing)
+        self.assertFalse(any(item.type == WorkoutType.STRENGTH_A for item in plan.sessions))
+
+    def test_monday_skip_uses_tuesday_class_without_stacking_gym(self) -> None:
+        existing = (
+            ExistingSession(
+                "mon", WorkoutType.BJJ_NORMAL,
+                datetime(2026, 9, 14, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 14, 9, 0, tzinfo=TOKYO),
+                SessionStatus.SKIPPED,
+            ),
+        )
+        fixed = (
+            FixedBjjEvent(
+                "tue", "BJJ",
+                datetime(2026, 9, 15, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 15, 9, 0, tzinfo=TOKYO),
+            ),
+        )
+        now = datetime(2026, 9, 14, 20, tzinfo=TOKYO)
+        plan = self.scheduler.plan_week(date(2026, 9, 14), now=now, fixed_bjj=fixed, existing=existing)
+        tuesday = [item for item in plan.sessions if item.local_date == date(2026, 9, 15)]
+
+        self.assertEqual([item.type for item in tuesday], [WorkoutType.BJJ_NORMAL])
+        self.assertTrue(any(item.type == WorkoutType.STRENGTH_A and item.local_date > date(2026, 9, 15) for item in plan.sessions))
+
+    def test_three_consecutive_hard_days_are_rejected(self) -> None:
+        existing = (
+            ExistingSession(
+                "mon", WorkoutType.BJJ_HARD,
+                datetime(2026, 9, 14, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 14, 9, 0, tzinfo=TOKYO),
+                SessionStatus.COMPLETED,
+            ),
+            ExistingSession(
+                "tue", WorkoutType.BJJ_HARD,
+                datetime(2026, 9, 15, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 15, 9, 0, tzinfo=TOKYO),
+                SessionStatus.COMPLETED,
+            ),
+        )
+        plan = self.scheduler.plan_week(date(2026, 9, 14), now=self.now, existing=existing)
+        self.assertFalse(any(item.type == WorkoutType.STRENGTH_A and item.local_date == date(2026, 9, 16) for item in plan.sessions))
+
+    def test_rain_keeps_zone2_as_indoor(self) -> None:
+        plan = self.scheduler.plan_week(
+            date(2026, 9, 14), now=self.now,
+            weather=(WeatherHint(date(2026, 9, 16), True, "Rain"),),
+        )
+        zone2 = next(item for item in plan.sessions if item.type == WorkoutType.ZONE_2)
+        self.assertEqual(zone2.local_date, date(2026, 9, 16))
+        self.assertTrue(any("Indoor" in (exercise.notes or "") for exercise in zone2.exercises))
+
+    def test_readiness_helpers_still_map_legacy_fields(self) -> None:
         assessment = assess_readiness(ReadinessInput(sleep_hours=5, fatigue=2, soreness=2, readiness=4))
         self.assertEqual(assessment.level, ReadinessLevel.GREEN)
-
-    def test_pain_requires_manual_review(self) -> None:
-        assessment = assess_readiness(ReadinessInput(pain=True, fatigue=1, soreness=1, readiness=5))
-        self.assertEqual(assessment.level, ReadinessLevel.MANUAL_REVIEW)
+        self.assertEqual(assess_readiness(ReadinessInput(pain=True)).level, ReadinessLevel.MANUAL_REVIEW)
 
     def test_phase_boundaries(self) -> None:
         cases = {
@@ -90,12 +191,12 @@ class TrainingSchedulerTests(unittest.TestCase):
             WorkoutType.BJJ_TECHNICAL, WorkoutType.BJJ_NORMAL, WorkoutType.BJJ_HARD,
         }]
 
-        self.assertEqual(len(bjj), 2)
-        self.assertFalse(any(item.local_date == date(2026, 10, 10) for item in bjj))
+        self.assertEqual(bjj, [])
+        self.assertFalse(any(item.day == date(2026, 10, 10) for item in plan.candidates))
         self.assertFalse(any(item.type == WorkoutType.STRENGTH_A for item in plan.sessions))
 
     def test_tokyo_day_boundary_uses_local_tomorrow(self) -> None:
-        now = datetime(2026, 9, 13, 15, 30, tzinfo=UTC)  # Monday 00:30 in Tokyo
+        now = datetime(2026, 9, 13, 15, 30, tzinfo=UTC)
         plan = self.scheduler.plan_week(date(2026, 9, 14), now=now)
         self.assertFalse(any(item.local_date < date(2026, 9, 14) for item in plan.sessions))
 
@@ -106,6 +207,28 @@ class TrainingSchedulerTests(unittest.TestCase):
         self.assertEqual([(item.local_date, item.type) for item in plan.sessions], [
             (date(2026, 9, 13), WorkoutType.REST),
         ])
+        self.assertEqual(plan.candidates, ())
+
+    def test_heavy_workday_skips_extra_gym_even_if_morning_is_free(self) -> None:
+        labeled = (
+            (datetime(2026, 9, 15, 9, tzinfo=TOKYO), datetime(2026, 9, 15, 18, tzinfo=TOKYO), "LCA meetings"),
+        )
+        plan = self.scheduler.plan_week(date(2026, 9, 14), now=self.now, labeled_busy=labeled)
+        tuesday = [item for item in plan.sessions if item.local_date == date(2026, 9, 15)]
+        self.assertFalse(any(item.type in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B, WorkoutType.ZONE_2} for item in tuesday))
+
+    def test_dinner_or_travel_marks_the_day_too_loaded_for_gym(self) -> None:
+        labeled = (
+            (datetime(2026, 9, 18, 19, tzinfo=TOKYO), datetime(2026, 9, 18, 21, tzinfo=TOKYO), "Dinner with team"),
+        )
+        plan = self.scheduler.plan_week(date(2026, 9, 14), now=self.now, labeled_busy=labeled)
+        friday = [item for item in plan.sessions if item.local_date == date(2026, 9, 18)]
+        self.assertFalse(any(item.type in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B} for item in friday))
+
+    def test_week_quality_bands(self) -> None:
+        self.assertEqual(assess_week_quality(bjj=3, hard_bjj=True, strength=2, zone_2=1, intervals=1, rest=True), WeekQuality.EXCELLENT)
+        self.assertEqual(assess_week_quality(bjj=2, hard_bjj=False, strength=1, zone_2=1, intervals=0, rest=True), WeekQuality.ACCEPTABLE)
+        self.assertEqual(assess_week_quality(bjj=2, hard_bjj=False, strength=3, zone_2=0, intervals=2, rest=False), WeekQuality.BAD_PLANNING)
 
 
 if __name__ == "__main__":

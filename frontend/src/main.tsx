@@ -1,11 +1,10 @@
 import { useMemo } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Header } from './components/Header'
-import { RegionBlock } from './components/RegionBlock'
-import { DeviceControls } from './components/DeviceControls'
 import { MediaRegion } from './components/MediaRegion'
 import { OpenClawChat } from './components/OpenClawChat'
 import { addDays, PlanningRegion, TaskRegion } from './components/PlanningRegion'
+import { ChiliAdvice } from './components/TodayHero'
 import { StartupSplash } from './components/StartupSplash'
 import { useChiliNotifications } from './hooks/useChiliNotifications'
 import { useDashboardData, type DashboardInitialData } from './hooks/useDashboardData'
@@ -61,6 +60,7 @@ function DashboardApp({
     walkingPad,
     walkReminder,
     training,
+    plan,
     selectedCalendarDate,
     setSelectedCalendarDate,
   } = useDashboardData(today, initialData)
@@ -97,19 +97,10 @@ function DashboardApp({
         />
       )}
       <div className="dashboard-workspace">
-        <aside className="environment-region" aria-label="Assistant activity and home status">
+        <aside className="environment-region" aria-label="Chili's advice, assistant activity, and music">
+          <ChiliAdvice plan={plan} />
           <OpenClawChat conversation={openclaw} />
-          <div className="home-bottom-stack">
-            <RegionBlock label="Home status">
-              <DeviceControls
-                light={dashboard.light}
-                pump={dashboard.water_pump}
-                display={dashboard.display}
-                system={dashboard.system}
-              />
-            </RegionBlock>
-            <MediaRegion spotify={spotify} />
-          </div>
+          <MediaRegion spotify={spotify} />
         </aside>
         <PlanningRegion
           calendar={calendar}

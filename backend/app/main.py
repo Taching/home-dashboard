@@ -52,7 +52,8 @@ async def lifespan(application: FastAPI):
     application.state.walkingpad_service = WalkingPadService()
     wellbeing_service = WellbeingService()
     application.state.wellbeing_service = wellbeing_service
-    training_service = TrainingService()
+    application.state.weather_service = WeatherService()
+    training_service = TrainingService(weather_service=application.state.weather_service)
     application.state.training_service = training_service
     training_service.bootstrap()
     application.state.training_log_service = TrainingLogService()
@@ -65,7 +66,6 @@ async def lifespan(application: FastAPI):
     application.state.activity_feed_service = ActivityFeedService()
     application.state.chili_notify_service = ChiliNotifyService()
     application.state.voice_state_service = VoiceStateService()
-    application.state.weather_service = WeatherService()
     application.state.voice_log_service = VoiceLogService()
     application.state.voice_command_interpreter = VoiceCommandInterpreter()
     application.state.pi_volume_service = PiVolumeService()

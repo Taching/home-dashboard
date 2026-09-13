@@ -5,7 +5,7 @@ from app.domain.training.types import WorkoutTemplate, WorkoutType
 WORKOUT_TEMPLATES: dict[WorkoutType, WorkoutTemplate] = {
     WorkoutType.STRENGTH_A: WorkoutTemplate(
         WorkoutType.STRENGTH_A,
-        "Strength A + bike intervals",
+        "Gym (Strength A)",
         60,
         "hard",
         (
@@ -21,7 +21,7 @@ WORKOUT_TEMPLATES: dict[WorkoutType, WorkoutTemplate] = {
     ),
     WorkoutType.STRENGTH_B: WorkoutTemplate(
         WorkoutType.STRENGTH_B,
-        "Strength B",
+        "Gym (Strength B)",
         55,
         "normal",
         (

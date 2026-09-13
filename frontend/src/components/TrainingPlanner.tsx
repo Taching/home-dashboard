@@ -1,4 +1,4 @@
-import type { TrainingOverview, TrainingSession } from '../types'
+import type { TrainingOverview } from '../types'
 
 const TIME_ZONE = 'Asia/Tokyo'
 
@@ -15,49 +15,55 @@ function timeLabel(value: string, allDay = false) {
   return new Intl.DateTimeFormat('en-GB', { timeZone: TIME_ZONE, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value))
 }
 
-function exerciseLabel(item: TrainingSession['exercises'][number]) {
-  const load = item.load_value === null ? '' : ` ${item.load_value}${item.load_unit ? ` ${item.load_unit}` : ''}`
-  const work = item.sets === null ? (item.reps ?? '') : `${item.sets} × ${item.reps ?? ''}`
-  const duration = item.duration_seconds ? `${Math.round(item.duration_seconds / 60)} min` : ''
-  return `${item.name}${load}${work ? ` · ${work}` : ''}${duration ? ` · ${duration}` : ''}`
+function sessionTitle(title: string | undefined) {
+  if (!title) return 'Open'
+  if (title.startsWith('Gym (')) return title
+  return title
+    .replace('BJJ Competition / Hard', 'Hard BJJ')
+    .replace('Strength A + Intervals', 'Gym (Strength A)')
+    .replace(/^Strength A$/, 'Gym (Strength A)')
+    .replace(/^Strength B$/, 'Gym (Strength B)')
+}
+
+function typeTitle(type: string | undefined) {
+  return ({
+    bjj_technical: 'BJJ Technical',
+    bjj_normal: 'BJJ Normal',
+    bjj_hard: 'Hard BJJ',
+    strength_a: 'Gym (Strength A)',
+    strength_b: 'Gym (Strength B)',
+    zone_2: 'Zone 2',
+    grip: 'Grip',
+    recovery: 'Recovery',
+    rest: 'Rest',
+    competition: 'Competition',
+  } as Record<string, string>)[type ?? ''] ?? sessionTitle(type)
 }
 
 export function TodayTrainingCard({ training }: { training: TrainingOverview }) {
   const session = training.today
-  const conditioning = session?.exercises.filter((item) => item.name.toLowerCase().includes('interval')) ?? []
-  const mainWork = session?.exercises.filter((item) => !item.name.toLowerCase().includes('interval')) ?? []
+  const today = training.generated_at ? new Date(training.generated_at) : new Date()
+  const dateLabel = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TIME_ZONE, weekday: 'long', day: 'numeric', month: 'long',
+  }).format(today)
+  const isRest = !session || session.planned_type === 'rest' || session.is_all_day
+  const title = isRest
+    ? (session?.title && session.title.toLowerCase() !== 'rest' ? session.title : 'Rest today')
+    : session.title
   return (
-    <section className={`training-card today-training is-${session?.intensity ?? 'rest'}`} aria-label="Today's training">
+    <section className={`training-card today-training is-glance is-${session?.intensity ?? 'rest'}`} aria-label="Today's training">
       <div className="training-card-heading">
-        <div><p className="eyebrow">TODAY</p><h2>{session?.title ?? 'Rest today'}</h2></div>
-        <div className="training-meta">
-          {session && <strong>{session.estimated_minutes} min</strong>}
-          <span>{training.readiness?.level?.replace('_', ' ') ?? 'readiness pending'}</span>
+        <div>
+          <p className="eyebrow">TODAY</p>
+          <h2>{title}</h2>
+          <time className="today-training-date">{dateLabel}</time>
         </div>
-      </div>
-      {session ? (
-        <>
-          {mainWork.length > 0 && <div className="training-prescription">
-            <strong>Main work</strong>
-            <div className="training-main-work">
-              {mainWork.map((item) => <span key={item.name}>{exerciseLabel(item)}</span>)}
-            </div>
-          </div>}
-          {conditioning.length > 0 && <div className="training-prescription is-conditioning">
-            <strong>Conditioning</strong>
-            <div className="training-main-work">
-              {conditioning.map((item) => <span key={item.name}>{exerciseLabel(item)}</span>)}
-            </div>
-          </div>}
-          <div className="training-main-work">
-            {session.target_rounds && <span>{session.target_rounds} × 5-minute rounds · {Math.round((session.rest_seconds ?? 120) / 60)} min rest</span>}
+        {!isRest && session && (
+          <div className="training-meta">
+            <strong>{timeLabel(session.start_at, session.is_all_day)}</strong>
           </div>
-          {session.coach_focus.length > 0 && <p className="training-focus">Focus · {session.coach_focus.slice(0, 2).join(' ')}</p>}
-          <p className="training-why">Why today · {session.reason}</p>
-          {session.preparation && <p className="training-preparation">Prepare · {session.preparation}</p>}
-          <p className="training-command">OpenClaw: “start training”, “move this”, “recovery day”, or “completed”.</p>
-        </>
-      ) : <p className="training-why">No session is prescribed. An empty calendar is not an invitation to add fatigue.</p>}
+        )}
+      </div>
     </section>
   )
 }
@@ -66,20 +72,30 @@ export function TrainingWeekStrip({ training }: { training: TrainingOverview }) 
   const todayKey = localDateKey(training.generated_at ? new Date(training.generated_at) : new Date())
   const start = new Date(`${todayKey}T00:00:00+09:00`)
   const sessions = training.upcoming ?? training.week
-  const days = Array.from({ length: 7 }, (_, index) => {
+  const candidates = training.bjj_candidates ?? []
+  const days = Array.from({ length: 6 }, (_, index) => {
     const day = new Date(start)
-    day.setDate(day.getDate() + index)
+    day.setDate(day.getDate() + index + 1)
     const key = localDateKey(day)
-    return { day, key, session: sessions.find((item) => localDateKey(new Date(item.start_at)) === key) }
+    const candidate = candidates.find((item) => item.date === key)
+    return {
+      day,
+      key,
+      session: sessions.find((item) => localDateKey(new Date(item.start_at)) === key),
+      candidate,
+    }
   })
   return (
-    <section className="training-week" aria-label="This week's training plan">
-      {days.map(({ day, key, session }) => (
-        <article key={key} className={`training-day${key === todayKey ? ' is-today' : ''}${session ? ` is-${session.planned_type}` : ''}`}>
-          <span>{new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: TIME_ZONE }).format(day)}</span>
-          <strong>{Number(key.slice(-2))}</strong>
-          <small>{session?.title.replace('BJJ Competition / Hard', 'Hard BJJ').replace('Strength A + Intervals', 'Strength A') ?? 'No training'}</small>
-          {session && !session.is_all_day && <i>{timeLabel(session.start_at)}</i>}
+    <section className="training-week is-upcoming" aria-label="Next six training days">
+      {days.map(({ day, key, session, candidate }) => (
+        <article key={key} className={`training-day${session ? ` is-${session.planned_type}` : candidate ? ' is-bjj-candidate' : ''}`}>
+          <span>{new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: TIME_ZONE }).format(day)}</span>
+          <strong>
+            {Number(key.slice(-2))}
+            <em>{new Intl.DateTimeFormat('en-GB', { month: 'short', timeZone: TIME_ZONE }).format(day)}</em>
+          </strong>
+          <small>{session ? sessionTitle(session.title) : candidate ? 'BJJ?' : 'Open'}</small>
+          {session && !session.is_all_day ? <i>{timeLabel(session.start_at)}</i> : candidate?.preferred_clock ? <i className="is-quiet">{candidate.preferred_clock}</i> : <i className="is-quiet">—</i>}
         </article>
       ))}
     </section>
@@ -88,6 +104,13 @@ export function TrainingWeekStrip({ training }: { training: TrainingOverview }) 
 
 export function TrainingInsights({ training }: { training: TrainingOverview }) {
   const tomorrow = training.tomorrow
+  const prescription = training.tomorrow_prescription
+  const weekQuality = {
+    excellent: 'Excellent week',
+    good: 'Good week',
+    acceptable: 'Acceptable week',
+    bad_planning: 'Bad planning',
+  }[training.week_quality ?? ''] ?? null
   const phaseLabel = {
     build_october: 'Building for October',
     taper_october: 'October taper',
@@ -109,11 +132,13 @@ export function TrainingInsights({ training }: { training: TrainingOverview }) {
       </div>
       <div className={`tomorrow-decision is-${tomorrow?.intensity ?? 'rest'}`}>
         <div className="tomorrow-decision-title">
-          <strong>{tomorrow?.title ?? 'Recovery / open'}</strong>
-          <time>{tomorrow ? timeLabel(tomorrow.start_at, tomorrow.is_all_day) : 'No session'}</time>
+          <strong>{tomorrow?.title ?? typeTitle(prescription?.session) ?? 'Recovery / open'}</strong>
+          <time>{prescription?.time ?? (tomorrow ? timeLabel(tomorrow.start_at, tomorrow.is_all_day) : 'No session')}</time>
         </div>
-        <p>{tomorrow?.reason ?? 'No workout is added merely because time is free.'}</p>
-        {tomorrow?.coach_focus.length ? <span>Focus · {tomorrow.coach_focus.slice(0, 2).join(' ')}</span> : null}
+        <p>{prescription?.work ?? tomorrow?.reason ?? 'No workout is added merely because time is free.'}</p>
+        <span>Focus · {prescription?.focus ?? tomorrow?.coach_focus?.slice(0, 2).join(' ') ?? 'Protect recovery'}</span>
+        <span>Why · {prescription?.why ?? tomorrow?.reason ?? 'The weekly goal survives; the original calendar does not have to.'}</span>
+        {weekQuality ? <span className="week-quality">{weekQuality}</span> : null}
       </div>
       <div className="tournament-list" aria-label="Upcoming tournaments">
         <p className="eyebrow">TOURNAMENTS</p>

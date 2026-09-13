@@ -92,8 +92,7 @@ class WalkingPadCollector:
         distance_m = float(status.distance or 0)
         steps = int(status.steps or 0)
         calories = float(status.calories or 0)
-        active = moving or paused or duration > 0 or distance_m > 0
-        if not active:
+        if not (moving or paused):
             return
         if self._session is None:
             self._session = SessionState(external_id=str(uuid.uuid4()), started_at=now)

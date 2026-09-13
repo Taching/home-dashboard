@@ -18,16 +18,26 @@ from app.database.models import (
     TrainingSession,
 )
 from app.database.session import SessionLocal
+from app.domain.training.policy import assess_week_quality, weekly_targets
 from app.domain.training.scheduler import TrainingScheduler, assess_readiness, phase_for_date
 from app.domain.training.templates import WORKOUT_TEMPLATES
-from app.domain.training.types import ExistingSession, FixedBjjEvent, ReadinessInput, SessionStatus, WorkoutType
+from app.domain.training.types import (
+    ExistingSession,
+    FatigueState,
+    FixedBjjEvent,
+    ReadinessInput,
+    SessionStatus,
+    WeatherHint,
+    WorkoutType,
+)
 
 
 class TrainingService:
-    def __init__(self, session_factory=SessionLocal, *, timezone_name: str | None = None) -> None:
+    def __init__(self, session_factory=SessionLocal, *, timezone_name: str | None = None, weather_service=None) -> None:
         self._session_factory = session_factory
         self._timezone = ZoneInfo(timezone_name or settings.timezone)
         self._scheduler = TrainingScheduler(self._timezone.key)
+        self._weather_service = weather_service
 
     def bootstrap(self, now: datetime | None = None) -> None:
         current = self._as_utc(now or datetime.now(UTC))
@@ -88,15 +98,20 @@ class TrainingService:
                 for row in calendar_rows
                 if row.managed_session_id is None and any(keyword.lower() in row.title.lower() for keyword in keywords)
             )
-            busy = tuple(
-                (self._as_utc(row.start_at).astimezone(self._timezone), self._as_utc(row.end_at).astimezone(self._timezone))
+            labeled_busy = tuple(
+                (
+                    self._as_utc(row.start_at).astimezone(self._timezone),
+                    self._as_utc(row.end_at).astimezone(self._timezone),
+                    row.title or "",
+                )
                 for row in calendar_rows if not row.is_all_day and row.managed_session_id is None
             )
+            busy = tuple((start, end) for start, end, _ in labeled_busy)
             existing = tuple(self._existing(row) for row in retained)
-            readiness = self._latest_readiness(session, now)
             plan = self._scheduler.plan_week(
-                week_start, now=now, busy=busy, fixed_bjj=fixed_bjj,
-                existing=existing, readiness=readiness,
+                week_start, now=now, busy=busy, labeled_busy=labeled_busy, fixed_bjj=fixed_bjj,
+                existing=existing, fatigue=self._latest_fatigue(session, now),
+                weather=self._weather_hints(), declined_bjj=self._declined_dates(planner_settings, week_start),
             )
             desired_ids: set[str] = set()
             for item in plan.sessions:
@@ -163,6 +178,7 @@ class TrainingService:
             item for item in serialized
             if local_day <= self._local_date(item["start_at"]) < local_day + timedelta(days=7)
         ]
+        candidates = self._candidate_dicts(week_start, current)
         return {
             "generated_at": current.isoformat(),
             "timezone": self._timezone.key,
@@ -179,6 +195,13 @@ class TrainingService:
             "compliance": self._compliance(current_week, phase_for_date(local_day)),
             "trends": self._trends(rows, metrics, wellbeing, local_day),
             "readiness": self._readiness_dict(wellbeing[-1] if wellbeing else None),
+            "bjj_candidates": candidates,
+            "week_quality": self._week_quality(current_week, candidates),
+            "tomorrow_prescription": self._tomorrow_prescription(
+                tomorrow_sessions[0] if tomorrow_sessions else None,
+                current_week,
+                phase_for_date(local_day),
+            ),
         }
 
     def session(self, session_id: str) -> dict | None:
@@ -232,6 +255,103 @@ class TrainingService:
             session.commit()
         self.reconcile(current)
         return self.overview(current)["readiness"]
+
+    def record_fatigue(self, day: date, state: str, *, now: datetime | None = None) -> dict:
+        current = self._as_utc(now or datetime.now(UTC))
+        parsed = FatigueState(state)
+        with self._session_factory() as session:
+            row = session.get(DailyWellbeingCheckIn, day)
+            if row is None:
+                row = DailyWellbeingCheckIn(local_date=day, updated_at=current, source="openclaw-training")
+                session.add(row)
+            row.fatigue_state = parsed.value
+            if parsed == FatigueState.PAIN:
+                row.pain = True
+            row.updated_at = current
+            row.source = "openclaw-training"
+            session.commit()
+        self.reconcile(current)
+        return self.overview(current)
+
+    def confirm_bjj(self, day: date, *, hard: bool | None = None, now: datetime | None = None) -> dict:
+        current = self._as_utc(now or datetime.now(UTC))
+        self._set_declined(day, False)
+        week_start = day - timedelta(days=day.weekday())
+        candidate = next((item for item in self._candidate_dicts(week_start, current) if item["date"] == day.isoformat()), None)
+        clock = time(10, 0) if day.weekday() == 5 else time(7, 30)
+        if candidate and candidate.get("preferred_clock"):
+            hour, minute = (int(part) for part in str(candidate["preferred_clock"]).split(":")[:2])
+            clock = time(hour, minute)
+        is_hard = day.weekday() == 5 if hard is None else hard
+        if candidate and hard is None:
+            is_hard = candidate.get("suggested_type") == WorkoutType.BJJ_HARD.value
+        start = datetime.combine(day, clock, self._timezone)
+        return self.add_bjj(start, hard=is_hard, now=current)
+
+    def decline_bjj(self, day: date, *, now: datetime | None = None) -> dict:
+        current = self._as_utc(now or datetime.now(UTC))
+        self._set_declined(day, True)
+        self.reconcile(current)
+        return {"day": day.isoformat(), "status": "declined", **self.overview(current)}
+
+    def schedule_gym(self, day: date, workout_type: str, *, now: datetime | None = None) -> dict:
+        current = self._as_utc(now or datetime.now(UTC))
+        target = WorkoutType(workout_type)
+        if target not in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B}:
+            raise ValueError("Gym day must be strength_a or strength_b.")
+        existing = self.for_date(day)
+        if existing is not None:
+            updated = self.replace_session(existing["id"], target.value, now=current)
+            self._assign_gym_week(updated["id"], day, current)
+            self.reconcile(current)
+            return self.session(updated["id"]) or updated
+        template = WORKOUT_TEMPLATES[target]
+        start = datetime.combine(day, time(14, 0), self._timezone)
+        session_id = str(uuid5(NAMESPACE_URL, f"chili-training:gym:{day.isoformat()}:{target.value}"))
+        with self._session_factory() as session:
+            row = session.get(TrainingSession, session_id)
+            if row is None:
+                row = TrainingSession(
+                    id=session_id, planned_type=target.value, status=SessionStatus.PLANNED.value,
+                    phase=phase_for_date(day).value, planned_week_start=self._training_week_start(day),
+                    start_at=start.astimezone(UTC), end_at=(start + timedelta(minutes=template.estimated_minutes)).astimezone(UTC),
+                    is_all_day=False, estimated_minutes=template.estimated_minutes, intensity=template.intensity,
+                    reason="Gym chosen explicitly; the remaining week was rebuilt around it.",
+                    coach_focus=["Strength maintenance, not a PR day."],
+                    source="manual", pinned=True, revision=1, created_at=current, updated_at=current,
+                )
+                session.add(row)
+                self._replace_exercises(session, row.id, template.exercises)
+            session.commit()
+        self.reconcile(current)
+        result = self.session(session_id)
+        assert result is not None
+        return result
+
+    @staticmethod
+    def _training_week_start(day: date) -> date:
+        if day.weekday() == 6:
+            return day + timedelta(days=1)
+        return day - timedelta(days=day.weekday())
+
+    def _assign_gym_week(self, session_id: str, day: date, now: datetime) -> None:
+        with self._session_factory() as session:
+            row = session.get(TrainingSession, session_id)
+            if row is None:
+                return
+            row.planned_week_start = self._training_week_start(day)
+            row.pinned = True
+            row.source = "manual"
+            row.is_all_day = False
+            if row.planned_type in WORKOUT_TEMPLATES:
+                template = WORKOUT_TEMPLATES[WorkoutType(row.planned_type)]
+                start = datetime.combine(day, time(14, 0), self._timezone)
+                row.start_at = start.astimezone(UTC)
+                row.end_at = (start + timedelta(minutes=template.estimated_minutes)).astimezone(UTC)
+                row.estimated_minutes = template.estimated_minutes
+            row.reason = "Gym chosen explicitly; the remaining week was rebuilt around it."
+            row.updated_at = now
+            session.commit()
 
     def update_session(
         self, session_id: str, *, status: str | None = None, actual_type: str | None = None,
@@ -475,31 +595,121 @@ class TrainingService:
                 row.sent_at = self._as_utc(now or datetime.now(UTC))
                 session.commit()
 
-    def _latest_readiness(self, session, now: datetime):
+    def _latest_fatigue(self, session, now: datetime) -> FatigueState:
         local_day = now.astimezone(self._timezone).date()
         row = session.scalar(
             select(DailyWellbeingCheckIn)
             .where(DailyWellbeingCheckIn.local_date <= local_day)
+            .where(DailyWellbeingCheckIn.local_date >= local_day - timedelta(days=1))
             .order_by(DailyWellbeingCheckIn.local_date.desc())
             .limit(1)
         )
-        if row is None:
-            return assess_readiness(None)
-        yesterday_start = datetime.combine(local_day - timedelta(days=1), time.min, self._timezone).astimezone(UTC)
-        yesterday_end = yesterday_start + timedelta(days=1)
-        prior_hard = session.scalar(
-            select(TrainingSession.id)
-            .where(TrainingSession.start_at >= yesterday_start)
-            .where(TrainingSession.start_at < yesterday_end)
-            .where(TrainingSession.planned_type.like("bjj_%"))
-            .where(TrainingSession.session_rpe >= 8)
-            .limit(1)
-        ) is not None
-        return assess_readiness(ReadinessInput(
-            sleep_hours=row.sleep_hours, sleep_quality=row.sleep_quality, fatigue=row.fatigue,
-            soreness=row.soreness, grip_fatigue=row.grip_fatigue, pain=row.pain,
-            readiness=row.readiness, prior_hard_bjj=prior_hard,
-        ))
+        if row is None or not getattr(row, "fatigue_state", None):
+            return FatigueState.NORMAL
+        try:
+            return FatigueState(row.fatigue_state)
+        except ValueError:
+            return FatigueState.NORMAL
+
+    def _weather_hints(self) -> tuple[WeatherHint, ...]:
+        service = self._weather_service
+        if service is None:
+            return ()
+        try:
+            forecast = service.forecast()
+        except Exception:
+            return ()
+        hints = []
+        for day in (getattr(forecast, "today", None), getattr(forecast, "tomorrow", None)):
+            if day is None:
+                continue
+            hints.append(WeatherHint(
+                day.date,
+                outdoor_impractical=getattr(day, "icon", "") in {"rain", "storm", "snow"},
+                condition=getattr(day, "condition", "") or "",
+            ))
+        return tuple(hints)
+
+    def _declined_dates(self, planner_settings, week_start: date) -> tuple[date, ...]:
+        raw = getattr(planner_settings, "declined_bjj_dates", None) or []
+        days: list[date] = []
+        for item in raw:
+            try:
+                day = date.fromisoformat(str(item))
+            except ValueError:
+                continue
+            if day >= week_start - timedelta(days=14):
+                days.append(day)
+        return tuple(days)
+
+    def _set_declined(self, day: date, declined: bool) -> None:
+        with self._session_factory() as session:
+            settings_row = session.get(TrainingPlannerSetting, 1)
+            if settings_row is None:
+                return
+            raw = [str(item) for item in (settings_row.declined_bjj_dates or [])]
+            key = day.isoformat()
+            if declined and key not in raw:
+                raw.append(key)
+            if not declined:
+                raw = [item for item in raw if item != key]
+            cutoff = (day - timedelta(days=21)).isoformat()
+            settings_row.declined_bjj_dates = [item for item in raw if item >= cutoff]
+            session.commit()
+
+    def _candidate_dicts(self, week_start: date, now: datetime) -> list[dict]:
+        start = datetime.combine(week_start, time.min, self._timezone).astimezone(UTC)
+        end = start + timedelta(days=7)
+        with self._session_factory() as session:
+            planner_settings = session.get(TrainingPlannerSetting, 1)
+            calendar_rows = list(session.scalars(
+                select(CalendarBridgeEvent)
+                .where(CalendarBridgeEvent.start_at < end)
+                .where(CalendarBridgeEvent.end_at > start)
+            ).all())
+            all_sessions = list(session.scalars(
+                select(TrainingSession)
+                .where(or_(
+                    (TrainingSession.start_at < end) & (TrainingSession.end_at > start),
+                    TrainingSession.planned_week_start == week_start,
+                ))
+            ).all())
+            retained = [row for row in all_sessions if self._retained(row, now)]
+            keywords = tuple((planner_settings.bjj_title_keywords if planner_settings else []) or ["bjj", "jiu jitsu", "jiujitsu", "open mat"])
+            fixed_bjj = tuple(
+                FixedBjjEvent(
+                    row.external_id, row.title,
+                    self._as_utc(row.start_at).astimezone(self._timezone),
+                    self._as_utc(row.end_at).astimezone(self._timezone),
+                )
+                for row in calendar_rows
+                if row.managed_session_id is None and any(keyword.lower() in row.title.lower() for keyword in keywords)
+            )
+            labeled_busy = tuple(
+                (
+                    self._as_utc(row.start_at).astimezone(self._timezone),
+                    self._as_utc(row.end_at).astimezone(self._timezone),
+                    row.title or "",
+                )
+                for row in calendar_rows if not row.is_all_day and row.managed_session_id is None
+            )
+            busy = tuple((start_at, end_at) for start_at, end_at, _ in labeled_busy)
+            plan = self._scheduler.plan_week(
+                week_start, now=now, busy=busy, labeled_busy=labeled_busy, fixed_bjj=fixed_bjj,
+                existing=tuple(self._existing(row) for row in retained),
+                fatigue=self._latest_fatigue(session, now),
+                weather=self._weather_hints(),
+                declined_bjj=self._declined_dates(planner_settings, week_start),
+            )
+        return [
+            {
+                "date": item.day.isoformat(),
+                "suggested_type": item.suggested_type.value,
+                "reason": item.reason,
+                "preferred_clock": item.preferred_clock.strftime("%H:%M") if item.preferred_clock else None,
+            }
+            for item in plan.candidates
+        ]
 
     def _retained(self, row: TrainingSession, now: datetime) -> bool:
         start = self._as_utc(row.start_at)
@@ -522,6 +732,7 @@ class TrainingService:
             self._as_utc(row.end_at).astimezone(self._timezone), SessionStatus(row.status), row.pinned,
             row.source_calendar_event_id,
             WorkoutType(row.original_planned_type) if row.original_planned_type else None,
+            row.source or "scheduler",
         )
 
     def _apply_plan(self, row: TrainingSession, item, now: datetime) -> bool:
@@ -609,7 +820,7 @@ class TrainingService:
     def _title(workout_type: str) -> str:
         return {
             "bjj_technical": "BJJ Technical", "bjj_normal": "BJJ Normal", "bjj_hard": "BJJ Competition / Hard",
-            "strength_a": "Strength A + Intervals", "strength_b": "Strength B", "zone_2": "Zone 2",
+            "strength_a": "Gym (Strength A)", "strength_b": "Gym (Strength B)", "zone_2": "Zone 2",
             "grip": "Grip", "recovery": "Recovery Day", "rest": "Rest", "competition": "Gi BJJ Competition",
         }.get(workout_type, workout_type.replace("_", " ").title())
 
@@ -633,9 +844,89 @@ class TrainingService:
             elif workout_type in {"rest", "recovery"}:
                 completed["rest"] += 1
             completed["grip"] += any(exercise["name"] == "Towel kettlebell hold" for exercise in item["exercises"])
-        taper = phase.value.startswith("taper")
-        targets = {"bjj": 2 if taper else 3, "strength": 1 if taper else 2, "zone_2": 1, "intervals": 0 if taper else 1, "grip": 1 if taper else 2, "rest": 2 if taper else 1}
+        bjj_count = sum(item["planned_type"].startswith("bjj_") for item in week if item["status"] not in {"skipped", "cancelled"})
+        targets = weekly_targets(phase, bjj_count=bjj_count)
         return {key: {"completed": completed[key], "target": targets[key]} for key in targets}
+
+    def _week_quality(self, week: list[dict], candidates: list[dict]) -> str:
+        active = [item for item in week if item["status"] not in {"skipped", "cancelled"}]
+        return assess_week_quality(
+            bjj=sum(item["planned_type"].startswith("bjj_") for item in active) + len(candidates),
+            hard_bjj=any(item["planned_type"] == "bjj_hard" for item in active) or any(
+                item.get("suggested_type") == "bjj_hard" for item in candidates
+            ),
+            strength=sum(item["planned_type"].startswith("strength_") for item in active),
+            zone_2=sum(item["planned_type"] == "zone_2" for item in active),
+            intervals=sum(item["planned_type"] == "strength_a" for item in active),
+            rest=any(item["planned_type"] in {"rest", "recovery"} for item in active),
+        ).value
+
+    def _tomorrow_prescription(self, session: dict | None, week: list[dict], phase) -> dict:
+        status = self._status_after(week, session, phase)
+        if session is None:
+            return {
+                "session": "rest",
+                "time": None,
+                "work": "No training is prescribed.",
+                "focus": "Protect recovery",
+                "why": "An empty slot is not an invitation to add fatigue.",
+                "weekly_status": status,
+            }
+        start = session.get("start_at")
+        clock = None
+        if start and not session.get("is_all_day"):
+            clock = datetime.fromisoformat(start).astimezone(self._timezone).strftime("%H:%M")
+        focus = (session.get("coach_focus") or ["Show up ready"])[0]
+        why = str(session.get("reason") or "Selected because it best protects the next tournament.").split(".")[0] + "."
+        return {
+            "session": session.get("planned_type") or "rest",
+            "time": clock,
+            "work": self._work_text(session),
+            "focus": str(focus).split(".")[0],
+            "why": why,
+            "weekly_status": status,
+        }
+
+    def _status_after(self, week: list[dict], session: dict | None, phase) -> dict:
+        counts = self._compliance(week, phase)
+        if session and session.get("status") == "planned":
+            kind = session.get("planned_type") or ""
+            key = None
+            if kind.startswith("bjj_"):
+                key = "bjj"
+            elif kind.startswith("strength_"):
+                key = "strength"
+            elif kind == "zone_2":
+                key = "zone_2"
+            elif kind in {"rest", "recovery"}:
+                key = "rest"
+            if key:
+                counts[key] = {**counts[key], "completed": counts[key]["completed"] + 1}
+            if kind == "strength_a":
+                counts["intervals"] = {**counts["intervals"], "completed": counts["intervals"]["completed"] + 1}
+            if any(exercise.get("name") == "Towel kettlebell hold" for exercise in session.get("exercises") or []):
+                counts["grip"] = {**counts["grip"], "completed": counts["grip"]["completed"] + 1}
+        return counts
+
+    @staticmethod
+    def _work_text(session: dict) -> str:
+        if str(session.get("planned_type", "")).startswith("bjj_") and session.get("target_rounds"):
+            rest = int((session.get("rest_seconds") or 120) / 60)
+            return f"{session['target_rounds']} × 5-minute rounds, about {rest} minutes rest."
+        if session.get("planned_type") in {"rest", "recovery"}:
+            return "Complete rest. Do not add training."
+        parts: list[str] = []
+        for item in session.get("exercises") or []:
+            detail: list[str] = []
+            if item.get("load_value") is not None:
+                detail.append(f"{item['load_value']} {item.get('load_unit') or ''}".strip())
+            if item.get("sets") is not None:
+                reps = item.get("reps") or ""
+                detail.append(f"{item['sets']}×{reps}".rstrip("×"))
+            if item.get("duration_seconds"):
+                detail.append(f"{int(item['duration_seconds'] / 60)} min")
+            parts.append(item["name"] + (f" — {' '.join(detail)}" if detail else ""))
+        return "; ".join(parts) if parts else (session.get("title") or "Open")
 
     def _trends(self, sessions, metrics, wellbeing, local_day: date) -> dict:
         weights = [row.weight_kg for row in wellbeing if row.weight_kg is not None and row.local_date >= local_day - timedelta(days=6)]
@@ -669,7 +960,21 @@ class TrainingService:
             sleep_hours=row.sleep_hours, sleep_quality=row.sleep_quality, fatigue=row.fatigue,
             soreness=row.soreness, grip_fatigue=row.grip_fatigue, pain=row.pain, readiness=row.readiness,
         ))
-        return {"date": row.local_date.isoformat(), "level": assessment.level.value, "alerts": list(assessment.alerts), "sleep_hours": row.sleep_hours, "sleep_quality": row.sleep_quality, "fatigue": row.fatigue, "soreness": row.soreness, "grip_fatigue": row.grip_fatigue, "pain": row.pain, "pain_notes": row.pain_notes, "motivation": row.readiness, "weight_kg": row.weight_kg}
+        return {
+            "date": row.local_date.isoformat(),
+            "level": assessment.level.value,
+            "fatigue_state": getattr(row, "fatigue_state", None) or FatigueState.NORMAL.value,
+            "alerts": list(assessment.alerts),
+            "sleep_hours": row.sleep_hours,
+            "sleep_quality": row.sleep_quality,
+            "fatigue": row.fatigue,
+            "soreness": row.soreness,
+            "grip_fatigue": row.grip_fatigue,
+            "pain": row.pain,
+            "pain_notes": row.pain_notes,
+            "motivation": row.readiness,
+            "weight_kg": row.weight_kg,
+        }
 
     @staticmethod
     def _as_utc(value: datetime) -> datetime:

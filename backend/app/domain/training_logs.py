@@ -432,6 +432,7 @@ class TrainingService:
             "- Telegram voice: 3–5 short lines. Put the full https:// URL on its own first line. Never omit the link. Never say tick or checkbox.",
             f"- Gym/BJJ message: first the workout URL, then “Today: {suggested}. Open the page, mark what you did, and add a note if it felt easy or hard.”",
             f"- Evening sober message: first {daily_url}, then “Sober tonight? Answer on the daily page.”",
+            "- If the sober answer is still missing after 22:00 or the next morning, send one follow-up with the same dated /daily URL. Do not mention last-check-in dates on the wall.",
             f"- Sunday morning message: first {daily_url}, then “Sunday weigh-in and week review. Compare with last week, then say if next week needs a change.”",
             "- Do not ask sleep, weight (except Sunday), readiness, fatigue, soreness, or pain.",
             "- Sleep will come from Garmin later.",

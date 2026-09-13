@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, time
 from enum import StrEnum
 
 
@@ -46,6 +46,20 @@ class ReadinessLevel(StrEnum):
     YELLOW = "yellow"
     RED = "red"
     MANUAL_REVIEW = "manual_review"
+
+
+class FatigueState(StrEnum):
+    NORMAL = "normal"
+    TIRED = "tired"
+    VERY_FATIGUED = "very_fatigued"
+    PAIN = "pain"
+
+
+class WeekQuality(StrEnum):
+    EXCELLENT = "excellent"
+    GOOD = "good"
+    ACCEPTABLE = "acceptable"
+    BAD_PLANNING = "bad_planning"
 
 
 @dataclass(frozen=True)
@@ -106,6 +120,22 @@ class ExistingSession:
     pinned: bool = False
     source_calendar_event_id: str | None = None
     suppresses_type: WorkoutType | None = None
+    source: str = "scheduler"
+
+
+@dataclass(frozen=True)
+class BjjCandidate:
+    day: date
+    suggested_type: WorkoutType
+    reason: str
+    preferred_clock: time | None = None
+
+
+@dataclass(frozen=True)
+class WeatherHint:
+    day: date
+    outdoor_impractical: bool = False
+    condition: str = ""
 
 
 @dataclass(frozen=True)
@@ -136,3 +166,4 @@ class PlannedSession:
 class WeekPlan:
     week_start: date
     sessions: tuple[PlannedSession, ...] = field(default_factory=tuple)
+    candidates: tuple[BjjCandidate, ...] = field(default_factory=tuple)

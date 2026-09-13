@@ -39,6 +39,7 @@ class WalkingPadTodaySnapshot:
     total_calories: float
     goal_minutes: int
     goal_distance_km: float
+    goal_steps: int
     session_count: int
     active_session: WalkingPadActiveSession | None
     goal_met: bool
@@ -158,6 +159,7 @@ class WalkingPadService:
         if not self.configured():
             return self._empty_snapshot("not_configured")
         synced_at = self._last_synced_at()
+        self._close_stale_open_sessions(current)
         sessions = self._sessions_for_local_date(current)
         active = next((session for session in sessions if session.ended_at is None), None)
         completed = [session for session in sessions if session.ended_at is not None]
@@ -167,7 +169,8 @@ class WalkingPadService:
         total_calories = sum(session.calories for session in sessions)
         goal_minutes = settings.walkingpad_goal_minutes
         goal_distance = settings.walkingpad_goal_distance_km
-        goal_met = (total_seconds / 60) >= goal_minutes and total_distance >= goal_distance
+        goal_steps = settings.walkingpad_goal_steps
+        goal_met = total_steps >= goal_steps
         status = self._resolve_status(synced_at, active is not None, current)
         active_session = None
         if active is not None:
@@ -188,6 +191,7 @@ class WalkingPadService:
             total_calories=round(total_calories, 1),
             goal_minutes=goal_minutes,
             goal_distance_km=goal_distance,
+            goal_steps=goal_steps,
             session_count=len(completed) + (1 if active else 0),
             active_session=active_session,
             goal_met=goal_met,
@@ -217,17 +221,17 @@ class WalkingPadService:
         local_date = local_now.date().isoformat()
         next_key = next_event.external_id if next_event else "end-of-day"
         dedupe_key = f"walk:window:{local_date}:{next_key}"
-        walked_min = int(snapshot.total_minutes)
-        goal_min = snapshot.goal_minutes
+        walked = snapshot.total_steps
+        goal = snapshot.goal_steps
         if next_event is not None:
             title = next_event.title
             message = (
-                f"You've walked {walked_min} of {goal_min} minutes today. "
+                f"You've walked {walked:,} of {goal:,} steps today. "
                 f"You have about {minutes_until} minutes before {title} — good time for a walk."
             )
         else:
             message = (
-                f"You've walked {walked_min} of {goal_min} minutes today. "
+                f"You've walked {walked:,} of {goal:,} steps today. "
                 f"You have {minutes_until} minutes left in your walk window today."
             )
         return WalkReminder(active=True, message=message, dedupe_key=dedupe_key)
@@ -246,9 +250,8 @@ class WalkingPadService:
         lines = [
             (
                 f"- Walking: {snapshot.status}; synced at {synced}; "
-                f"today {snapshot.total_minutes}/{snapshot.goal_minutes} min, "
-                f"{snapshot.total_distance_km}/{snapshot.goal_distance_km} km, "
-                f"{snapshot.total_steps} steps; "
+                f"today {snapshot.total_steps:,}/{snapshot.goal_steps:,} steps, "
+                f"{snapshot.total_minutes} min, {snapshot.total_distance_km} km; "
                 f"{snapshot.session_count} session(s); {activity}."
             ),
             f"- Walking goal: {'met' if snapshot.goal_met else 'not yet met'}.",
@@ -287,6 +290,7 @@ class WalkingPadService:
             total_calories=0.0,
             goal_minutes=settings.walkingpad_goal_minutes,
             goal_distance_km=settings.walkingpad_goal_distance_km,
+            goal_steps=settings.walkingpad_goal_steps,
             session_count=0,
             active_session=None,
             goal_met=False,
@@ -313,20 +317,34 @@ class WalkingPadService:
                 return None
             return self._as_utc(row.synced_at)
 
+    def _close_stale_open_sessions(self, now: datetime) -> None:
+        start, _ = self._local_day_bounds(now.astimezone(self._timezone).date())
+        with self._session_factory() as session:
+            rows = list(session.scalars(
+                select(WalkingPadSession).where(WalkingPadSession.ended_at.is_(None))
+            ).all())
+            changed = False
+            for row in rows:
+                started = self._as_utc(row.started_at)
+                if started >= start:
+                    continue
+                ended = started + timedelta(seconds=max(int(row.duration_seconds or 0), 1))
+                row.ended_at = ended
+                changed = True
+            if changed:
+                session.commit()
+
     def _sessions_for_local_date(self, now: datetime) -> list[WalkingPadSession]:
         local_date = now.astimezone(self._timezone).date()
         start, end = self._local_day_bounds(local_date)
         with self._session_factory() as session:
             rows = session.scalars(
-                select(WalkingPadSession)
-                .where(WalkingPadSession.started_at < end)
-                .where(
-                    (WalkingPadSession.ended_at.is_(None))
-                    | (WalkingPadSession.ended_at > start)
-                )
-                .order_by(WalkingPadSession.started_at)
+                select(WalkingPadSession).order_by(WalkingPadSession.started_at)
             ).all()
-            return list(rows)
+            return [
+                row for row in rows
+                if start <= self._as_utc(row.started_at) < end
+            ]
 
     def _local_day_bounds(self, local_date: date) -> tuple[datetime, datetime]:
         start = datetime.combine(local_date, time.min, tzinfo=self._timezone).astimezone(UTC)

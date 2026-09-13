@@ -1,12 +1,37 @@
 import unittest
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
+from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.database.models import TrainingSession
 from app.database.session import Base
 from app.domain.wellbeing import WellbeingService
+
+TOKYO = ZoneInfo("Asia/Tokyo")
+
+
+def add_completed_session(factory, day: date, planned_type: str) -> None:
+    start = datetime.combine(day, time(7, 30), TOKYO).astimezone(UTC)
+    with factory() as session:
+        session.add(TrainingSession(
+            id=str(uuid4()),
+            planned_type=planned_type,
+            status="completed",
+            phase="build_october",
+            planned_week_start=day - timedelta(days=day.weekday()),
+            start_at=start,
+            end_at=start + timedelta(minutes=60),
+            estimated_minutes=60,
+            intensity="normal",
+            reason="test",
+            created_at=start,
+            updated_at=start,
+        ))
+        session.commit()
 
 
 def test_session_factory():
@@ -30,12 +55,14 @@ class WellbeingServiceTests(unittest.TestCase):
         )
 
     def test_sober_streak_increments_and_training_counts_once_per_day(self) -> None:
+        add_completed_session(self.factory, date(2026, 8, 24), "strength_a")
+        add_completed_session(self.factory, date(2026, 8, 25), "bjj_normal")
         self.service.record(
-            date(2026, 8, 24), trained=True, sober=True,
+            date(2026, 8, 24), sober=True,
             now=datetime(2026, 8, 24, 13, tzinfo=UTC),
         )
         summary = self.service.record(
-            date(2026, 8, 25), trained=True, sober=True,
+            date(2026, 8, 25), sober=True,
             now=datetime(2026, 8, 25, 13, tzinfo=UTC),
         )
 
@@ -45,6 +72,7 @@ class WellbeingServiceTests(unittest.TestCase):
         self.assertFalse(summary.checkin_stale)
 
     def test_partial_update_preserves_existing_answer_and_false_resets_streak(self) -> None:
+        add_completed_session(self.factory, date(2026, 8, 24), "strength_b")
         self.service.record(
             date(2026, 8, 24), trained=True,
             now=datetime(2026, 8, 24, 13, tzinfo=UTC),
@@ -88,12 +116,14 @@ class WellbeingServiceTests(unittest.TestCase):
         self.assertFalse(summary.checkin_stale)
 
     def test_gym_and_jiujitsu_have_separate_weekly_goals(self) -> None:
+        add_completed_session(self.factory, date(2026, 8, 24), "strength_a")
+        add_completed_session(self.factory, date(2026, 8, 25), "bjj_normal")
         self.service.record(
-            date(2026, 8, 24), gym=True, jiujitsu=False,
+            date(2026, 8, 24), sober=True,
             now=datetime(2026, 8, 24, 13, tzinfo=UTC),
         )
         summary = self.service.record(
-            date(2026, 8, 25), gym=False, jiujitsu=True,
+            date(2026, 8, 25), sober=True,
             now=datetime(2026, 8, 25, 13, tzinfo=UTC),
         )
 
@@ -114,6 +144,27 @@ class WellbeingServiceTests(unittest.TestCase):
 
         self.assertFalse(before_cutoff.checkin_stale)
         self.assertTrue(after_cutoff.checkin_stale)
+
+    def test_sober_followup_after_missed_evening(self) -> None:
+        self.service.record(
+            date(2026, 9, 11), sober=True,
+            now=datetime(2026, 9, 11, 13, tzinfo=UTC),
+        )
+        morning = self.service.sober_nudges(datetime(2026, 9, 13, 2, tzinfo=UTC))
+        self.assertEqual([nudge.kind for nudge in morning], ["followup"])
+        self.assertEqual(morning[0].day, date(2026, 9, 12))
+        self.assertIn("/daily/2026-09-12", morning[0].message)
+
+        evening = self.service.sober_nudges(datetime(2026, 9, 13, 12, 30, tzinfo=UTC))
+        self.assertEqual({nudge.kind for nudge in evening}, {"ask", "followup"})
+        self.assertTrue(any(nudge.day == date(2026, 9, 13) and nudge.kind == "ask" for nudge in evening))
+
+        self.service.record(
+            date(2026, 9, 12), sober=True,
+            now=datetime(2026, 9, 13, 3, tzinfo=UTC),
+        )
+        after = self.service.sober_nudges(datetime(2026, 9, 13, 2, 10, tzinfo=UTC))
+        self.assertEqual(after, [])
 
     def test_weight_is_tracked_without_masking_a_missing_checkin(self) -> None:
         summary = self.service.record(

@@ -49,8 +49,9 @@ export function DailyBriefingPage({ day }: { day: string }) {
     <main className="daily-briefing-shell">
       <header className="daily-hero">
         <div>
-          <span className="daily-kicker">Chili daily briefing</span>
+          <span className="daily-kicker">Chili daily plan</span>
           <h1>{title}</h1>
+          {briefing.today?.headline && <p className="daily-plan-headline">{briefing.today.headline}</p>}
           {briefing.preview && <span className="daily-preview-badge">Dry run · saved plan unchanged</span>}
         </div>
         <div className="daily-streak"><strong>{briefing.sobriety.days}</strong><span>sober days</span></div>
@@ -88,8 +89,36 @@ export function DailyBriefingPage({ day }: { day: string }) {
             ) : <p className="daily-empty">No meetings on the calendar.</p>}
           </section>
 
+          {briefing.tomorrow && (
+            <section className="daily-card">
+              <span className="daily-card-label">Prepare tomorrow</span>
+              <p>{briefing.tomorrow.preparation ?? briefing.tomorrow.headline}</p>
+              {briefing.tomorrow.meetings.length > 0 && (
+                <div className="daily-meetings">
+                  {briefing.tomorrow.meetings.map((meeting) => (
+                    <div key={meeting.id ?? meeting.title}>
+                      <time>{meeting.clock ?? formatTime(meeting.start_at ?? '', meeting.is_all_day)}</time>
+                      <strong>{meeting.title}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {briefing.tomorrow.training && (
+                <p>{briefing.tomorrow.training.title}{briefing.tomorrow.training.estimated_minutes ? ` · ${briefing.tomorrow.training.estimated_minutes} min` : ''}</p>
+              )}
+            </section>
+          )}
+
           <section className={`daily-card daily-advice${briefing.advice ? ' has-advice' : ''}`}>
-            <span className="daily-card-label">Chili’s advice</span>
+            <span className="daily-card-label">
+              {briefing.advice_window === 'morning'
+                ? 'Chili’s morning advice'
+                : briefing.advice_window === 'lunch'
+                  ? 'Chili’s lunch advice'
+                  : briefing.advice_window === 'evening'
+                    ? 'Chili’s evening advice'
+                    : 'Chili’s advice'}
+            </span>
             <p>{briefing.advice ?? 'Sunday review asks Chili. Workout and sober saves stay on this page.'}</p>
           </section>
         </div>

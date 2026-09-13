@@ -34,7 +34,6 @@ export function MediaRegion({ spotify }: { spotify: SpotifyNowPlaying }) {
           </div>
         )}
       </div>
-      <p className="voice-media-hint">Spotify status from your connected account</p>
     </section>
   )
 }

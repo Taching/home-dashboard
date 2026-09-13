@@ -1,5 +1,6 @@
 import chiliLogo from '../assets/chili-logo.svg'
 import { ChiliNotificationBanner } from './ChiliNotificationBanner'
+import { HeaderStat } from './HeaderStat'
 import { WalkingPadBadge } from './WalkingPadBadge'
 import { WeatherWidget } from './WeatherWidget'
 import { useClock } from '../hooks/useClock'
@@ -26,53 +27,59 @@ export function Header({
 }: HeaderProps) {
   const now = useClock()
   const showNotification = Boolean(notification)
-  const latestCheckIn = wellbeing.latest_checkin_date
-    ? new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
-      .format(new Date(`${wellbeing.latest_checkin_date}T00:00:00Z`))
-    : null
-  const checkInHint = wellbeing.checkin_stale
-    ? (latestCheckIn ? `Last ${latestCheckIn}` : 'Check-in missing')
-    : 'Current streak'
-  const bjj = training.compliance.bjj ?? { completed: wellbeing.jiujitsu_this_week, target: wellbeing.jiujitsu_weekly_goal }
-  const strength = training.compliance.strength ?? { completed: wellbeing.gym_this_week, target: 2 }
+  const soberHint = 'Streak'
+  const bjjDone = wellbeing.jiujitsu_this_week
+  const strengthDone = wellbeing.gym_this_week
+  const bjjTarget = wellbeing.jiujitsu_weekly_goal
+  const strengthTarget = wellbeing.gym_weekly_goal
+  const weekHint = training.phase.startsWith('taper') ? 'Taper week' : 'This week'
   const currentWeight = training.readiness?.weight_kg ?? wellbeing.current_weight_kg
   const averageWeight = training.trends.weight_7d_average
+  const weightHint = averageWeight != null
+    ? `7d ${averageWeight.toFixed(1)}`
+    : `Goal ${wellbeing.weight_goal_kg}`
+
   return (
     <header className={`dashboard-header${showNotification ? ' has-notification' : ''}`}>
-      <div className="brand-cluster">
-        <a
-          className="brand-mark"
-          href="/"
-          aria-label="Chili dashboard"
-        >
-          <img src={chiliLogo} alt="" className="brand-logo" />
-        </a>
-      </div>
+      <a className="brand-mark" href="/" aria-label="Chili dashboard">
+        <img src={chiliLogo} alt="" className="brand-logo" />
+      </a>
       <div className="header-meta">
-        <div className={`environment-badge wellbeing-badge is-sober${wellbeing.checkin_stale ? ' is-stale' : ''}`} aria-label={`${wellbeing.sober_days} sober days in the current streak. ${checkInHint}`}>
-          <span className="environment-badge-label">Sober</span>
-          <strong><span>{wellbeing.sober_days}</span><small>days</small></strong>
-          <span>{checkInHint}</span>
-        </div>
-        <div
-          className={`wellbeing-badge training-badge is-workout${wellbeing.checkin_stale ? ' is-stale' : ''}`}
-          aria-label={`${bjj.completed} of ${bjj.target} BJJ sessions and ${strength.completed} of ${strength.target} strength sessions this week.`}
-        >
-          <span className="environment-badge-label">Weekly training</span>
-          <div className="training-goals">
-            <strong><span>{bjj.completed}</span><small>/{bjj.target} BJJ</small></strong>
-            <strong><span>{strength.completed}</span><small>/{strength.target} Str</small></strong>
-          </div>
-          <span>{training.phase.startsWith('taper') ? 'Taper · less is right' : 'Mon–Sun'}</span>
-        </div>
-        <div className="environment-badge wellbeing-badge weight-badge" aria-label={`Current weight ${currentWeight ?? 'not recorded'} kilograms. Seven-day average ${averageWeight ?? 'not available'} kilograms.`}>
-          <span className="environment-badge-label">Weight</span>
-          <strong><span>{currentWeight?.toFixed(1) ?? '—'}</span><small>kg</small></strong>
-          <span>{averageWeight === null ? '7d avg —' : `7d avg ${averageWeight.toFixed(1)}`}</span>
-        </div>
+        <HeaderStat
+          label="Sober"
+          value={wellbeing.sober_days}
+          unit="days"
+          hint={soberHint}
+          tone="sober"
+          description={`${wellbeing.sober_days} sober days.`}
+        />
+        <HeaderStat
+          label="BJJ"
+          value={bjjDone}
+          unit={`/ ${bjjTarget}`}
+          hint={weekHint}
+          tone="bjj"
+          description={`${bjjDone} of ${bjjTarget} BJJ sessions this week.`}
+        />
+        <HeaderStat
+          label="Strength"
+          value={strengthDone}
+          unit={`/ ${strengthTarget}`}
+          hint={weekHint}
+          tone="strength"
+          description={`${strengthDone} of ${strengthTarget} strength sessions this week.`}
+        />
+        <HeaderStat
+          label="Weight"
+          value={currentWeight == null ? '—' : currentWeight.toFixed(1)}
+          unit={currentWeight == null ? undefined : 'kg'}
+          hint={weightHint}
+          tone="weight"
+          description={`Weight ${currentWeight ?? 'not recorded'} kilograms. ${weightHint}.`}
+        />
         <WalkingPadBadge walkingPad={walkingPad} />
         <WeatherWidget forecast={weather} />
-        <time className="clock" dateTime={now.toISOString()}>
+        <time className="header-clock" dateTime={now.toISOString()}>
           <strong>{formatClock(now)}</strong>
           <span>{formatDate(now)}</span>
         </time>

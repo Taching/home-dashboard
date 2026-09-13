@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import openClawLogo from '../assets/openclaw-logo.svg'
+import chiliLogo from '../assets/chili-logo.svg'
 import type { OpenClawConversation } from '../types'
 
 type Props = {
@@ -21,19 +21,7 @@ export function OpenClawChat({ conversation }: Props) {
   }, [messages])
 
   return (
-    <section className={`openclaw-chat voice-assistant is-${conversation.status}`} aria-label="Assistant activity">
-      <div className="openclaw-heading">
-        <div className="openclaw-title">
-          <span className="openclaw-brand">
-            <img src={openClawLogo} alt="" />
-          </span>
-          <div>
-            <p className="eyebrow">ASSISTANT</p>
-            <h2>Recent activity</h2>
-          </div>
-        </div>
-      </div>
-
+    <section className={`openclaw-chat voice-assistant is-${conversation.status}`} aria-label="Chili Agent">
       {!ready ? (
         <div className="panel-empty-state">
           <strong>Chili is offline</strong>
@@ -49,9 +37,8 @@ export function OpenClawChat({ conversation }: Props) {
           ) : messages.map((message) => (
             <article key={message.id} className={`openclaw-message is-${message.role}`}>
               <span className="openclaw-message-label">
-                {message.sender === 'home-dashboard-agent'
-                  ? 'Home Dashboard Agent'
-                  : message.role === 'user' ? 'You' : 'Chili'}
+                {message.role !== 'user' && <img src={chiliLogo} alt="" className="openclaw-message-mark" />}
+                {message.role === 'user' ? 'You' : 'Chili'}
               </span>
               <p className="openclaw-message-body">{message.text}</p>
             </article>

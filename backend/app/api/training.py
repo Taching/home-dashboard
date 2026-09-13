@@ -54,6 +54,21 @@ class AddBjjRequest(BaseModel):
     hard: bool = False
 
 
+class FatigueRequest(BaseModel):
+    date: date
+    state: Literal["normal", "tired", "very_fatigued", "pain"]
+
+
+class BjjDayRequest(BaseModel):
+    date: date
+    hard: bool | None = None
+
+
+class GymDayRequest(BaseModel):
+    date: date
+    workout_type: Literal["strength_a", "strength_b"]
+
+
 class AutomationRunRequest(BaseModel):
     action: Literal["morning", "evening", "dispatch"]
 
@@ -173,6 +188,44 @@ async def add_training_bjj(
     return request.app.state.training_service.add_bjj(body.start_at, hard=body.hard)
 
 
+@training_router.post("/automation/training/fatigue")
+async def record_training_fatigue(
+    request: Request, body: FatigueRequest, authorization: str | None = Header(default=None),
+) -> dict:
+    _require_auth(authorization)
+    try:
+        return request.app.state.training_service.record_fatigue(body.date, body.state)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@training_router.post("/automation/training/bjj/confirm")
+async def confirm_training_bjj(
+    request: Request, body: BjjDayRequest, authorization: str | None = Header(default=None),
+) -> dict:
+    _require_auth(authorization)
+    return request.app.state.training_service.confirm_bjj(body.date, hard=body.hard)
+
+
+@training_router.post("/automation/training/bjj/decline")
+async def decline_training_bjj(
+    request: Request, body: BjjDayRequest, authorization: str | None = Header(default=None),
+) -> dict:
+    _require_auth(authorization)
+    return request.app.state.training_service.decline_bjj(body.date)
+
+
+@training_router.post("/automation/training/gym")
+async def schedule_training_gym(
+    request: Request, body: GymDayRequest, authorization: str | None = Header(default=None),
+) -> dict:
+    _require_auth(authorization)
+    try:
+        return request.app.state.training_service.schedule_gym(body.date, body.workout_type)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @training_router.post("/automation/training/replan")
 async def replan_training(
     request: Request, authorization: str | None = Header(default=None),
@@ -195,8 +248,9 @@ async def run_training_automation(
         return _send_once(request, message, f"daily:briefing:{local_today.isoformat()}")
     if body.action == "evening":
         request.app.state.training_service.reconcile(now)
-        tomorrow = request.app.state.training_service.overview(now).get("tomorrow")
-        message = _tomorrow_message(tomorrow)
+        overview = request.app.state.training_service.overview(now)
+        tomorrow = overview.get("tomorrow")
+        message = _tomorrow_message(tomorrow, overview.get("tomorrow_prescription"))
         return _send_once(request, message, f"training:evening:{(local_today + timedelta(days=1)).isoformat()}:{tomorrow.get('revision') if tomorrow else 0}")
     sent = 0
     for reminder, session in request.app.state.training_service.due_reminders(now):
@@ -205,6 +259,12 @@ async def run_training_automation(
         if result["status"] in {"sent", "skipped"}:
             request.app.state.training_service.mark_reminder_sent(reminder.id, now)
             sent += result["status"] == "sent"
+    wellbeing = getattr(request.app.state, "wellbeing_service", None)
+    if wellbeing is not None:
+        for nudge in wellbeing.sober_nudges(now):
+            result = _send_once(request, nudge.message, nudge.dedupe_key)
+            if result["status"] == "sent":
+                sent += 1
     return {"status": "ok", "sent": sent}
 
 
@@ -228,7 +288,23 @@ def _send_once(request: Request, message: str, dedupe_key: str) -> dict:
         return {"status": "failed", "message": str(error)}
 
 
-def _tomorrow_message(session: dict | None) -> str:
+def _tomorrow_message(session: dict | None, prescription: dict | None = None) -> str:
+    if prescription:
+        status = prescription.get("weekly_status") or {}
+        counters = " · ".join(
+            f"{key.replace('_', ' ').title()} {item.get('completed', 0)}/{item.get('target', 0)}"
+            for key, item in status.items()
+        )
+        lines = [
+            f"Tomorrow: {prescription.get('session', 'rest')}.",
+            f"Time: {prescription.get('time') or 'unscheduled'}",
+            f"Work: {prescription.get('work')}",
+            f"Focus: {prescription.get('focus')}",
+            f"Why: {prescription.get('why')}",
+        ]
+        if counters:
+            lines.append(counters)
+        return "\n".join(lines)
     if session is None:
         return "Tomorrow: no training is prescribed. Protect recovery and do not fill the space automatically."
     lines = [f"Tomorrow: {session['title']}.", f"Why: {session['reason']}"]

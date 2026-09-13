@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.database.models import DailyWellbeingCheckIn, WalkingPadSession
+from app.database.models import DailyWellbeingCheckIn, TrainingSession, WalkingPadSession
 from app.database.session import Base
 from app.domain.progress_reports import ProgressReportService
 
@@ -30,6 +30,24 @@ class ProgressReportServiceTests(unittest.TestCase):
                     external_id="walk", started_at=datetime(2026, 9, 2, 6, tzinfo=UTC),
                     ended_at=datetime(2026, 9, 2, 6, 30, tzinfo=UTC), duration_seconds=1800,
                     distance_km=2.5, steps=4000, calories=100,
+                ),
+                TrainingSession(
+                    id="gym-1", planned_type="strength_a", status="completed",
+                    phase="build_october", planned_week_start=date(2026, 8, 31),
+                    start_at=datetime(2026, 8, 31, 7, 30, tzinfo=UTC),
+                    end_at=datetime(2026, 8, 31, 8, 30, tzinfo=UTC),
+                    estimated_minutes=60, intensity="normal", reason="test",
+                    created_at=datetime(2026, 8, 31, tzinfo=UTC),
+                    updated_at=datetime(2026, 8, 31, tzinfo=UTC),
+                ),
+                TrainingSession(
+                    id="bjj-1", planned_type="bjj_normal", status="completed",
+                    phase="build_october", planned_week_start=date(2026, 8, 31),
+                    start_at=datetime(2026, 9, 2, 7, 30, tzinfo=UTC),
+                    end_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+                    estimated_minutes=90, intensity="normal", reason="test",
+                    created_at=datetime(2026, 9, 2, tzinfo=UTC),
+                    updated_at=datetime(2026, 9, 2, tzinfo=UTC),
                 ),
             ])
             session.commit()

@@ -9,11 +9,12 @@ import {
   fetchWalkingPadReminder,
   fetchWalkingPadToday,
   fetchWeather,
+  fetchDailyPlan,
   fetchTrainingOverview,
   openOpenClawMessageStream,
   setSystemVolume,
 } from '../lib/api'
-import type { CalendarToday, Dashboard, NotionToday, OpenClawConversation, SpotifyNowPlaying, TrainingOverview, WalkReminder, WalkingPadToday, WeatherForecast } from '../types'
+import type { CalendarToday, DailyBriefing, Dashboard, NotionToday, OpenClawConversation, SpotifyNowPlaying, TrainingOverview, WalkReminder, WalkingPadToday, WeatherForecast } from '../types'
 import { usePolling } from './usePolling'
 
 /** Calendar API max is 30 days; anchor 7 days before the selected day. */
@@ -82,6 +83,7 @@ export const initialWalkingPad: WalkingPadToday = {
   total_calories: 0,
   goal_minutes: 120,
   goal_distance_km: 3,
+  goal_steps: 10_000,
   session_count: 0,
   goal_met: false,
   active_session: null,
@@ -90,6 +92,7 @@ export const initialWalkReminder: WalkReminder = { active: false, message: '', d
 export const initialTraining: TrainingOverview = {
   generated_at: '', timezone: 'Asia/Tokyo', phase: 'build_october', today: null, tomorrow: null,
   week_start: '2026-09-07', week: [], upcoming: [], countdowns: [], compliance: {},
+  week_quality: undefined, tomorrow_prescription: null, bjj_candidates: [],
   trends: { bike_decay: [], bjj_capacity: [], weight_7d_average: null }, readiness: null,
 }
 
@@ -112,6 +115,7 @@ export type DashboardInitialData = {
   walkReminder?: WalkReminder
   selectedCalendarDate?: string | null
   training?: TrainingOverview
+  plan?: DailyBriefing | null
 }
 
 export function useDashboardData(today: string, initialData?: DashboardInitialData) {
@@ -124,6 +128,7 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
   const [walkingPad, setWalkingPad] = useState(initialData?.walkingPad ?? initialWalkingPad)
   const [walkReminder, setWalkReminder] = useState(initialData?.walkReminder ?? initialWalkReminder)
   const [training, setTraining] = useState(initialData?.training ?? initialTraining)
+  const [plan, setPlan] = useState<DailyBriefing | null>(initialData?.plan ?? null)
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(today)
   const [volumePending, setVolumePending] = useState(false)
   const skipImmediatePoll = Boolean(initialData)
@@ -138,7 +143,7 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
 
   const refresh = useCallback(async () => {
     const results = await Promise.allSettled([
-      fetchDashboard(), fetchSpotifyNowPlaying(), fetchTrainingOverview(),
+      fetchDashboard(), fetchSpotifyNowPlaying(), fetchTrainingOverview(), fetchDailyPlan(today),
     ])
     if (results[0].status === 'fulfilled') {
       const value = results[0].value
@@ -149,7 +154,8 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
     }
     if (results[1].status === 'fulfilled') setSpotify(results[1].value)
     if (results[2].status === 'fulfilled') setTraining(results[2].value)
-  }, [])
+    if (results[3].status === 'fulfilled') setPlan(results[3].value)
+  }, [today])
 
   const refreshCalendar = useCallback(async (anchorDate = selectedCalendarDate) => {
     try {
@@ -209,6 +215,14 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
 
   const dashboardRefreshMs = dashboard.water_pump.state === 'running' ? DASHBOARD_FAST_REFRESH_MS : DASHBOARD_REFRESH_MS
   usePolling(refresh, dashboardRefreshMs, !skipImmediatePoll)
+
+  useEffect(() => {
+    if (!plan) {
+      void fetchDailyPlan(today).then(setPlan).catch(() => {
+        // Keep the wall up; the next dashboard poll retries the Daily Plan.
+      })
+    }
+  }, [plan, today])
   usePolling(refreshNotion, NOTION_REFRESH_MS, !skipImmediatePoll)
   usePolling(refreshCalendar, CALENDAR_REFRESH_MS, !skipImmediatePoll)
   usePolling(refreshWeather, WEATHER_REFRESH_MS, !skipImmediatePoll)
@@ -244,6 +258,7 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
     walkingPad,
     walkReminder,
     training,
+    plan,
     selectedCalendarDate,
     volumePending,
     setDashboard,

@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     walkingpad_bridge_token: str | None = None
     walkingpad_goal_minutes: int = 120
     walkingpad_goal_distance_km: float = 3.0
+    walkingpad_goal_steps: int = 10_000
     walkingpad_reminder_start_hour: int = 10
     walkingpad_reminder_end_hour: int = 20
     walkingpad_min_gap_before_meeting_min: int = 60

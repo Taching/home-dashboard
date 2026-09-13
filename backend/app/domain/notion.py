@@ -133,6 +133,39 @@ class NotionService:
             blocks.append({"object": "block", "type": block_type, block_type: {"rich_text": [{"type": "text", "text": {"content": text}}]}})
         return blocks
 
+    def complete(self, page_id: str) -> None:
+        if not self.configured():
+            raise ValueError("Notion is not configured.")
+        done_status = settings.notion_done_statuses.split(",")[0].strip() or "Done"
+        properties: JsonDict = {}
+        if settings.notion_done_property:
+            properties[settings.notion_done_property] = {"checkbox": True}
+        if settings.notion_status_property:
+            properties[settings.notion_status_property] = {"status": {"name": done_status}}
+        client = self._client or httpx.Client(timeout=15)
+        close_client = self._client is None
+        try:
+            response = client.patch(
+                f"https://api.notion.com/v1/pages/{page_id}",
+                headers=self._headers("2022-06-28"),
+                json={"properties": properties},
+            )
+            if response.status_code >= 400 and settings.notion_status_property in properties:
+                properties[settings.notion_status_property] = {"select": {"name": done_status}}
+                response = client.patch(
+                    f"https://api.notion.com/v1/pages/{page_id}",
+                    headers=self._headers("2022-06-28"),
+                    json={"properties": properties},
+                )
+            response.raise_for_status()
+            self._last_error = None
+        except (httpx.HTTPError, AttributeError, ValueError, KeyError, TypeError) as error:
+            self._last_error = str(error) or "Notion could not complete the task."
+            raise
+        finally:
+            if close_client:
+                client.close()
+
     def today(self) -> tuple[NotionStatus, datetime | None, list[NotionTask]]:
         if not self.configured():
             return "not_configured", None, []

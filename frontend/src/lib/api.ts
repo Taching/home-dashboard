@@ -123,6 +123,10 @@ export async function fetchDailyBriefing(day: string, preview?: string) {
   return requireJson<DailyBriefing>(await fetch(`/api/v1/daily/${day}${query}`))
 }
 
+export async function fetchDailyPlan(day: string) {
+  return requireJson<DailyBriefing>(await fetch(`/api/v1/plan/${day}`))
+}
+
 export async function logDailyWorkout(day: string, payload: WorkoutLogPayload) {
   return requireJson<TrainingLogResult>(await fetch(`/api/v1/daily/${day}/workout`, {
     method: 'POST',

@@ -9,6 +9,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@meteocons/svg-static": "0.1.0",
     "@vitejs/plugin-react": "latest",
     "vite": "latest",
     "typescript": "latest",

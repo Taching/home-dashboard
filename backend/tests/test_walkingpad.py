@@ -39,6 +39,8 @@ class WalkingPadServiceTests(unittest.TestCase):
         self.assertEqual(snapshot.status, "ready")
         self.assertEqual(snapshot.total_minutes, 30.0)
         self.assertEqual(snapshot.total_distance_km, 1.2)
+        self.assertEqual(snapshot.total_steps, 2200)
+        self.assertEqual(snapshot.goal_steps, 10_000)
         self.assertEqual(snapshot.session_count, 1)
         self.assertFalse(snapshot.goal_met)
 
@@ -87,6 +89,7 @@ class WalkingPadServiceTests(unittest.TestCase):
 
         self.assertTrue(reminder.active)
         self.assertIn("Standup", reminder.message)
+        self.assertIn("1,000 of 10,000 steps", reminder.message)
         self.assertTrue(reminder.dedupe_key.startswith("walk:window:"))
 
     def test_reminder_skips_when_goal_met(self) -> None:
@@ -97,7 +100,7 @@ class WalkingPadServiceTests(unittest.TestCase):
             ended_at=datetime(2026, 7, 6, 1, 30, tzinfo=UTC),
             duration_seconds=5400,
             distance_km=4.0,
-            steps=7000,
+            steps=10_000,
             calories=300.0,
             synced_at=self.now,
         )
@@ -106,6 +109,26 @@ class WalkingPadServiceTests(unittest.TestCase):
         reminder = self.service.reminder([], local_now)
 
         self.assertFalse(reminder.active)
+
+    def test_stale_open_sessions_do_not_count_as_today(self) -> None:
+        self.service.sync_session(
+            external_id="zombie-july",
+            started_at=datetime(2026, 7, 29, 6, 10, tzinfo=UTC),
+            ended_at=None,
+            duration_seconds=4122,
+            distance_km=4.19,
+            steps=7279,
+            calories=294.0,
+            synced_at=datetime(2026, 7, 29, 7, 0, tzinfo=UTC),
+        )
+
+        snapshot = self.service.today(self.now)
+
+        self.assertEqual(snapshot.total_minutes, 0.0)
+        self.assertEqual(snapshot.total_steps, 0)
+        self.assertEqual(snapshot.session_count, 0)
+        self.assertIsNone(snapshot.active_session)
+        self.assertNotEqual(snapshot.status, "walking")
 
 
 class WalkingPadManualLogTests(unittest.TestCase):

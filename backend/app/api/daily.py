@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime
+import hmac
 from typing import Literal
-from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.core.settings import settings
-from app.domain.training.templates import WORKOUT_TEMPLATES
-from app.domain.training.types import WorkoutType
+from app.domain.daily_plan import DailyPlanService, preview_workout_dict
 
 
 daily_router = APIRouter()
+_plan = DailyPlanService()
 
 
 class DailyCheckInRequest(BaseModel):
@@ -52,130 +52,51 @@ class DailySundayRequest(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
+class PlanCommandRequest(BaseModel):
+    action: Literal[
+        "rest_today", "move_gym", "complete_task", "move_meeting", "replan",
+        "fatigue", "confirm_bjj", "decline_bjj", "gym_today",
+    ]
+    day: date | None = None
+    to_date: date | None = None
+    task_id: str | None = None
+    task_title: str | None = None
+    event_id: str | None = None
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    fatigue_state: Literal["normal", "tired", "very_fatigued", "pain"] | None = None
+    workout_type: Literal["strength_a", "strength_b"] | None = None
+
+
+def _authorized(authorization: str | None) -> bool:
+    token = settings.dashboard_automation_token
+    if not token or not authorization or not authorization.startswith("Bearer "):
+        return False
+    provided = authorization.removeprefix("Bearer ").strip()
+    return bool(provided) and hmac.compare_digest(provided, token)
+
+
 def _daily_url(day: date) -> str:
     base = (settings.chili_public_url or settings.daily_briefing_base_url).rstrip("/")
     return f"{base}/daily/{day.isoformat()}"
 
 
-def _preview_workout(day: date, workout_type: str) -> dict:
-    try:
-        template = WORKOUT_TEMPLATES[WorkoutType(workout_type)]
-    except (ValueError, KeyError) as error:
-        raise HTTPException(status_code=404, detail="Workout preview not found.") from error
-    start = datetime.combine(day, time(hour=7, minute=30), ZoneInfo(settings.timezone))
-    return {
-        "id": f"preview-{template.type.value}",
-        "planned_type": template.type.value,
-        "actual_type": None,
-        "original_planned_type": None,
-        "title": template.title,
-        "status": "preview",
-        "phase": "preview",
-        "start_at": start.isoformat(),
-        "end_at": (start + timedelta(minutes=template.estimated_minutes)).isoformat(),
-        "is_all_day": False,
-        "estimated_minutes": template.estimated_minutes,
-        "intensity": template.intensity,
-        "reason": "Dry-run preview only. Today's saved training plan is unchanged.",
-        "coach_focus": [template.conditioning] if template.conditioning else [],
-        "preparation": None,
-        "target_rounds": None,
-        "round_length_seconds": None,
-        "rest_seconds": None,
-        "revision": 0,
-        "exercises": [
-            {
-                "name": item.name, "load_value": item.load_value, "load_unit": item.load_unit,
-                "sets": item.sets, "reps": item.reps, "duration_seconds": item.duration_seconds,
-                "notes": item.notes, "done": False,
-            }
-            for item in template.exercises
-        ],
-        "session_rpe": None,
-        "final_round_quality": None,
-        "notes": None,
-        "calendar_event_id": None,
-    }
-
-
-def _sunday_payload(request: Request, day: date) -> dict | None:
-    weekly = getattr(request.app.state, "weekly_service", None)
-    if weekly is None:
-        return None
-    check_in = weekly.sunday_check_in(day, request.app.state.training_service)
-    if check_in is None:
-        return None
-    return {
-        "week_start": check_in.week_start.isoformat(),
-        "week_ending": check_in.week_ending.isoformat(),
-        "weight_kg": check_in.weight_kg,
-        "previous_weight_kg": check_in.previous_weight_kg,
-        "delta_kg": check_in.delta_kg,
-        "review_note": check_in.review_note,
-        "submitted": check_in.submitted,
-        "sessions": [
-            {
-                "date": session.date.isoformat(),
-                "kind": session.kind,
-                "title": session.title,
-                "completed": session.completed,
-                "note": session.note,
-                "exercises": [{"name": item.name, "done": item.done} for item in session.exercises],
-            }
-            for session in check_in.sessions
-        ],
-    }
-
-
 def _briefing(request: Request, day: date, preview_workout: str | None = None) -> dict:
-    calendar = request.app.state.calendar_bridge_service
-    calendar_status, synced_at, events = calendar.events_for_range(day, 1)
-    meetings = [
-        {
-            "id": event.external_id,
-            "title": event.title,
-            "start_at": event.start_at.isoformat(),
-            "end_at": event.end_at.isoformat(),
-            "is_all_day": event.is_all_day,
-        }
-        for event in events
-        if getattr(event, "source", None) != "training"
-    ]
-    wellbeing_service = request.app.state.wellbeing_service
-    check_in = wellbeing_service.entry(day)
-    wellbeing = wellbeing_service.summary()
-    workout = (
-        _preview_workout(day, preview_workout)
-        if preview_workout
-        else request.app.state.training_service.for_date(day)
+    if preview_workout:
+        try:
+            preview_workout_dict(day, preview_workout)
+        except ValueError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+    return _plan.build(
+        day,
+        calendar=request.app.state.calendar_bridge_service,
+        training=request.app.state.training_service,
+        wellbeing=request.app.state.wellbeing_service,
+        notion=getattr(request.app.state, "notion_service", None),
+        walking=getattr(request.app.state, "walkingpad_service", None),
+        weekly=getattr(request.app.state, "weekly_service", None),
+        preview_workout=preview_workout,
     )
-    answered = check_in.get("sober") if check_in else None
-    return {
-        "date": day.isoformat(),
-        "timezone": settings.timezone,
-        "workout": workout,
-        "calendar": {
-            "status": calendar_status,
-            "synced_at": synced_at.isoformat() if synced_at else None,
-            "meetings": meetings,
-        },
-        "sobriety": {
-            "days": wellbeing.sober_days,
-            "answered": None if answered is None else ("yes" if answered else "no"),
-            "note": check_in.get("daily_notes") if check_in else None,
-        },
-        "sleep": None,
-        "sunday": _sunday_payload(request, day),
-        "check_in": check_in,
-        "advice": check_in.get("advice") if check_in else None,
-        "preview": bool(preview_workout),
-        "daily_url": _daily_url(day),
-        "check_in_status": {
-            "morning_complete": False,
-            "end_of_day_complete": bool(check_in) and check_in.get("sober") is not None,
-            "last_saved_at": check_in.get("updated_at") if check_in else None,
-        },
-    }
 
 
 def _ask_chili(request: Request, prompt: str) -> str | None:
@@ -211,6 +132,14 @@ def _notify_chili(request: Request, message: str, dedupe_key: str) -> None:
 
 @daily_router.get("/daily/{day}")
 def daily_briefing(
+    request: Request, day: date,
+    preview: str | None = Query(default=None, description="Optional dry-run workout template"),
+) -> dict:
+    return _briefing(request, day, preview)
+
+
+@daily_router.get("/plan/{day}")
+def daily_plan(
     request: Request, day: date,
     preview: str | None = Query(default=None, description="Optional dry-run workout template"),
 ) -> dict:
@@ -307,3 +236,55 @@ def daily_check_in(request: Request, day: date, body: DailyCheckInRequest) -> di
         request.app.state.wellbeing_service.record(day, **provided, source="daily-page")
     request.app.state.training_service.reconcile()
     return _briefing(request, day)
+
+
+@daily_router.post("/automation/plan")
+def automation_plan(
+    request: Request,
+    body: PlanCommandRequest,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    if not _authorized(authorization):
+        raise HTTPException(status_code=401, detail="Invalid automation token.")
+    training = request.app.state.training_service
+    calendar = request.app.state.calendar_bridge_service
+    notion = getattr(request.app.state, "notion_service", None)
+    today = body.day or datetime.now().astimezone(_plan._timezone).date()
+    try:
+        if body.action == "rest_today":
+            result = _plan.rest_today(training, today)
+        elif body.action == "move_gym":
+            if body.to_date is None:
+                raise HTTPException(status_code=400, detail="to_date is required to move gym.")
+            result = _plan.move_gym(training, body.to_date)
+        elif body.action == "complete_task":
+            result = _plan.complete_task(notion, task_id=body.task_id, title=body.task_title)
+        elif body.action == "move_meeting":
+            if not body.event_id or body.start_at is None:
+                raise HTTPException(status_code=400, detail="event_id and start_at are required.")
+            result = _plan.move_meeting(calendar, training, body.event_id, body.start_at, body.end_at)
+        elif body.action == "fatigue":
+            if body.fatigue_state is None:
+                raise HTTPException(status_code=400, detail="fatigue_state is required.")
+            result = _plan.set_fatigue(training, today, body.fatigue_state)
+        elif body.action == "confirm_bjj":
+            result = _plan.confirm_bjj(training, today)
+        elif body.action == "decline_bjj":
+            result = _plan.decline_bjj(training, today)
+        elif body.action == "gym_today":
+            if body.workout_type is None:
+                raise HTTPException(status_code=400, detail="workout_type is required for gym today.")
+            result = _plan.gym_today(training, today, body.workout_type)
+        else:
+            training.reconcile()
+            result = {"status": "replanned"}
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {
+        "status": "ok",
+        "action": body.action,
+        "result": result,
+        "plan": _briefing(request, today),
+    }

@@ -97,6 +97,10 @@ class DailyBriefingApiTests(unittest.TestCase):
         self.assertEqual(payload["sobriety"]["days"], 7)
         self.assertFalse(payload["preview"])
         self.assertFalse(payload["check_in_status"]["morning_complete"])
+        self.assertIn("today", payload)
+        self.assertIn("tomorrow", payload)
+        self.assertEqual(payload["today"]["meetings"][0]["title"], "Standup")
+        self.assertTrue(payload["tomorrow"]["headline"].startswith("Tomorrow:"))
 
     def test_strength_preview_does_not_change_the_saved_plan(self):
         response = self.client.get(

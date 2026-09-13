@@ -173,6 +173,7 @@ class DailyWellbeingCheckIn(Base):
     pain: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     pain_notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
     readiness: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fatigue_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
     daily_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     advice: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
@@ -217,6 +218,7 @@ class TrainingPlannerSetting(Base):
     bjj_title_keywords: Mapped[list[str]] = mapped_column(
         JSON, default=lambda: ["bjj", "jiu jitsu", "jiujitsu", "open mat"]
     )
+    declined_bjj_dates: Mapped[list[str]] = mapped_column(JSON, default=list)
 
 
 class TrainingSession(Base):

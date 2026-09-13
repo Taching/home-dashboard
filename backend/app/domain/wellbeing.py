@@ -1,14 +1,30 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
 from app.core.settings import settings
-from app.database.models import DailyWellbeingCheckIn
+from app.database.models import DailyWellbeingCheckIn, TrainingSession
 from app.database.session import SessionLocal
+
+COMPLETED_TRAINING = {"completed", "partial", "competition"}
+
+
+def _daily_url(day: date) -> str:
+    base = (settings.chili_public_url or settings.daily_briefing_base_url).rstrip("/")
+    return f"{base}/daily/{day.isoformat()}"
+
+
+@dataclass(frozen=True)
+class SoberNudge:
+    day: date
+    kind: Literal["ask", "followup"]
+    message: str
+    dedupe_key: str
 
 
 @dataclass(frozen=True)
@@ -62,6 +78,7 @@ class WellbeingService:
         pain: bool | None = None,
         pain_notes: str | None = None,
         readiness: int | None = None,
+        fatigue_state: str | None = None,
         daily_notes: str | None = None,
         source: str = "openclaw",
         now: datetime | None = None,
@@ -71,7 +88,7 @@ class WellbeingService:
             "weight_kg": weight_kg, "sleep_hours": sleep_hours, "sleep_quality": sleep_quality,
             "fatigue": fatigue, "soreness": soreness, "grip_fatigue": grip_fatigue,
             "pain": pain, "pain_notes": pain_notes, "readiness": readiness,
-            "daily_notes": daily_notes,
+            "fatigue_state": fatigue_state, "daily_notes": daily_notes,
         }
         if all(value is None for value in values.values()):
             raise ValueError("Provide at least one check-in answer.")
@@ -88,7 +105,7 @@ class WellbeingService:
                     weight_kg=weight_kg, sleep_hours=sleep_hours, sleep_quality=sleep_quality,
                     fatigue=fatigue, soreness=soreness, grip_fatigue=grip_fatigue,
                     pain=pain, pain_notes=pain_notes, readiness=readiness,
-                    daily_notes=daily_notes,
+                    fatigue_state=fatigue_state, daily_notes=daily_notes,
                     updated_at=updated_at,
                     source=source,
                 )
@@ -116,7 +133,7 @@ class WellbeingService:
                 for key in (
                     "trained", "gym", "jiujitsu", "sober", "weight_kg", "sleep_hours",
                     "sleep_quality", "fatigue", "soreness", "grip_fatigue", "pain",
-                    "pain_notes", "readiness", "daily_notes", "advice",
+                    "pain_notes", "readiness", "fatigue_state", "daily_notes", "advice",
                 )
             }
             result["updated_at"] = self._as_utc(row.updated_at).isoformat()
@@ -152,19 +169,7 @@ class WellbeingService:
                 continue
             sober_days = sober_days + 1 if row.sober else 0
 
-        workouts = sum(
-            1
-            for row in rows
-            if week_start <= row.local_date <= today and row.trained is True
-        )
-        gym = sum(
-            1 for row in rows
-            if week_start <= row.local_date <= today and row.gym is True
-        )
-        jiujitsu = sum(
-            1 for row in rows
-            if week_start <= row.local_date <= today and row.jiujitsu is True
-        )
+        workouts, gym, jiujitsu = self._session_counts(week_start, today)
         checkin_rows = [
             row for row in rows
             if any(value is not None for value in (row.trained, row.gym, row.jiujitsu, row.sober))
@@ -188,6 +193,55 @@ class WellbeingService:
             weight_goal_kg=settings.weight_goal_kg,
             latest_weight_date=weight_rows[-1].local_date if weight_rows else None,
         )
+
+    def sober_logged(self, local_date: date) -> bool:
+        entry = self.entry(local_date)
+        return bool(entry) and entry.get("sober") is not None
+
+    def sober_nudges(self, now: datetime | None = None) -> list[SoberNudge]:
+        current = self._as_utc(now or datetime.now(UTC)).astimezone(self._timezone)
+        today = current.date()
+        yesterday = today - timedelta(days=1)
+        nudges: list[SoberNudge] = []
+        if current.hour >= 21 and not self.sober_logged(today):
+            nudges.append(self._sober_nudge(today, "ask"))
+        if not self.sober_logged(yesterday) and (current.hour >= 22 or current.date() > yesterday):
+            nudges.append(self._sober_nudge(yesterday, "followup"))
+        return nudges
+
+    def _sober_nudge(self, day: date, kind: Literal["ask", "followup"]) -> SoberNudge:
+        url = _daily_url(day)
+        if kind == "ask":
+            message = f"{url}\n\nSober tonight? Answer on the daily page."
+        else:
+            message = (
+                f"{url}\n\n"
+                "Last night's sober check-in is still open. Answer there when you can."
+            )
+        return SoberNudge(
+            day=day,
+            kind=kind,
+            message=message,
+            dedupe_key=f"sober:{kind}:{day.isoformat()}",
+        )
+
+    def _session_counts(self, week_start: date, today: date) -> tuple[int, int, int]:
+        start = datetime.combine(week_start, time.min, self._timezone).astimezone(UTC)
+        end = datetime.combine(today + timedelta(days=1), time.min, self._timezone).astimezone(UTC)
+        with self._session_factory() as session:
+            rows = list(session.scalars(
+                select(TrainingSession)
+                .where(TrainingSession.start_at >= start)
+                .where(TrainingSession.start_at < end)
+                .where(TrainingSession.status.in_(COMPLETED_TRAINING))
+            ).all())
+        gym = sum(1 for row in rows if (row.planned_type or "").startswith("strength_"))
+        jiujitsu = sum(
+            1 for row in rows
+            if (row.planned_type or "").startswith("bjj_") or row.planned_type == "competition"
+        )
+        extra = sum(1 for row in rows if row.planned_type in {"zone_2", "grip"})
+        return gym + jiujitsu + extra, gym, jiujitsu
 
     @staticmethod
     def _as_utc(value: datetime) -> datetime:

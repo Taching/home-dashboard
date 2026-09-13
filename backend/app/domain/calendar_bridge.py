@@ -146,6 +146,33 @@ class CalendarBridgeService:
                 status = "ready"
             return status, synced_at, events
 
+    def reschedule_event(
+        self, external_id: str, start_at: datetime, end_at: datetime | None = None,
+    ) -> CalendarEvent:
+        start = self._as_utc(start_at)
+        with self._session_factory() as session:
+            row = session.scalar(
+                select(CalendarBridgeEvent)
+                .where(CalendarBridgeEvent.source == APPLE_CALENDAR_SOURCE)
+                .where(CalendarBridgeEvent.external_id == external_id)
+            )
+            if row is None:
+                raise KeyError(external_id)
+            duration = self._as_utc(row.end_at) - self._as_utc(row.start_at)
+            row.start_at = start
+            row.end_at = self._as_utc(end_at) if end_at is not None else start + duration
+            session.commit()
+            return CalendarEvent(
+                external_id=row.external_id,
+                title=row.title,
+                start_at=self._as_utc(row.start_at),
+                end_at=self._as_utc(row.end_at),
+                is_all_day=row.is_all_day,
+                source=APPLE_CALENDAR_SOURCE,
+                calendar_title=row.calendar_title,
+                managed_session_id=row.managed_session_id,
+            )
+
     def today(self) -> tuple[str, datetime | None, list[CalendarEvent]]:
         return self.events_for_range(datetime.now(self._timezone).date(), 1)
 
@@ -176,7 +203,7 @@ class CalendarBridgeService:
     def _training_title(workout_type: str) -> str:
         return {
             "bjj_technical": "BJJ Technical", "bjj_normal": "BJJ Normal",
-            "bjj_hard": "BJJ Competition / Hard", "strength_a": "Strength A + Intervals",
-            "strength_b": "Strength B", "zone_2": "Zone 2", "recovery": "Recovery Day",
+            "bjj_hard": "BJJ Competition / Hard", "strength_a": "Gym (Strength A)",
+            "strength_b": "Gym (Strength B)", "zone_2": "Zone 2", "recovery": "Recovery Day",
             "rest": "Rest", "competition": "Gi BJJ Competition",
         }.get(workout_type, workout_type.replace("_", " ").title())

@@ -60,12 +60,28 @@ case "$ACTION" in
     curl -fsS -X POST "${BASE_URL}/api/v1/automation/training/bjj" "${auth[@]}" \
       -d "{\"start_at\":\"${1:?ISO datetime required}\",\"hard\":${hard}}"
     ;;
+  confirm-bjj)
+    curl -fsS -X POST "${BASE_URL}/api/v1/automation/training/bjj/confirm" "${auth[@]}" \
+      -d "{\"date\":\"${1:?date required}\"}"
+    ;;
+  decline-bjj)
+    curl -fsS -X POST "${BASE_URL}/api/v1/automation/training/bjj/decline" "${auth[@]}" \
+      -d "{\"date\":\"${1:?date required}\"}"
+    ;;
+  fatigue)
+    curl -fsS -X POST "${BASE_URL}/api/v1/automation/training/fatigue" "${auth[@]}" \
+      -d "{\"date\":\"${1:?date required}\",\"state\":\"${2:?state required}\"}"
+    ;;
+  gym-today)
+    curl -fsS -X POST "${BASE_URL}/api/v1/automation/training/gym" "${auth[@]}" \
+      -d "{\"date\":\"${1:?date required}\",\"workout_type\":\"${2:?strength_a or strength_b required}\"}"
+    ;;
   metrics)
     curl -fsS -X PATCH "${BASE_URL}/api/v1/automation/training/sessions/${1:?session id required}" "${auth[@]}" \
       -d "{\"metrics\":${2:?metrics JSON required}}"
     ;;
   *)
-    echo "Usage: $0 {today|tomorrow|week|plan|start|complete|partial|skip|move|replace|recovery|add-bjj|metrics}" >&2
+    echo "Usage: $0 {today|tomorrow|week|plan|start|complete|partial|skip|move|replace|recovery|add-bjj|confirm-bjj|decline-bjj|fatigue|gym-today|metrics}" >&2
     exit 2
     ;;
 esac

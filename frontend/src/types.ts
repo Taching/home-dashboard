@@ -145,6 +145,7 @@ export type WalkingPadToday = {
   total_calories: number
   goal_minutes: number
   goal_distance_km: number
+  goal_steps: number
   session_count: number
   goal_met: boolean
   active_session: {
@@ -310,6 +311,24 @@ export type TrainingSession = PlannedWorkout & {
   calendar_event_id: string | null
 }
 
+export type TrainingWeeklyStatus = Record<string, { completed: number, target: number }>
+
+export type TomorrowPrescription = {
+  session: string
+  time: string | null
+  work: string
+  focus: string
+  why: string
+  weekly_status: TrainingWeeklyStatus
+}
+
+export type BjjCandidate = {
+  date: string
+  suggested_type: string
+  reason: string
+  preferred_clock: string | null
+}
+
 export type TrainingOverview = {
   generated_at: string
   timezone: string
@@ -320,7 +339,10 @@ export type TrainingOverview = {
   week: TrainingSession[]
   upcoming: TrainingSession[]
   countdowns: { id: string, name: string, start_date: string, end_date: string, days_remaining: number }[]
-  compliance: Record<string, { completed: number, target: number }>
+  compliance: TrainingWeeklyStatus
+  week_quality?: string
+  tomorrow_prescription?: TomorrowPrescription | null
+  bjj_candidates?: BjjCandidate[]
   trends: {
     bike_decay: { session_id: string, decay_percent: number }[]
     bjj_capacity: { date: string, rounds: number, final_quality: number | null }[]
@@ -329,6 +351,7 @@ export type TrainingOverview = {
   readiness: {
     date: string
     level: string
+    fatigue_state?: string | null
     alerts: string[]
     sleep_hours: number | null
     sleep_quality: number | null
@@ -362,6 +385,35 @@ export type DailySunday = {
   sessions: DailyWeekSession[]
 }
 
+export type DailyPlanItem = {
+  id: string
+  title: string
+  start_at?: string
+  end_at?: string
+  is_all_day?: boolean
+  clock?: string
+  due_at?: string | null
+  is_overdue?: boolean
+  priority?: string | null
+  task_type?: string | null
+  kind?: string
+  detail?: string
+}
+
+export type DailyPlanDay = {
+  date: string
+  emphasis: 'work' | 'training' | 'mixed'
+  headline: string
+  training: PlannedWorkout | null
+  meetings: DailyPlanItem[]
+  tasks: DailyPlanItem[]
+  reminders: DailyPlanItem[]
+  preparation?: string
+  prescription?: TomorrowPrescription | null
+  bjj_candidates?: BjjCandidate[]
+  week_quality?: string | null
+}
+
 export type DailyBriefing = {
   date: string
   timezone: string
@@ -381,7 +433,10 @@ export type DailyBriefing = {
   preview: boolean
   daily_url: string
   advice?: string | null
+  advice_window?: 'morning' | 'lunch' | 'evening'
   message?: string | null
+  today?: DailyPlanDay
+  tomorrow?: DailyPlanDay
 }
 
 export type TrainingLogResult = {

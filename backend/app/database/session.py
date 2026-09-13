@@ -39,10 +39,12 @@ def initialise_database() -> None:
         "pain": "BOOLEAN",
         "pain_notes": "VARCHAR(500)",
         "readiness": "INTEGER",
+        "fatigue_state": "VARCHAR(32)",
         "daily_notes": "TEXT",
         "advice": "TEXT",
     }.items():
         _ensure_column("daily_wellbeing_checkins", name, sql_type)
+    _ensure_column("training_planner_settings", "declined_bjj_dates", "JSON")
 
 
 def _ensure_column(table: str, name: str, ddl: str) -> None:

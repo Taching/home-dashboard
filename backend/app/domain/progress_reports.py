@@ -103,8 +103,11 @@ class ProgressReportService:
             weight_kg=end_weight,
             weight_change_kg=change,
             sober_days=sum(row.sober is True for row in in_period),
-            gym_sessions=sum(row.gym is True for row in in_period),
-            jiujitsu_sessions=sum(row.jiujitsu is True for row in in_period),
+            gym_sessions=sum(row.planned_type.startswith("strength_") for row in completed),
+            jiujitsu_sessions=sum(
+                row.planned_type.startswith("bjj_") or row.planned_type == "competition"
+                for row in completed
+            ),
             walk_minutes=round(sum(row.duration_seconds for row in walks) / 60, 1),
             walk_distance_km=round(sum(row.distance_km for row in walks), 2),
             steps=sum(row.steps for row in walks),

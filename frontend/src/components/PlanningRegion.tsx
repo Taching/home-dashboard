@@ -223,7 +223,7 @@ function CalendarSchedule({
   const todayKey = dayKey(now)
   const isToday = selectedDate === todayKey
   const dayEvents = calendar.events.filter((event) => eventIntersectsDay(event, selectedDate))
-  const allDayEvents = dayEvents.filter((event) => event.is_all_day)
+  const allDayEvents = dayEvents.filter((event) => event.is_all_day && event.source !== 'training')
   const timedEvents = layoutEvents(dayEvents, selectedDate)
   const dayStartMs = dateAtStartOfDay(selectedDate).getTime()
   const before = dayEvents

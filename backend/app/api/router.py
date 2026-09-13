@@ -348,6 +348,7 @@ class WalkingPadTodayResponse(BaseModel):
     total_calories: float = 0
     goal_minutes: int = 120
     goal_distance_km: float = 3.0
+    goal_steps: int = 10_000
     session_count: int = 0
     goal_met: bool = False
     active_session: WalkingPadActiveSessionResponse | None = None
@@ -759,6 +760,7 @@ def _walkingpad_response(snapshot) -> WalkingPadTodayResponse:
         total_calories=snapshot.total_calories,
         goal_minutes=snapshot.goal_minutes,
         goal_distance_km=snapshot.goal_distance_km,
+        goal_steps=snapshot.goal_steps,
         session_count=snapshot.session_count,
         goal_met=snapshot.goal_met,
         active_session=active,

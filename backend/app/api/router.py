@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.core.settings import settings
 from app.api.activity_log import log_activity, preview
-from app.api.daily import daily_router
+from app.api.daily import daily_router, review_logged_workout
 from app.api.training import training_router
 from app.domain.training_logs import ExerciseDone
 
@@ -436,6 +436,8 @@ class TrainingTodayResponse(BaseModel):
     logs: list[TrainingLogResponse] = []
     sober: TrainingLogResponse | None = None
     workout_url: str
+    advice: str | None = None
+    planner_status: str | None = None
 
 
 class TrainingPlansResponse(BaseModel):
@@ -482,6 +484,7 @@ class TrainingLogApiResponse(BaseModel):
     status: Literal["logged", "failed"]
     message: str
     log: TrainingLogResponse | None = None
+    advice: str | None = None
 
 
 class ManagedTrainingEventResponse(BaseModel):
@@ -734,6 +737,12 @@ async def apple_training_plan(request: Request) -> ManagedTrainingPlanResponse:
     provided = request.headers.get("X-Chili-Bridge-Token", "")
     if not expected or not hmac.compare_digest(provided, expected):
         raise HTTPException(status_code=401, detail="Invalid calendar bridge token.")
+    training = getattr(request.app.state, "training_service", None)
+    if training is not None and callable(getattr(training, "calendar_plan", None)):
+        return ManagedTrainingPlanResponse(
+            calendar_name=settings.training_calendar_name,
+            events=training.calendar_plan(),
+        )
     return ManagedTrainingPlanResponse.model_validate(
         request.app.state.training_log_service.managed_calendar_plan()
     )
@@ -983,6 +992,15 @@ async def training_today(request: Request) -> TrainingTodayResponse:
         plan = service.plan(kind)
         if plan is not None:
             suggested.append(_training_plan_response(plan))
+    check_in = None
+    wellbeing = getattr(request.app.state, "wellbeing_service", None)
+    if wellbeing is not None and hasattr(wellbeing, "entry"):
+        check_in = wellbeing.entry(snapshot.date)
+    planner = getattr(request.app.state, "training_service", None)
+    planner_status = None
+    if planner is not None and hasattr(planner, "for_date"):
+        current = planner.for_date(snapshot.date)
+        planner_status = current.get("status") if current else None
     return TrainingTodayResponse(
         date=snapshot.date,
         suggested=suggested,
@@ -990,6 +1008,8 @@ async def training_today(request: Request) -> TrainingTodayResponse:
         logs=[_training_log_response(row) for row in snapshot.logs],
         sober=_training_log_response(snapshot.sober) if snapshot.sober is not None else None,
         workout_url=service.public_url("/workout"),
+        advice=(check_in or {}).get("advice") if isinstance(check_in, dict) else None,
+        planner_status=planner_status,
     )
 
 
@@ -1025,11 +1045,28 @@ async def training_workout(request: Request, body: DailyWorkoutRequest) -> Train
         )
     except ValueError as error:
         return TrainingLogApiResponse(status="failed", message=str(error))
+    exercises = [{"name": item.name, "done": item.done} for item in body.exercises]
+    planner = getattr(request.app.state, "training_service", None)
+    session = None
+    if planner is not None:
+        matcher = getattr(planner, "log_matching_workout", None)
+        if callable(matcher):
+            session = matcher(snapshot.date, kind=kind, exercises=exercises, note=body.note)
+        elif hasattr(planner, "for_date") and hasattr(planner, "log_workout_check"):
+            current = planner.for_date(snapshot.date)
+            if current is not None:
+                session = planner.log_workout_check(
+                    current["id"], exercises=exercises, note=body.note,
+                )
+    advice = review_logged_workout(
+        request, snapshot.date, kind=kind, note=body.note, exercises=exercises, session=session,
+    )
     log_activity(request, "in", "training", f"{record.kind} {record.completed}")
     return TrainingLogApiResponse(
         status="logged",
         message=f"Logged {record.kind}: {record.completed}.",
         log=_training_log_response(record),
+        advice=advice,
     )
 
 

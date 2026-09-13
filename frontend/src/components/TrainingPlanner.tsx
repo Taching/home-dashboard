@@ -121,11 +121,22 @@ export function TrainingInsights({ training }: { training: TrainingOverview }) {
     competition_november: 'Competition weekend',
     post_competition: 'Season recovery',
   }[training.phase] ?? training.phase.replaceAll('_', ' ')
+  const adjustment = training.last_adjustment
   return (
-    <section className="training-insights coach-panel" aria-label="Coach's next training decision">
+    <section className="training-insights coach-panel" aria-label="Chili's next training decision">
+      {adjustment?.how?.length ? (
+        <div className="plan-change" aria-label="Why Chili changed the week">
+          <p className="eyebrow">PLAN CHANGE</p>
+          <p className="plan-change-banner">{adjustment.banner}</p>
+          <p className="plan-change-label">How</p>
+          <ul>{adjustment.how.map((item) => <li key={item}>{item}</li>)}</ul>
+          <p className="plan-change-label">Why</p>
+          <ul>{adjustment.why.map((item) => <li key={item}>{item}</li>)}</ul>
+        </div>
+      ) : null}
       <div className="coach-panel-heading">
         <div>
-          <p className="eyebrow">COACH'S CALL</p>
+          <p className="eyebrow">CHILI</p>
           <h2>Tomorrow</h2>
         </div>
         <span>{phaseLabel}</span>

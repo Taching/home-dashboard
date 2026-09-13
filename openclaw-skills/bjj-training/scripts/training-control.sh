@@ -76,12 +76,16 @@ case "$ACTION" in
     curl -fsS -X POST "${BASE_URL}/api/v1/automation/training/gym" "${auth[@]}" \
       -d "{\"date\":\"${1:?date required}\",\"workout_type\":\"${2:?strength_a or strength_b required}\"}"
     ;;
+  adjust-calendar)
+    curl -fsS -X POST "${BASE_URL}/api/v1/automation/training/adjust" "${auth[@]}" \
+      -d "{\"instruction\":\"$(escape_json "$*")\"}"
+    ;;
   metrics)
     curl -fsS -X PATCH "${BASE_URL}/api/v1/automation/training/sessions/${1:?session id required}" "${auth[@]}" \
       -d "{\"metrics\":${2:?metrics JSON required}}"
     ;;
   *)
-    echo "Usage: $0 {today|tomorrow|week|plan|start|complete|partial|skip|move|replace|recovery|add-bjj|confirm-bjj|decline-bjj|fatigue|gym-today|metrics}" >&2
+    echo "Usage: $0 {today|tomorrow|week|plan|start|complete|partial|skip|move|replace|recovery|add-bjj|confirm-bjj|decline-bjj|fatigue|gym-today|adjust-calendar|metrics}" >&2
     exit 2
     ;;
 esac

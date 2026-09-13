@@ -219,6 +219,7 @@ class TrainingPlannerSetting(Base):
         JSON, default=lambda: ["bjj", "jiu jitsu", "jiujitsu", "open mat"]
     )
     declined_bjj_dates: Mapped[list[str]] = mapped_column(JSON, default=list)
+    last_adjustment: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class TrainingSession(Base):

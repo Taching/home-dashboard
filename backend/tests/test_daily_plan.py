@@ -1,6 +1,7 @@
 import unittest
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -41,6 +42,7 @@ class FakeTraining:
     def __init__(self):
         self.replaced = []
         self.updated = []
+        self.scheduled = []
         self.reconciled = 0
         self.session = {
             "id": "session-1", "title": "Strength A + Intervals", "planned_type": "strength_a",
@@ -76,19 +78,27 @@ class FakeTraining:
             },
         }
 
-    def record_fatigue(self, day, state):
+    def record_fatigue(self, day, state, now=None):
         return {"fatigue_state": state}
 
-    def confirm_bjj(self, day, hard=None):
+    def confirm_bjj(self, day, hard=None, now=None):
         return {"planned_type": "bjj_normal", "day": day.isoformat()}
 
-    def decline_bjj(self, day):
+    def decline_bjj(self, day, now=None):
         return {"status": "declined", "day": day.isoformat()}
 
-    def schedule_gym(self, day, workout_type):
-        return {"planned_type": workout_type, "title": f"Gym ({workout_type})", "day": day.isoformat()}
+    def schedule_gym(self, day, workout_type, now=None):
+        self.scheduled.append((day, workout_type))
+        self.session = {**self.session, "planned_type": workout_type, "title": f"Gym ({workout_type})"}
+        return {**self.session, "day": day.isoformat()}
 
-    def reconcile(self):
+    def place_session(self, day, workout_type, now=None):
+        return self.schedule_gym(day, workout_type, now=now)
+
+    def calendar_plan(self, now=None, days=30):
+        return []
+
+    def reconcile(self, now=None):
         self.reconciled += 1
 
 
@@ -219,3 +229,23 @@ class DailyPlanTests(unittest.TestCase):
         self.assertEqual(self.service.confirm_bjj(self.app.state.training_service, self.day)["planned_type"], "bjj_normal")
         self.assertEqual(self.service.decline_bjj(self.app.state.training_service, self.day)["status"], "declined")
         self.assertEqual(self.service.gym_today(self.app.state.training_service, self.day, "strength_a")["planned_type"], "strength_a")
+
+    @patch("app.api.daily.settings")
+    def test_adjust_calendar_action(self, settings):
+        from app.domain.training.adjust import CalendarAdjuster
+
+        settings.dashboard_automation_token = "automation-token"
+        settings.chili_public_url = "http://127.0.0.1:8080"
+        settings.daily_briefing_base_url = "http://127.0.0.1:8080"
+        settings.timezone = "Asia/Tokyo"
+        self.app.state.calendar_adjuster = CalendarAdjuster(timezone_name="Asia/Tokyo", api_key="")
+        response = self.client.post(
+            "/api/v1/automation/plan",
+            headers={"Authorization": "Bearer automation-token"},
+            json={"action": "adjust_calendar", "instruction": "I want Strength A today"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["action"], "adjust_calendar")
+        self.assertEqual(body["result"]["analysis"]["mutations"][0]["op"], "gym_today")
+        self.assertEqual(self.app.state.training_service.scheduled[0][1], "strength_a")

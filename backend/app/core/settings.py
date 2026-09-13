@@ -77,6 +77,8 @@ class Settings(BaseSettings):
     training_evening_plan_time: str = "20:00"
     training_pre_reminder_minutes: int = 60
     training_post_check_minutes: int = 30
+    chili_soul_path: str = "/home/takatoshi/SOUL.md"
+    chili_identity_path: str = "/home/takatoshi/IDENTITY.md"
 
 
 settings = Settings()

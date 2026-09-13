@@ -88,7 +88,11 @@ Timed Apple events are busy blocks (slots 06:00–14:00). That prevents an 18:30
 
 ### Overrides
 
-OpenClaw can say “Rest today,” “Move gym to Friday,” “This meeting moved,” or “Mark task done.” Those write canonical sources and `reconcile()`. The wall stays read-only.
+OpenClaw should prefer `adjust-calendar` for natural-language plan changes. That path uses AI (with a local fast-path for common phrases), writes `TrainingSession`, replans the remaining week, then syncs Notion and the Apple/Chili Training calendar. It also sends a How/Why notification in Chili’s `SOUL.md` / `IDENTITY.md` voice and stores `last_adjustment` for the wall and daily page. Skills must not override that personality. Explicit verbs (`rest-today`, `gym-today`, `move-gym`) still work. The wall stays read-only.
+
+`GET /api/v1/calendar/apple/training-plan` now serves `TrainingService.calendar_plan()`, not the legacy week-template events.
+
+The 20:00 evening job (`POST /automation/training/run` action `evening`) reconciles Apple Calendar first, then a coach pass can place missing Strength B / Zone 2 on a true Open day, move gym off a packed workday, or protect rest. It always notifies How / Why / tomorrow. Empty days stay empty unless a tournament target is still missing.
 
 ---
 
@@ -171,6 +175,10 @@ Display power: `deploy/display-power.sh` + `wlr-randr` (HDMI-A-2)
 
 `stash@{0}` (`WIP on master: ab2a356`) was the live Pi tree. Do **not** `git stash apply` blindly.
 
+### Related handoff
+
+Wall polling, OpenClaw SSE, duplicate Notion/training fetches, workout `chat.send`, and the two training stacks: copy `docs/agent-handoff-efficiency.md`. Product rules in **this** file still win.
+
 ---
 
 ## Non-goals for a follow-up agent
@@ -180,6 +188,6 @@ Display power: `deploy/display-power.sh` + `wlr-randr` (HDMI-A-2)
 - Do not add morning readiness fields. Fatigue is four states via OpenClaw.
 - Do not enable Tailscale Funnel.
 - Do not persist a Daily Plan table that copies calendar and Notion.
-- Do not collapse `training_log_service` without a dedicated plan.
+- Do not collapse `training_log_service` except as **Cut 5** in `docs/agent-handoff-efficiency.md`.
 - Do not commit `.env` or `backend/chili_dashboard_backend.egg-info/`.
 - Do not discard `stash@{0}` without asking; it is a backup of the live Pi work.

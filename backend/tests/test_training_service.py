@@ -24,6 +24,35 @@ class TrainingServiceTests(unittest.TestCase):
         self.now = datetime(2026, 9, 13, 15, tzinfo=UTC)  # Monday 00:00 JST
         self.service.bootstrap(self.now)
 
+    def test_reconcile_keeps_future_planned_sessions(self) -> None:
+        tokyo = ZoneInfo("Asia/Tokyo")
+        start = datetime(2026, 9, 14, 7, 30, tzinfo=tokyo)
+        session_id = "future-bjj-must-survive"
+        with self.factory() as session:
+            session.add(TrainingSession(
+                id=session_id,
+                planned_type="bjj_normal",
+                status="planned",
+                phase="build_october",
+                planned_week_start=date(2026, 9, 14),
+                start_at=start.astimezone(UTC),
+                end_at=start.astimezone(UTC) + timedelta(minutes=90),
+                estimated_minutes=90,
+                intensity="normal",
+                reason="Weekday BJJ",
+                source="scheduler",
+                pinned=False,
+                created_at=self.now,
+                updated_at=self.now,
+            ))
+            session.commit()
+
+        self.service.bootstrap(self.now)
+        kept = self.service.session(session_id)
+        self.assertIsNotNone(kept)
+        self.assertEqual(kept["status"], "planned")
+        self.assertEqual(kept["planned_type"], "bjj_normal")
+
     def test_reconcile_is_idempotent(self) -> None:
         with self.factory() as session:
             before = [(row.id, row.revision) for row in session.scalars(select(TrainingSession)).all()]
@@ -121,6 +150,32 @@ class TrainingServiceTests(unittest.TestCase):
             if self.service._local_date(item["start_at"]) == date(2026, 9, 15)
         ]
         self.assertEqual([item["planned_type"] for item in tuesday], ["bjj_normal"])
+
+    def test_log_matching_workout_marks_strength_complete(self) -> None:
+        tokyo = ZoneInfo("Asia/Tokyo")
+        sunday = datetime(2026, 9, 13, 12, tzinfo=tokyo)
+        created = self.service.schedule_gym(date(2026, 9, 13), "strength_a", now=sunday)
+
+        updated = self.service.log_matching_workout(
+            date(2026, 9, 13),
+            kind="strength_a",
+            exercises=[
+                {"name": "Warm-up", "done": True},
+                {"name": "Back Squat", "done": True},
+                {"name": "Bench Press", "done": True},
+                {"name": "Pull-ups", "done": True},
+                {"name": "Bulgarian Split Squat", "done": True},
+                {"name": "Standing Landmine Rotation", "done": True},
+                {"name": "Stationary Bike Intervals", "done": True},
+            ],
+            note="easy lifts, hard intervals",
+            now=sunday,
+        )
+
+        self.assertEqual(updated["id"], created["id"])
+        self.assertEqual(updated["status"], "completed")
+        self.assertEqual(updated["notes"], "easy lifts, hard intervals")
+        self.assertTrue(all(item["done"] for item in updated["exercises"]))
 
     def test_bjj_capacity_uses_actual_round_metric(self) -> None:
         bjj = self.service.add_bjj(datetime(2026, 9, 15, 7, 30, tzinfo=ZoneInfo("Asia/Tokyo")), now=self.now)

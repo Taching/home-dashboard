@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 
 from app.core.settings import settings
 from app.domain.daily_plan import DailyPlanService, preview_workout_dict
+from app.domain.training.adjust import CalendarAdjuster
+from app.domain.training.review import local_workout_review, workout_review_prompt
 
 
 daily_router = APIRouter()
@@ -55,7 +57,7 @@ class DailySundayRequest(BaseModel):
 class PlanCommandRequest(BaseModel):
     action: Literal[
         "rest_today", "move_gym", "complete_task", "move_meeting", "replan",
-        "fatigue", "confirm_bjj", "decline_bjj", "gym_today",
+        "fatigue", "confirm_bjj", "decline_bjj", "gym_today", "adjust_calendar",
     ]
     day: date | None = None
     to_date: date | None = None
@@ -66,6 +68,14 @@ class PlanCommandRequest(BaseModel):
     end_at: datetime | None = None
     fatigue_state: Literal["normal", "tired", "very_fatigued", "pain"] | None = None
     workout_type: Literal["strength_a", "strength_b"] | None = None
+    instruction: str | None = Field(default=None, max_length=2000)
+
+
+def _adjuster(request: Request) -> CalendarAdjuster:
+    existing = getattr(request.app.state, "calendar_adjuster", None)
+    if existing is not None:
+        return existing
+    return CalendarAdjuster()
 
 
 def _authorized(authorization: str | None) -> bool:
@@ -110,6 +120,31 @@ def _ask_chili(request: Request, prompt: str) -> str | None:
     if isinstance(result, dict):
         return result.get("reply")
     return None
+
+
+def review_logged_workout(
+    request: Request,
+    day: date,
+    *,
+    kind: str | None,
+    note: str | None,
+    exercises: list[dict] | None,
+    session: dict | None,
+) -> str:
+    training = getattr(request.app.state, "training_service", None)
+    overview = training.overview() if training is not None and hasattr(training, "overview") else {}
+    prompt = workout_review_prompt(
+        session=session, kind=kind, note=note, exercises=exercises, overview=overview,
+    )
+    advice = _ask_chili(request, prompt) or local_workout_review(
+        session=session, kind=kind, note=note, overview=overview,
+    )
+    wellbeing = getattr(request.app.state, "wellbeing_service", None)
+    if wellbeing is not None:
+        wellbeing.store_advice(day, advice)
+    session_id = (session or {}).get("id") or day.isoformat()
+    _notify_chili(request, advice, f"workout-review:{session_id}")
+    return advice
 
 
 def _notify_chili(request: Request, message: str, dedupe_key: str) -> None:
@@ -161,11 +196,19 @@ def daily_workout(request: Request, day: date, body: DailyWorkoutRequest) -> dic
         raise HTTPException(status_code=404, detail="Training session not found.") from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    exercises = [{"name": item.name, "done": item.done} for item in body.exercises]
+    advice = review_logged_workout(
+        request, day, kind=body.kind or updated.get("planned_type"),
+        note=body.note, exercises=exercises, session=updated,
+    )
+    briefing = _briefing(request, day)
+    briefing["advice"] = advice
     return {
         "status": "logged",
         "message": f"Logged {updated['title']}: {updated['status']}.",
         "workout": updated,
-        "briefing": _briefing(request, day),
+        "advice": advice,
+        "briefing": briefing,
     }
 
 
@@ -275,6 +318,20 @@ def automation_plan(
             if body.workout_type is None:
                 raise HTTPException(status_code=400, detail="workout_type is required for gym today.")
             result = _plan.gym_today(training, today, body.workout_type)
+        elif body.action == "adjust_calendar":
+            if not body.instruction:
+                raise HTTPException(status_code=400, detail="instruction is required to adjust the calendar.")
+            result = _adjuster(request).adjust(
+                body.instruction,
+                training=training,
+                calendar=calendar,
+                notion=notion,
+                notion_sync=getattr(request.app.state, "training_notion_sync", None),
+            )
+            message = result.get("notification") if isinstance(result, dict) else None
+            if message:
+                dedupe = (result.get("decision") or {}).get("id") or f"training:adjust:{today.isoformat()}"
+                _notify_chili(request, str(message), str(dedupe))
         else:
             training.reconcile()
             result = {"status": "replanned"}

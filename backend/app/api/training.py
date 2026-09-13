@@ -9,6 +9,8 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core.settings import settings
+from app.domain.training.adjust import CalendarAdjuster
+from app.domain.training.coach import EveningCoach
 from app.domain.training.templates import WORKOUT_TEMPLATES
 from app.domain.training.types import WorkoutType
 
@@ -67,6 +69,10 @@ class BjjDayRequest(BaseModel):
 class GymDayRequest(BaseModel):
     date: date
     workout_type: Literal["strength_a", "strength_b"]
+
+
+class AdjustCalendarRequest(BaseModel):
+    instruction: str = Field(min_length=1, max_length=2000)
 
 
 class AutomationRunRequest(BaseModel):
@@ -226,6 +232,32 @@ async def schedule_training_gym(
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
+@training_router.post("/automation/training/adjust")
+async def adjust_training_calendar(
+    request: Request, body: AdjustCalendarRequest, authorization: str | None = Header(default=None),
+) -> dict:
+    _require_auth(authorization)
+    adjuster = getattr(request.app.state, "calendar_adjuster", None) or CalendarAdjuster()
+    try:
+        result = adjuster.adjust(
+            body.instruction,
+            training=request.app.state.training_service,
+            calendar=getattr(request.app.state, "calendar_bridge_service", None),
+            notion=getattr(request.app.state, "notion_service", None),
+            notion_sync=getattr(request.app.state, "training_notion_sync", None),
+        )
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    decision = result.get("decision") if isinstance(result, dict) else None
+    message = result.get("notification") if isinstance(result, dict) else None
+    if message:
+        dedupe = (decision or {}).get("id") or f"training:adjust:{body.instruction[:40]}"
+        result["notify"] = _send_once(request, str(message), str(dedupe))
+    return result
+
+
 @training_router.post("/automation/training/replan")
 async def replan_training(
     request: Request, authorization: str | None = Header(default=None),
@@ -247,11 +279,21 @@ async def run_training_automation(
         message = f"{_daily_briefing_url(local_today)}\n\nToday's briefing is ready."
         return _send_once(request, message, f"daily:briefing:{local_today.isoformat()}")
     if body.action == "evening":
-        request.app.state.training_service.reconcile(now)
-        overview = request.app.state.training_service.overview(now)
-        tomorrow = overview.get("tomorrow")
-        message = _tomorrow_message(tomorrow, overview.get("tomorrow_prescription"))
-        return _send_once(request, message, f"training:evening:{(local_today + timedelta(days=1)).isoformat()}:{tomorrow.get('revision') if tomorrow else 0}")
+        coach = getattr(request.app.state, "evening_coach", None) or EveningCoach()
+        review = coach.review(
+            request.app.state.training_service,
+            calendar=getattr(request.app.state, "calendar_bridge_service", None),
+            notion=getattr(request.app.state, "notion_service", None),
+            notion_sync=getattr(request.app.state, "training_notion_sync", None),
+            now=now,
+        )
+        message = review.get("notification") or _tomorrow_message(
+            (review.get("overview") or {}).get("tomorrow"),
+            (review.get("overview") or {}).get("tomorrow_prescription"),
+        )
+        notify = _send_once(request, str(message), str((review.get("decision") or {}).get("id") or f"training:evening:{local_today.isoformat()}"))
+        review["notify"] = notify
+        return review
     sent = 0
     for reminder, session in request.app.state.training_service.due_reminders(now):
         message = _reminder_message(reminder.kind, session)
@@ -269,10 +311,12 @@ async def run_training_automation(
 
 
 def _send_once(request: Request, message: str, dedupe_key: str) -> dict:
-    openclaw = request.app.state.openclaw_service
-    if not openclaw.configured():
+    openclaw = getattr(request.app.state, "openclaw_service", None)
+    if openclaw is None or not openclaw.configured():
         return {"status": "not_configured"}
-    notify = request.app.state.chili_notify_service
+    notify = getattr(request.app.state, "chili_notify_service", None)
+    if notify is None:
+        return {"status": "not_configured"}
     if not notify.should_send(dedupe_key):
         return {"status": "skipped"}
     try:

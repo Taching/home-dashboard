@@ -16,6 +16,14 @@ function exerciseDetail(item: PlannedExercise) {
   ].filter(Boolean).join(' · ')
 }
 
+function workoutAlreadyLogged(status: string) {
+  return ['completed', 'partial', 'skipped'].includes(status)
+}
+
+function DoneBadge() {
+  return <span className="daily-done-badge" aria-label="Done">✓</span>
+}
+
 export function DailyBriefingPage({ day }: { day: string }) {
   const previewWorkout = useMemo(() => new URLSearchParams(window.location.search).get('preview'), [])
   const [briefing, setBriefing] = useState<DailyBriefing | null>(null)
@@ -69,6 +77,14 @@ export function DailyBriefingPage({ day }: { day: string }) {
                 </div>
                 <p>{workout.reason}</p>
                 {workout.coach_focus.length > 0 && <ul>{workout.coach_focus.map((focus) => <li key={focus}>{focus}</li>)}</ul>}
+                {briefing.last_adjustment?.how?.length ? (
+                  <div className="daily-plan-change">
+                    <strong>How Chili changed it</strong>
+                    <ul>{briefing.last_adjustment.how.map((item) => <li key={item}>{item}</li>)}</ul>
+                    <strong>Why</strong>
+                    <ul>{briefing.last_adjustment.why.map((item) => <li key={item}>{item}</li>)}</ul>
+                  </div>
+                ) : null}
               </>
             ) : (
               <p className="daily-empty">No workout is prescribed. Protect recovery and do not fill the space automatically.</p>
@@ -119,18 +135,19 @@ export function DailyBriefingPage({ day }: { day: string }) {
                     ? 'Chili’s evening advice'
                     : 'Chili’s advice'}
             </span>
-            <p>{briefing.advice ?? 'Sunday review asks Chili. Workout and sober saves stay on this page.'}</p>
+            <p>{briefing.advice ?? 'Chili answers after a workout or Sunday review.'}</p>
           </section>
         </div>
 
         <div className="daily-summary-stack">
           {workout && workout.planned_type !== 'rest' && !briefing.preview && (
-            <WorkoutForm day={briefing.date} workout={workout} onLogged={load} />
+            <WorkoutForm day={briefing.date} workout={workout} storedAdvice={briefing.advice} onLogged={load} />
           )}
           {briefing.sunday && <SundayForm briefing={briefing} onSaved={setBriefing} />}
           <SoberForm
             day={briefing.date}
             answered={briefing.sobriety.answered}
+            savedNote={briefing.sobriety.note}
             days={briefing.sobriety.days}
             onLogged={load}
           />
@@ -144,10 +161,12 @@ export function DailyBriefingPage({ day }: { day: string }) {
 function WorkoutForm({
   day,
   workout,
+  storedAdvice,
   onLogged,
 }: {
   day: string
   workout: NonNullable<DailyBriefing['workout']>
+  storedAdvice?: string | null
   onLogged: () => void
 }) {
   const [done, setDone] = useState<Record<string, boolean>>(() =>
@@ -155,12 +174,14 @@ function WorkoutForm({
   )
   const [note, setNote] = useState(workout.notes ?? '')
   const [pending, setPending] = useState(false)
-  const [status, setStatus] = useState<string | null>(
-    ['completed', 'partial', 'skipped'].includes(workout.status) ? `Already logged: ${workout.status}` : null,
-  )
+  const [saved, setSaved] = useState(false)
+  const [advice, setAdvice] = useState<string | null>(null)
+  const sent = saved || workoutAlreadyLogged(workout.status)
+  const [error, setError] = useState<string | null>(null)
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    if (pending || sent) return
     setPending(true)
     void logDailyWorkout(day, {
       kind: workout.planned_type as never,
@@ -168,11 +189,38 @@ function WorkoutForm({
       note: note.trim() || undefined,
     })
       .then((result) => {
-        setStatus(result.message)
-        if (result.status === 'logged') onLogged()
+        if (result.status === 'logged') {
+          setSaved(true)
+          setAdvice(result.advice ?? null)
+          setError(null)
+          onLogged()
+        } else {
+          setError(result.message)
+        }
       })
-      .catch(() => setStatus('Could not save workout.'))
+      .catch(() => setError('Could not save workout.'))
       .finally(() => setPending(false))
+  }
+
+  if (sent) {
+    return (
+      <section className="daily-card daily-done">
+        <div className="daily-card-title">
+          <div><span className="daily-card-label">After training</span><h2>What did you do?</h2></div>
+          <DoneBadge />
+        </div>
+        <ul className="daily-done-list">
+          {workout.exercises.map((item) => (
+            <li key={item.name} className={done[item.name] ? 'is-done' : 'is-skipped'}>
+              <span>{done[item.name] ? '✓' : '–'}</span>
+              {item.name}
+            </li>
+          ))}
+        </ul>
+        {note.trim() && <p className="daily-done-note">{note}</p>}
+        {(advice || storedAdvice) && <p className="daily-chili-reply">{advice || storedAdvice}</p>}
+      </section>
+    )
   }
 
   return (
@@ -199,8 +247,8 @@ function WorkoutForm({
         <span>Easy or hard?</span>
         <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} placeholder="Easy / hard, or what to change next time" />
       </label>
-      <button className="daily-submit" type="submit" disabled={pending}>{pending ? 'Saving…' : 'Submit workout'}</button>
-      {status && <p className="daily-form-success">{status}</p>}
+      <button className="daily-submit" type="submit" disabled={pending}>{pending ? 'Asking Chili…' : 'Submit workout'}</button>
+      {error && <p className="daily-form-error">{error}</p>}
     </form>
   )
 }
@@ -208,32 +256,52 @@ function WorkoutForm({
 function SoberForm({
   day,
   answered,
+  savedNote,
   days,
   onLogged,
 }: {
   day: string
   answered: 'yes' | 'no' | null
+  savedNote: string | null
   days: number
   onLogged: () => void
 }) {
   const [sober, setSober] = useState(answered !== 'no')
-  const [note, setNote] = useState('')
+  const [note, setNote] = useState(savedNote ?? '')
   const [pending, setPending] = useState(false)
-  const [status, setStatus] = useState<string | null>(answered ? `Already logged: ${answered}` : null)
+  const [saved, setSaved] = useState(false)
+  const sent = saved || answered != null
+  const [error, setError] = useState<string | null>(null)
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    if (pending || sent) return
     setPending(true)
     void logSober(day, { sober, note: note.trim() || undefined })
       .then((result) => {
-        setStatus(result.message)
         if (result.status === 'logged') {
-          setNote('')
+          setSaved(true)
+          setError(null)
           onLogged()
+        } else {
+          setError(result.message)
         }
       })
-      .catch(() => setStatus('Could not save sober check-in.'))
+      .catch(() => setError('Could not save sober check-in.'))
       .finally(() => setPending(false))
+  }
+
+  if (sent) {
+    return (
+      <section className="daily-card daily-done">
+        <div className="daily-card-title">
+          <div><span className="daily-card-label">Evening</span><h2>Sober</h2></div>
+          <DoneBadge />
+        </div>
+        <p className="daily-done-answer">{sober ? 'Yes' : 'No'}</p>
+        {note.trim() && <p className="daily-done-note">{note}</p>}
+      </section>
+    )
   }
 
   return (
@@ -254,7 +322,7 @@ function SoberForm({
         <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} />
       </label>
       <button className="daily-submit" type="submit" disabled={pending}>{pending ? 'Saving…' : 'Submit sober'}</button>
-      {status && <p className="daily-form-success">{status}</p>}
+      {error && <p className="daily-form-error">{error}</p>}
     </form>
   )
 }
@@ -272,10 +340,15 @@ function SundayForm({
   const [sameAsLast, setSameAsLast] = useState(false)
   const [note, setNote] = useState(sunday.review_note ?? '')
   const [pending, setPending] = useState(false)
-  const [status, setStatus] = useState<string | null>(sunday.submitted ? briefing.message ?? 'Saved this Sunday.' : null)
+  const [saved, setSaved] = useState(false)
+  const sent = saved || sunday.submitted
+  const [error, setError] = useState<string | null>(null)
+  const loggedWeight = sunday.weight_kg != null ? sunday.weight_kg.toFixed(1) : weight
+  const delta = sunday.delta_kg
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    if (pending || sent) return
     setPending(true)
     void logSundayReview(briefing.date, {
       weight_kg: sameAsLast || !weight ? undefined : Number(weight),
@@ -283,11 +356,28 @@ function SundayForm({
       note: note.trim() || undefined,
     })
       .then((next) => {
+        setSaved(true)
+        setError(null)
         onSaved(next)
-        setStatus(next.advice || next.message || 'Saved Sunday review.')
       })
-      .catch(() => setStatus('Could not save Sunday review.'))
+      .catch(() => setError('Could not save Sunday review.'))
       .finally(() => setPending(false))
+  }
+
+  if (sent) {
+    return (
+      <section className="daily-card daily-done">
+        <div className="daily-card-title">
+          <div><span className="daily-card-label">Sunday</span><h2>Weight and week</h2></div>
+          <DoneBadge />
+        </div>
+        <p className="daily-done-answer">
+          {loggedWeight ? `${loggedWeight} kg` : 'Weight not entered'}
+          {delta != null ? ` · ${delta > 0 ? '+' : ''}${delta.toFixed(1)} kg` : ''}
+        </p>
+        {note.trim() && <p className="daily-done-note">{note}</p>}
+      </section>
+    )
   }
 
   return (
@@ -328,7 +418,7 @@ function SundayForm({
         <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} />
       </label>
       <button className="daily-submit" type="submit" disabled={pending}>{pending ? 'Saving…' : 'Submit Sunday review'}</button>
-      {status && <p className="daily-form-success">{status}</p>}
+      {error && <p className="daily-form-error">{error}</p>}
     </form>
   )
 }

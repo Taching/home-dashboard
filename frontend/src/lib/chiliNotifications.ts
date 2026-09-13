@@ -2,6 +2,7 @@ import type { CalendarEvent, CalendarToday, NotionTask, OpenClawMessage, VoiceSt
 
 export type NotificationKind =
   | 'meeting_soon'
+  | 'plan_adjusted'
   | 'walk_reminder'
   | 'task_completed'
   | 'openclaw_message'
@@ -16,6 +17,7 @@ export type ChiliNotification = {
   priority: number
   dedupeKey: string
   sendTelegram?: boolean
+  ttlMs?: number
   createdAt: number
 }
 
@@ -26,14 +28,17 @@ export const MEETING_TOLERANCE_MS = 30_000
 const STORAGE_KEY = 'chili-notification-seen'
 const TELEGRAM_STORAGE_KEY = 'chili-telegram-sent'
 
+export const PLAN_ADJUST_TTL_MS = 20_000
+
 const PRIORITY: Record<NotificationKind, number> = {
   meeting_soon: 1,
-  walk_reminder: 2,
-  task_completed: 3,
-  openclaw_message: 4,
-  voice_complete: 5,
-  voice_error: 5,
-  spotify_playing: 6,
+  plan_adjusted: 2,
+  walk_reminder: 3,
+  task_completed: 4,
+  openclaw_message: 5,
+  voice_complete: 6,
+  voice_error: 6,
+  spotify_playing: 7,
 }
 
 export function notificationPriority(kind: NotificationKind): number {
@@ -175,11 +180,16 @@ export function lastAssistantFingerprint(messages: OpenClawMessage[]): string | 
   return `${last.created_at ?? ''}|${last.text}`
 }
 
+export function formatPlanAdjusted(banner: string): string {
+  const text = banner.trim()
+  return text || 'Changed the week. Check How and Why.'
+}
+
 export function buildNotification(
   kind: NotificationKind,
   message: string,
   dedupeKey: string,
-  options?: { sendTelegram?: boolean },
+  options?: { sendTelegram?: boolean, ttlMs?: number },
 ): ChiliNotification {
   return {
     id: `${kind}:${dedupeKey}:${Date.now()}`,
@@ -188,6 +198,7 @@ export function buildNotification(
     priority: notificationPriority(kind),
     dedupeKey,
     sendTelegram: options?.sendTelegram,
+    ttlMs: options?.ttlMs,
     createdAt: Date.now(),
   }
 }

@@ -74,6 +74,18 @@ class TrainingServiceTests(unittest.TestCase):
         self.assertEqual(record.completed, "partial")
         self.assertEqual(record.note, "squat felt heavy")
         self.assertEqual([item.done for item in record.exercises], [True, False])
+        again = self.service.log_workout(
+            kind="strength_a",
+            exercises=[
+                ExerciseDone("Back Squat", True),
+                ExerciseDone("Bench Press", True),
+            ],
+            note="finished the bench",
+            now=now + timedelta(minutes=10),
+        )
+        self.assertEqual(again.id, record.id)
+        self.assertEqual(again.completed, "yes")
+        self.assertEqual(len(self.service.logs_for(now.date())), 1)
 
     def test_sober_is_separate_from_workout(self) -> None:
         now = datetime(2026, 9, 15, 21, tzinfo=self.tokyo)

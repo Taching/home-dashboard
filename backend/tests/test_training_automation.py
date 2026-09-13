@@ -55,6 +55,17 @@ class FakePlanner:
     def overview(self, now=None):
         return {"week": [], "phase": "build_october"}
 
+    def calendar_plan(self, now=None, days=30):
+        stamp = datetime.now(UTC)
+        return [{
+            "session_id": "session-1",
+            "title": "Gym (Strength A)",
+            "start_at": stamp.isoformat(),
+            "end_at": stamp.isoformat(),
+            "is_all_day": False,
+            "notes": "Managed by Chili Training\nchili-training:session-1",
+        }]
+
     def reconcile(self):
         return None
 
@@ -148,6 +159,7 @@ class TrainingAutomationApiTests(unittest.TestCase):
     @patch("app.api.router.settings")
     def test_training_plan_uses_same_program_for_calendar(self, settings) -> None:
         settings.apple_calendar_bridge_token = "calendar-token"
+        settings.training_calendar_name = "Chili Training"
         response = self.client.get(
             "/api/v1/calendar/apple/training-plan",
             headers={"X-Chili-Bridge-Token": "calendar-token"},
@@ -190,6 +202,7 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(workout.status_code, 200)
         self.assertEqual(workout.json()["status"], "logged")
         self.assertIn("Strength A", workout.json()["message"])
+        self.assertTrue(workout.json()["advice"])
         sober = self.client.post(
             "/api/v1/daily/2026-09-15/sober",
             json={"sober": True, "note": "evening"},
@@ -217,6 +230,27 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(body["sunday"]["previous_weight_kg"], 82.8)
         self.assertEqual(body["sunday"]["delta_kg"], -0.4)
         self.assertIn("down 0.4 kg", body["message"])
+
+    def test_workout_page_log_completes_planner_and_returns_advice(self) -> None:
+        response = self.client.post(
+            "/api/v1/training/workout",
+            json={
+                "kind": "strength_a",
+                "exercises": [
+                    {"name": "Warm-up", "done": True},
+                    {"name": "Back Squat", "done": True},
+                ],
+                "note": "felt easy except the bike",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "logged")
+        self.assertTrue(body["advice"])
+        self.assertIn("felt easy except the bike", body["advice"])
+        today = self.client.get("/api/v1/training/today").json()
+        self.assertEqual(today["logs"][0]["kind"], "strength_a")
+        self.assertTrue(today["advice"])
 
 
 if __name__ == "__main__":

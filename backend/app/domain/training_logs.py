@@ -246,6 +246,30 @@ class TrainingService:
             session.refresh(row)
             return self._to_record(row)
 
+    def _update_log(
+        self,
+        log_id: int,
+        *,
+        completed: TrainingCompleted,
+        note: str | None,
+        exercises: list[ExerciseDone] | tuple[ExerciseDone, ...],
+        source: TrainingSource,
+        now: datetime,
+    ) -> TrainingLogRecord:
+        with self._session_factory() as session:
+            row = session.get(TrainingLog, log_id)
+            if row is None:
+                raise KeyError(log_id)
+            row.completed = completed
+            if note is not None:
+                row.note = self._trim(note, 500)
+            row.exercises = self._dump_exercises(exercises)
+            row.source = source
+            row.logged_at = now
+            session.commit()
+            session.refresh(row)
+            return self._to_record(row)
+
     def log_workout(
         self,
         *,
@@ -258,6 +282,17 @@ class TrainingService:
         if kind == "sober":
             raise ValueError("Sober is logged separately in the evening.")
         cleaned = self._clean_exercises(exercises)
+        current = self._as_utc(now or datetime.now(UTC))
+        existing = next((row for row in reversed(self.logs_for(current.astimezone(self._timezone).date())) if row.kind == kind), None)
+        if existing is not None:
+            return self._update_log(
+                existing.id,
+                completed=self._completed_from_exercises(kind, cleaned),
+                note=note,
+                exercises=cleaned,
+                source=source,
+                now=current,
+            )
         return self.log(
             kind=kind,
             completed=self._completed_from_exercises(kind, cleaned),

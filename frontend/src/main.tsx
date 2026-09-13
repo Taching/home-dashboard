@@ -74,6 +74,7 @@ function DashboardApp({
     voiceStatus: { state: 'offline', updated_at: null, transcript: null, message: null },
     spotifyIntentToken: 0,
     walkReminder,
+    lastAdjustment: training.last_adjustment,
   })
 
   const screenHidden = dashboard.display.state === 'hidden'

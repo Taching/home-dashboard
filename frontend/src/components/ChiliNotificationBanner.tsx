@@ -13,7 +13,7 @@ export function ChiliNotificationBanner({ notification, exiting = false }: Props
     <div
       key={notification.id}
       className={`chili-notice is-${notification.kind}${exiting ? ' is-exiting' : ''}`}
-      style={{ '--notice-duration': `${NOTIFICATION_TTL_MS}ms` } as CSSProperties}
+      style={{ '--notice-duration': `${notification.ttlMs ?? NOTIFICATION_TTL_MS}ms` } as CSSProperties}
       aria-live="polite"
       role="status"
     >

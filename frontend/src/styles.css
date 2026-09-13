@@ -529,6 +529,7 @@ button { font: inherit; }
   transform-origin: left center;
   animation: chili-notice-ttl var(--notice-duration) linear forwards;
 }
+.chili-notice.is-plan_adjusted { --notice-accent: #79e6bd; }
 .chili-notice.is-meeting_soon { --notice-accent: #79b9ff; }
 .chili-notice.is-walk_reminder { --notice-accent: #c4a7ff; }
 .chili-notice.is-lunch_vitamins { --notice-accent: #ffd36a; }
@@ -2115,6 +2116,36 @@ button { font: inherit; }
   border-radius: .62rem;
   background: linear-gradient(155deg, rgba(17,31,52,.92), rgba(10,18,33,.84));
 }
+.plan-change {
+  display: grid;
+  gap: .35rem;
+  padding: .7rem .75rem .8rem;
+  border: 1px solid rgba(121, 230, 189, .28);
+  border-radius: .85rem;
+  background: linear-gradient(160deg, rgba(17, 53, 52, .88), rgba(13, 29, 43, .92));
+}
+.plan-change-banner {
+  margin: 0;
+  color: #e9fff6;
+  font-size: .95rem;
+  font-weight: 680;
+  line-height: 1.35;
+}
+.plan-change-label {
+  margin: .25rem 0 0;
+  color: #79e6bd;
+  font-size: .68rem;
+  font-weight: 780;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.plan-change ul {
+  margin: 0;
+  padding-left: 1.05rem;
+  color: #d7efe7;
+  font-size: .82rem;
+  line-height: 1.4;
+}
 .coach-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .coach-panel-heading h2 { margin: .12rem 0 0; color: #f3f7ff; font-size: 1.28rem; }
 .coach-panel-heading > span { color: #d8c6f6; font-size: .74rem; font-weight: 720; letter-spacing: .04em; text-transform: uppercase; }
@@ -2201,6 +2232,22 @@ button { font: inherit; }
 .daily-meetings time { color: #80dff7; font-size: .82rem; font-weight: 750; }
 .daily-meetings strong { color: #e6edf8; }
 .daily-empty { color: #8293ad !important; }
+.daily-plan-change {
+  margin-top: .85rem;
+  display: grid;
+  gap: .3rem;
+}
+.daily-plan-change strong {
+  color: #79e6bd;
+  font-size: .72rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.daily-plan-change ul {
+  margin: 0 0 .4rem;
+  padding-left: 1.1rem;
+  color: #d9f5eb;
+}
 .daily-advice { border-color: rgba(121, 230, 189, .32); }
 .daily-advice.has-advice { background: linear-gradient(150deg, rgba(17, 53, 52, .95), rgba(13, 29, 43, .96)); }
 .daily-advice p { color: #d9f5eb; font-size: 1rem; }
@@ -2217,8 +2264,30 @@ button { font: inherit; }
 .daily-field textarea { min-height: 5.5rem; resize: vertical; }
 .daily-field input:focus, .daily-field select:focus, .daily-field textarea:focus { border-color: #72dcc1; box-shadow: 0 0 0 3px rgba(114, 220, 193, .12); }
 .daily-wide { grid-column: 1 / -1; }
-.daily-submit { width: 100%; min-height: 3.4rem; margin-top: 1rem; border: 0; border-radius: .7rem; color: #071711; background: linear-gradient(135deg, #8af0cf, #64d8c1); font-weight: 850; cursor: pointer !important; }
-.daily-submit:disabled { cursor: wait !important; opacity: .65; }
+.daily-submit { width: 100%; min-height: 3.4rem; margin-top: 1rem; border: 0; border-radius: .7rem; color: #071711; background: linear-gradient(135deg, #8af0cf, #64d8c1); font-weight: 850; cursor: pointer; }
+.daily-submit:disabled { cursor: wait; opacity: .65; }
+.daily-done { display: grid; gap: .55rem; }
+.daily-done-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 999px;
+  color: #071711;
+  background: #8af0cf;
+  font-size: 1rem;
+  font-weight: 850;
+}
+.daily-done-answer { margin: 0 !important; color: #e6edf8 !important; font-size: 1.15rem; font-weight: 750; }
+.daily-done-note { margin: 0 !important; color: #b9c7da !important; }
+.daily-chili-reply {
+  margin: .2rem 0 0 !important;
+  color: #d9f5eb !important;
+  white-space: pre-wrap;
+}
+.daily-done-list { display: grid; gap: .35rem; margin: 0; padding: 0; list-style: none; color: #e6edf8; }
+.daily-done-list li { display: grid; grid-template-columns: 1.1rem 1fr; gap: .45rem; align-items: start; }
+.daily-done-list .is-skipped { color: #8293ad; }
 .daily-form-error, .daily-form-success { margin: .8rem 0 0 !important; padding: .65rem .75rem; border-radius: .5rem; font-size: .82rem; }
 .daily-form-error { color: #ffc0c1 !important; background: rgba(255, 91, 96, .12); }
 .daily-form-success { color: #a8f2d7 !important; background: rgba(84, 214, 171, .12); }
@@ -2235,4 +2304,5 @@ button { font: inherit; }
   .daily-form-grid { grid-template-columns: 1fr; }
   .daily-wide { grid-column: auto; }
   .daily-card-title { align-items: flex-start; flex-direction: column; gap: .2rem; }
+  .daily-done .daily-card-title { align-items: center; flex-direction: row; }
 }

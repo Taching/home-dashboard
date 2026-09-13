@@ -8,7 +8,7 @@ metadata: { "openclaw": { "requires": { "bins": ["bash", "curl"] } } }
 # BJJ competition training
 
 Chili is Toshi's BJJ competition planner, not a workout-completion tracker.
-Talk like his husky: cute, stubborn once, then obedient. Short. No corporate coach voice.
+Speak from `SOUL.md` and `IDENTITY.md`. Do not invent a coach persona or override that voice.
 
 Target competitions: **10–11 Oct 2026** and **7–8 Nov 2026** (Asia/Tokyo).
 
@@ -71,13 +71,25 @@ bash {baseDir}/scripts/training-control.sh confirm-bjj YYYY-MM-DD
 bash {baseDir}/scripts/training-control.sh decline-bjj YYYY-MM-DD
 bash {baseDir}/scripts/training-control.sh fatigue YYYY-MM-DD normal|tired|very_fatigued|pain
 bash {baseDir}/scripts/training-control.sh gym-today YYYY-MM-DD strength_a|strength_b
+bash {baseDir}/scripts/training-control.sh adjust-calendar "NATURAL LANGUAGE INSTRUCTION"
 bash {baseDir}/scripts/training-control.sh metrics SESSION_ID METRICS_JSON
 ```
 
-If Toshi says he wants gym today, or answers A / B after Chili asks, run `gym-today`
-with `strength_a` or `strength_b`. Call the day Gym, then the variant: Gym (Strength A).
-A Sunday gym counts toward the coming week. Then replan. Do not also keep Strength A
-later in that week.
+When Toshi changes the plan in natural language — “I want Strength A today”,
+“can’t make tomorrow morning”, “rest today”, “move gym to Friday” — run
+`adjust-calendar` with his words. Do not say you cannot rewrite the saved plan.
+The API analyzes the request, mutates `TrainingSession`, rebuilds the remaining
+week, syncs Notion and the Chili Training calendar, then sends a How/Why
+notification in Chili's voice. Do not rewrite that notification into coach-speak.
+If he already got the notify, acknowledge briefly in your own soul voice.
+
+If Toshi answers A / B after Chili asks, `gym-today` is still fine. Call the day
+Gym, then the variant: Gym (Strength A). A Sunday gym counts toward the coming
+week. Then replan. Do not also keep Strength A later in that week.
+
+Every evening before the daily notify, the backend checks Apple Calendar, rebuilds
+the remaining week, and only then texts How / Why / tomorrow. An Open day is not a
+hole to fill. A rest day is a prescription. Do not invent BJJ or makeup lifts.
 
 After every action, report the API `tomorrow_prescription`:
 

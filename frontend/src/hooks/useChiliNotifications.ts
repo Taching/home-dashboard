@@ -11,6 +11,7 @@ import type {
   SpotifyNowPlaying,
   WalkReminder,
   VoiceStatus,
+  TrainingOverview,
 } from '../types'
 
 type Inputs = {
@@ -22,6 +23,7 @@ type Inputs = {
   voiceStatus: VoiceStatus
   spotifyIntentToken: number
   walkReminder: WalkReminder
+  lastAdjustment?: TrainingOverview['last_adjustment']
 }
 
 export function useChiliNotifications({
@@ -33,6 +35,7 @@ export function useChiliNotifications({
   voiceStatus,
   spotifyIntentToken,
   walkReminder,
+  lastAdjustment,
 }: Inputs) {
   const now = useClock()
   const controllerRef = useRef<ChiliNotificationController | null>(null)
@@ -60,8 +63,9 @@ export function useChiliNotifications({
       voiceStatus,
       spotifyIntentToken,
       walkReminder,
+      lastAdjustment,
     })
-  }, [calendar, controller, notion, now, openclaw, spotify, spotifyIntentToken, state, today, voiceStatus, walkReminder])
+  }, [calendar, controller, lastAdjustment, notion, now, openclaw, spotify, spotifyIntentToken, state, today, voiceStatus, walkReminder])
 
   useEffect(() => () => controller.dispose(), [controller])
 

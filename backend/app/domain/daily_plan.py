@@ -445,6 +445,7 @@ class DailyPlanService:
             },
             "today": today_block,
             "tomorrow": tomorrow_block,
+            "last_adjustment": overview.get("last_adjustment") if isinstance(overview, dict) else None,
         }
 
     def set_fatigue(self, training, day: date, state: str) -> dict:

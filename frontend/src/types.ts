@@ -223,6 +223,8 @@ export type TrainingToday = {
   logs: TrainingLog[]
   sober: TrainingLog | null
   workout_url: string
+  advice?: string | null
+  planner_status?: string | null
 }
 
 export type TrainingLogPayload = {
@@ -329,6 +331,18 @@ export type BjjCandidate = {
   preferred_clock: string | null
 }
 
+export type PlanAdjustment = {
+  id: string
+  at: string
+  instruction: string
+  how: string[]
+  why: string[]
+  banner: string
+  notification: string
+  source?: string
+  tomorrow?: { session?: string | null, time?: string | null, why?: string | null }
+}
+
 export type TrainingOverview = {
   generated_at: string
   timezone: string
@@ -342,6 +356,7 @@ export type TrainingOverview = {
   compliance: TrainingWeeklyStatus
   week_quality?: string
   tomorrow_prescription?: TomorrowPrescription | null
+  last_adjustment?: PlanAdjustment | null
   bjj_candidates?: BjjCandidate[]
   trends: {
     bike_decay: { session_id: string, decay_percent: number }[]
@@ -437,12 +452,14 @@ export type DailyBriefing = {
   message?: string | null
   today?: DailyPlanDay
   tomorrow?: DailyPlanDay
+  last_adjustment?: PlanAdjustment | null
 }
 
 export type TrainingLogResult = {
   status: 'logged' | 'failed'
   message: string
   log: TrainingLog | null
+  advice?: string | null
 }
 
 export type OpenClawMessage = {

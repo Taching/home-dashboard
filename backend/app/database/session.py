@@ -45,6 +45,7 @@ def initialise_database() -> None:
     }.items():
         _ensure_column("daily_wellbeing_checkins", name, sql_type)
     _ensure_column("training_planner_settings", "declined_bjj_dates", "JSON")
+    _ensure_column("training_planner_settings", "last_adjustment", "JSON")
 
 
 def _ensure_column(table: str, name: str, ddl: str) -> None:

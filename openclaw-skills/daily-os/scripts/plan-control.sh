@@ -81,8 +81,12 @@ case "$ACTION" in
     curl -fsS -X POST "${BASE_URL}/api/v1/automation/plan" "${auth[@]}" \
       -d "{\"action\":\"gym_today\",\"day\":\"${1:?date required}\",\"workout_type\":\"${2:?strength_a or strength_b required}\"}"
     ;;
+  adjust-calendar)
+    curl -fsS -X POST "${BASE_URL}/api/v1/automation/plan" "${auth[@]}" \
+      -d "{\"action\":\"adjust_calendar\",\"instruction\":\"$(escape_json "$*")\"}"
+    ;;
   *)
-    echo "Usage: $0 {today|rest-today|move-gym|complete-task|move-meeting|fatigue|confirm-bjj|decline-bjj|gym-today|replan}" >&2
+    echo "Usage: $0 {today|rest-today|move-gym|complete-task|move-meeting|fatigue|confirm-bjj|decline-bjj|gym-today|adjust-calendar|replan}" >&2
     exit 2
     ;;
 esac

@@ -5,6 +5,7 @@ import {
   buildNotification,
   findCompletedTasks,
   findMeetingSoonEvents,
+  formatPlanAdjusted,
   formatSpotifyPlaying,
   formatTaskCompleted,
   insertByPriority,
@@ -13,6 +14,13 @@ import {
   tasksSnapshot,
 } from './chiliNotifications.ts'
 import type { CalendarToday } from '../types.ts'
+
+test('formatPlanAdjusted keeps Chili\'s banner', () => {
+  assert.equal(
+    formatPlanAdjusted('Changed the week. Gym (Strength A) is Sun 13 Sep.'),
+    'Changed the week. Gym (Strength A) is Sun 13 Sep.',
+  )
+})
 
 test('formatSpotifyPlaying includes track and artist', () => {
   assert.equal(formatSpotifyPlaying('Wonderwall', 'Oasis'), 'Playing for you: Wonderwall — Oasis')

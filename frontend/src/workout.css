@@ -194,6 +194,12 @@ html.is-workout * {
   opacity: .55;
 }
 
+.workout-done-badge {
+  margin: 0;
+  color: #8af0cf;
+  font-weight: 780;
+}
+
 .workout-status {
   margin: 0;
   color: #b8c7de;
@@ -202,6 +208,31 @@ html.is-workout * {
 
 .workout-empty {
   color: #8ea0bb;
+}
+
+.workout-chili {
+  display: grid;
+  gap: .45rem;
+  padding: .95rem 1rem;
+  border: 1px solid rgba(121, 230, 189, .32);
+  border-radius: .45rem;
+  background: linear-gradient(150deg, rgba(17, 53, 52, .95), rgba(13, 29, 43, .96));
+}
+
+.workout-chili h2 {
+  margin: 0;
+  color: #8af0cf;
+  font-size: .78rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.workout-advice {
+  margin: 0;
+  color: #d9f5eb;
+  font-size: 1rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
 }
 
 .workout-checks {

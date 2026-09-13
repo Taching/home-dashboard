@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import chiliLogo from '../assets/chili-logo.svg'
 import { fetchTrainingPlan, fetchTrainingPlans, fetchTrainingToday, logDailyWorkout, logWorkout } from '../lib/api'
 import { formatDate } from '../lib/format'
@@ -107,6 +107,12 @@ function TodayPage() {
           ))}
         </section>
       )}
+      {today?.advice && (
+        <section className="workout-section workout-chili">
+          <h2>Chili</h2>
+          <p className="workout-advice">{today.advice}</p>
+        </section>
+      )}
       <section className="workout-section">
         <h2>Evening</h2>
         <a className="workout-plan-link" href={`/daily/${day}`}>
@@ -129,17 +135,46 @@ function TodayPage() {
 
 function PlanPage({ slug }: { slug: string }) {
   const [plan, setPlan] = useState<TrainingPlan | null>(null)
+  const [today, setToday] = useState<TrainingToday | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const synced = useRef(false)
 
   useEffect(() => {
-    fetchTrainingPlan(slug)
-      .then((next) => {
+    Promise.all([fetchTrainingPlan(slug), fetchTrainingToday()])
+      .then(([next, nextToday]) => {
         setPlan(next)
+        setToday(nextToday)
         setError(null)
         document.title = `${next.name} · Chili`
       })
       .catch(() => setError('Unknown session.'))
   }, [slug])
+
+  const existing = today?.logs.find((log) => log.kind === plan?.kind)
+
+  useEffect(() => {
+    if (!plan || !existing || synced.current) return
+    if (today?.planner_status && today.planner_status !== 'planned') return
+    synced.current = true
+    setSyncing(true)
+    void logWorkout({
+      kind: plan.kind,
+      exercises: existing.exercises,
+      note: existing.note ?? undefined,
+    })
+      .then((result) => {
+        if (result.status === 'logged') {
+          setToday((current) => (
+            current
+              ? { ...current, advice: result.advice ?? current.advice, planner_status: 'completed' }
+              : current
+          ))
+        }
+      })
+      .finally(() => setSyncing(false))
+  }, [plan, existing, today?.planner_status])
+  const doneByName = new Map((existing?.exercises ?? []).map((item) => [item.name, item.done]))
 
   return (
     <div className="workout-page">
@@ -165,14 +200,18 @@ function PlanPage({ slug }: { slug: string }) {
                   name: block.title,
                   prescription: block.prescription,
                   details: block.details,
-                  done: false,
+                  done: Boolean(doneByName.get(block.title)),
                 }))
               : [{
                   name: plan.kind === 'rest' ? 'Full rest' : plan.name,
                   prescription: null,
                   details: [],
-                  done: false,
+                  done: Boolean(existing),
                 }]}
+            initialNote={existing?.note ?? ''}
+            initialSaved={Boolean(existing)}
+            initialAdvice={today?.advice ?? null}
+            reviewing={syncing}
           />
           {plan.notes.length > 0 && (
             <section className="workout-section">
@@ -193,17 +232,27 @@ export function WorkoutCheckForm({
   items,
   day,
   onLogged,
+  initialNote = '',
+  initialSaved = false,
+  initialAdvice = null,
+  reviewing = false,
 }: {
   kind: TrainingKind
   items: { name: string; prescription: string | null; details: string[]; done: boolean }[]
   day?: string
   onLogged?: () => void
+  initialNote?: string
+  initialSaved?: boolean
+  initialAdvice?: string | null
+  reviewing?: boolean
 }) {
   const [done, setDone] = useState<Record<string, boolean>>(
     Object.fromEntries(items.map((item) => [item.name, item.done])),
   )
-  const [note, setNote] = useState('')
+  const [note, setNote] = useState(initialNote)
   const [pending, setPending] = useState(false)
+  const [saved, setSaved] = useState(initialSaved)
+  const [advice, setAdvice] = useState<string | null>(initialAdvice)
   const [status, setStatus] = useState<string | null>(null)
   const itemKey = items.map((item) => `${item.name}:${item.done}`).join('|')
 
@@ -211,8 +260,15 @@ export function WorkoutCheckForm({
     setDone(Object.fromEntries(items.map((item) => [item.name, item.done])))
   }, [itemKey])
 
+  useEffect(() => {
+    setNote(initialNote)
+    setSaved(initialSaved)
+    setAdvice(initialAdvice)
+  }, [initialNote, initialSaved, initialAdvice])
+
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    if (pending || saved) return
     const payload = {
       kind,
       exercises: items.map((item) => ({ name: item.name, done: Boolean(done[item.name]) })),
@@ -224,12 +280,37 @@ export function WorkoutCheckForm({
       .then((result) => {
         setStatus(result.message)
         if (result.status === 'logged') {
-          setNote('')
+          setSaved(true)
+          setAdvice(result.advice ?? null)
           onLogged?.()
         }
       })
       .catch(() => setStatus('Could not save workout.'))
       .finally(() => setPending(false))
+  }
+
+  if (saved) {
+    return (
+      <section className="workout-section">
+        <h2>Did you do it?</h2>
+        <p className="workout-done-badge">✓ Done</p>
+        <div className="workout-checks">
+          {items.map((item) => (
+            <div key={item.name} className={`workout-check ${done[item.name] ? 'is-checked' : ''}`}>
+              <span>{done[item.name] ? '✓' : '–'} {item.name}</span>
+            </div>
+          ))}
+        </div>
+        {note.trim() && <p className="workout-status">{note}</p>}
+        {reviewing && !advice && <p className="workout-status">Chili is reading the week…</p>}
+        {advice && (
+          <div className="workout-chili">
+            <h2>Chili</h2>
+            <p className="workout-advice">{advice}</p>
+          </div>
+        )}
+      </section>
+    )
   }
 
   return (
@@ -263,7 +344,7 @@ export function WorkoutCheckForm({
             placeholder="Felt easy, squat was heavy, skipped the last interval…"
           />
         </label>
-        <button type="submit" disabled={pending}>{pending ? 'Saving…' : 'Submit workout'}</button>
+        <button type="submit" disabled={pending}>{pending ? 'Asking Chili…' : 'Submit workout'}</button>
         {status && <p className="workout-status">{status}</p>}
       </form>
     </section>

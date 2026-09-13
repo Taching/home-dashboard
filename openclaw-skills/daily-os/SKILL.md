@@ -1,6 +1,6 @@
 ---
 name: daily-os
-description: Control Chili’s daily plan — rest today, move gym, mark a Notion task done, record a moved meeting, then replan.
+description: Control Chili’s daily plan — adjust the calendar from natural language, rest today, move gym, mark a Notion task done, record a moved meeting, then replan.
 user-invocable: false
 metadata: { "openclaw": { "requires": { "bins": ["bash", "curl"] } } }
 ---
@@ -22,11 +22,12 @@ bash {baseDir}/scripts/plan-control.sh fatigue YYYY-MM-DD normal|tired|very_fati
 bash {baseDir}/scripts/plan-control.sh confirm-bjj YYYY-MM-DD
 bash {baseDir}/scripts/plan-control.sh decline-bjj YYYY-MM-DD
 bash {baseDir}/scripts/plan-control.sh gym-today YYYY-MM-DD strength_a|strength_b
+bash {baseDir}/scripts/plan-control.sh adjust-calendar "NATURAL LANGUAGE INSTRUCTION"
 bash {baseDir}/scripts/plan-control.sh replan
 bash {baseDir}/scripts/plan-control.sh today [YYYY-MM-DD]
 ```
 
-Voice: Chili is Toshi's husky — cute, stubborn once, then obedient. Short. No corporate coach voice.
+Voice: speak from `SOUL.md` and `IDENTITY.md`. Do not invent a coach persona.
 
 Rules:
 
@@ -35,7 +36,8 @@ Rules:
 - “Move gym to Friday” pins the next planned strength session to that date at 07:30 and replans.
 - Fatigue is one of four states. Do not ask a morning questionnaire.
 - Confirm/decline BJJ pins or releases a candidate day, then replans. Do not invent a timed class until confirmed or it appears on the calendar.
-- “Gym today” / reply A or B: `gym-today` with `strength_a` or `strength_b`. Label it Gym (Strength A) or Gym (Strength B). A Sunday gym counts for the coming week.
+- Natural-language plan changes (“I want Strength A today”, “can’t make tomorrow”): `adjust-calendar` with his words. Do not say the saved plan cannot be rewritten. The API updates the dashboard sessions, Notion, and the Chili Training calendar, then notifies How and Why in Chili's voice. Do not overwrite that voice.
+- “Gym today” / reply A or B: `gym-today` with `strength_a` or `strength_b` is still fine. Label it Gym (Strength A) or Gym (Strength B). A Sunday gym counts for the coming week.
 - “Mark task done” writes Notion (canonical task store). Match by id or title.
 - “This meeting moved”:
   - If he already changed Apple Calendar, just `replan`.

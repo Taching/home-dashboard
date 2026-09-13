@@ -99,6 +99,7 @@ class OpenClawService:
                 "send",
                 {
                     "channel": channel,
+                    "to": target,
                     "target": target,
                     "message": message,
                 },
@@ -135,10 +136,32 @@ class OpenClawService:
         channel = (settings.openclaw_notify_channel or "telegram").strip() or "telegram"
         target = (settings.openclaw_notify_target or "").strip()
         if not target:
-            target = self._target_from_session_key(self._session_key())
+            target = self._target_from_session_key(self._session_key()) or self._target_from_sessions()
         if not target:
             raise OpenClawError("No Telegram target configured for notifications.")
         return channel, target
+
+    def _target_from_sessions(self) -> str | None:
+        try:
+            payload = self._request("sessions.list", {"limit": 100})
+        except Exception:
+            return None
+        for session in as_list(payload.get("sessions")):
+            if not isinstance(session, dict):
+                continue
+            key = session.get("key")
+            from_key = self._target_from_session_key(key) if isinstance(key, str) else None
+            if from_key:
+                return from_key
+            delivery = as_dict(session.get("deliveryContext"))
+            origin = as_dict(session.get("origin"))
+            for value in (
+                delivery.get("to"), delivery.get("target"), delivery.get("peerId"),
+                origin.get("id"), origin.get("to"), session.get("lastTo"),
+            ):
+                if isinstance(value, str) and value.isdigit():
+                    return value
+        return None
 
     @staticmethod
     def _target_from_session_key(session_key: str) -> str | None:
@@ -234,12 +257,17 @@ class OpenClawService:
         return text
 
     @staticmethod
+    def _normalise_dedupe_text(text: str) -> str:
+        lines = [line.rstrip() for line in text.strip().splitlines()]
+        return "\n".join(line for line in lines if line)
+
+    @staticmethod
     def _dedupe_messages(messages: list[OpenClawMessage]) -> list[OpenClawMessage]:
         deduped: list[OpenClawMessage] = []
         seen: set[tuple[str, str]] = set()
         for message in messages:
-            key = (message.role, message.text)
-            if key in seen:
+            key = (message.role, OpenClawService._normalise_dedupe_text(message.text))
+            if not key[1] or key in seen:
                 continue
             seen.add(key)
             deduped.append(message)
@@ -253,8 +281,16 @@ class OpenClawService:
         if isinstance(content, dict):
             return OpenClawService._content_part_text(content)
         if isinstance(content, list):
-            parts = [OpenClawService._content_part_text(part) for part in content]
-            return "\n".join(part for part in parts if part)
+            parts: list[str] = []
+            seen: set[str] = set()
+            for part in content:
+                text = OpenClawService._content_part_text(part)
+                key = OpenClawService._normalise_dedupe_text(text)
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                parts.append(text)
+            return "\n".join(parts)
         return str(content)
 
     @staticmethod

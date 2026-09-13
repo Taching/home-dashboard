@@ -4,8 +4,10 @@ import {
   findMeetingSoonEvents,
   formatMeetingSoon,
   formatOpenClawMessageWaiting,
+  formatPlanAdjusted,
   formatSpotifyPlaying,
   formatTaskCompleted,
+  PLAN_ADJUST_TTL_MS,
   hasSeenKey,
   hasTelegramSentKey,
   insertByPriority,
@@ -30,6 +32,7 @@ import type {
   SpotifyNowPlaying,
   VoiceStatus,
   WalkReminder,
+  TrainingOverview,
 } from '../types'
 
 export type NotificationInputs = {
@@ -42,6 +45,7 @@ export type NotificationInputs = {
   voiceStatus: VoiceStatus
   spotifyIntentToken: number
   walkReminder: WalkReminder
+  lastAdjustment?: TrainingOverview['last_adjustment']
 }
 
 type DisplayState = {
@@ -138,7 +142,7 @@ export class ChiliNotificationController {
         this.bump()
         this.tryShowNext(state)
       }, NOTIFICATION_FADE_MS)
-    }, NOTIFICATION_TTL_MS)
+    }, notification.ttlMs ?? NOTIFICATION_TTL_MS)
   }
 
   private showNotification(state: DisplayState, notification: ChiliNotification) {
@@ -184,6 +188,18 @@ export class ChiliNotificationController {
 
   collectNotifications(inputs: NotificationInputs): ChiliNotification[] {
     const found: ChiliNotification[] = []
+
+    const adjustment = inputs.lastAdjustment
+    const adjustedAt = adjustment?.at ? Date.parse(adjustment.at) : NaN
+    const fresh = Number.isFinite(adjustedAt) && inputs.nowMs - adjustedAt < 36 * 60 * 60 * 1000
+    if (fresh && adjustment?.id && adjustment.banner && !hasSeenKey(adjustment.id, this.seenKeys)) {
+      found.push(buildNotification(
+        'plan_adjusted',
+        formatPlanAdjusted(adjustment.banner),
+        adjustment.id,
+        { ttlMs: PLAN_ADJUST_TTL_MS },
+      ))
+    }
 
     for (const event of findMeetingSoonEvents(inputs.calendar, inputs.today, inputs.nowMs)) {
       const dedupeKey = `meeting:${event.id}:${inputs.today}`

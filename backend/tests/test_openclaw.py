@@ -50,6 +50,44 @@ class OpenClawServiceTests(unittest.TestCase):
         self.assertEqual(len(messages), 1)
         self.assertEqual(messages[0].text, reply)
 
+    def test_history_dedupes_message_tool_and_markdown_echo(self):
+        tool = "Created: Talent Palette evaluation draft\nType: Asuene\nDue: Fri Sep 19, 2026\nPriority: High"
+        echo = "Created: Talent Palette evaluation draft  \nType: Asuene  \nDue: Fri Sep 19, 2026  \nPriority: High"
+        service = FakeOpenClawService([{
+            "messages": [
+                {"id": "tool", "role": "assistant", "content": [{
+                    "type": "toolCall",
+                    "name": "message",
+                    "arguments": {"message": tool},
+                }]},
+                {"id": "text", "role": "assistant", "content": [{"type": "text", "text": echo}]},
+            ]
+        }])
+
+        messages = service.history()
+
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0].text, tool)
+
+    def test_history_dedupes_text_and_message_tool_in_one_row(self):
+        reply = "Created the Asuene task."
+        service = FakeOpenClawService([{
+            "messages": [{
+                "id": "one",
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": reply},
+                    {"type": "toolCall", "name": "message", "arguments": {"message": f"{reply}  "}},
+                ],
+            }],
+        }])
+
+        messages = service.history()
+
+        self.assertEqual([(message.role, message.text) for message in messages], [
+            ("assistant", reply),
+        ])
+
     def test_history_strips_dashboard_context_from_user_messages(self):
         service = FakeOpenClawService([{
             "messages": [{
@@ -138,6 +176,7 @@ class OpenClawServiceTests(unittest.TestCase):
         method, params = service.requests[0]
         self.assertEqual(method, "send")
         self.assertEqual(params["channel"], "telegram")
+        self.assertEqual(params["to"], "8188515149")
         self.assertEqual(params["target"], "8188515149")
         self.assertIn("/daily/2026-09-13", params["message"])
 

@@ -20,6 +20,7 @@ from app.database.models import (
 from app.database.session import SessionLocal
 from app.domain.training.policy import assess_week_quality, weekly_targets
 from app.domain.training.scheduler import TrainingScheduler, assess_readiness, phase_for_date
+from app.domain.training.review import exercise_done, kinds_match
 from app.domain.training.templates import WORKOUT_TEMPLATES
 from app.domain.training.types import (
     ExistingSession,
@@ -59,16 +60,16 @@ class TrainingService:
             ):
                 session.merge(competition)
             session.commit()
-        self.reconcile(current)
+        self.reconcile(current, cancel_missing=False)
 
-    def reconcile(self, now: datetime | None = None) -> None:
+    def reconcile(self, now: datetime | None = None, *, cancel_missing: bool = True) -> None:
         current = self._as_utc(now or datetime.now(UTC))
         local_day = current.astimezone(self._timezone).date()
         week_start = local_day - timedelta(days=local_day.weekday())
-        self._reconcile_week(week_start, current)
-        self._reconcile_week(week_start + timedelta(days=7), current)
+        self._reconcile_week(week_start, current, cancel_missing=cancel_missing)
+        self._reconcile_week(week_start + timedelta(days=7), current, cancel_missing=cancel_missing)
 
-    def _reconcile_week(self, week_start: date, now: datetime) -> None:
+    def _reconcile_week(self, week_start: date, now: datetime, *, cancel_missing: bool = True) -> None:
         start = datetime.combine(week_start, time.min, self._timezone).astimezone(UTC)
         end = start + timedelta(days=7)
         with self._session_factory() as session:
@@ -129,16 +130,27 @@ class TrainingService:
                 self._ensure_reminders(session, row, planner_settings, now)
             for row in retained:
                 self._ensure_reminders(session, row, planner_settings, now)
-            for row in all_sessions:
-                if row.id in desired_ids or self._retained(row, now):
-                    continue
-                if row.status == SessionStatus.PLANNED.value:
-                    row.status = SessionStatus.CANCELLED.value
-                    row.revision += 1
-                    row.updated_at = now
-                    for reminder in session.scalars(select(TrainingReminder).where(TrainingReminder.session_id == row.id)):
-                        if reminder.status == "pending":
-                            reminder.status = "cancelled"
+            existing_planned_bjj = any(
+                row.status == SessionStatus.PLANNED.value and (row.planned_type or "").startswith("bjj_")
+                for row in all_sessions
+            )
+            kept_or_planned_bjj = any(item.type.value.startswith("bjj_") for item in plan.sessions) or any(
+                (row.planned_type or "").startswith("bjj_")
+                for row in retained
+                if row.status != SessionStatus.CANCELLED.value
+            )
+            should_cancel = cancel_missing and (kept_or_planned_bjj or not existing_planned_bjj)
+            if should_cancel:
+                for row in all_sessions:
+                    if row.id in desired_ids or self._retained(row, now):
+                        continue
+                    if row.status == SessionStatus.PLANNED.value:
+                        row.status = SessionStatus.CANCELLED.value
+                        row.revision += 1
+                        row.updated_at = now
+                        for reminder in session.scalars(select(TrainingReminder).where(TrainingReminder.session_id == row.id)):
+                            if reminder.status == "pending":
+                                reminder.status = "cancelled"
             session.commit()
 
     def overview(self, now: datetime | None = None) -> dict:
@@ -202,7 +214,22 @@ class TrainingService:
                 current_week,
                 phase_for_date(local_day),
             ),
+            "last_adjustment": self.last_adjustment(),
         }
+
+    def last_adjustment(self) -> dict | None:
+        with self._session_factory() as session:
+            row = session.get(TrainingPlannerSetting, 1)
+            payload = getattr(row, "last_adjustment", None) if row is not None else None
+        return payload if isinstance(payload, dict) and payload else None
+
+    def store_last_adjustment(self, payload: dict) -> None:
+        with self._session_factory() as session:
+            row = session.get(TrainingPlannerSetting, 1)
+            if row is None:
+                return
+            row.last_adjustment = payload
+            session.commit()
 
     def session(self, session_id: str) -> dict | None:
         with self._session_factory() as session:
@@ -220,25 +247,46 @@ class TrainingService:
             return result
 
     def for_date(self, local_date: date) -> dict | None:
+        sessions = self.sessions_on(local_date)
+        return sessions[0] if sessions else None
+
+    def sessions_on(self, local_date: date) -> list[dict]:
         start = datetime.combine(local_date, time.min, self._timezone).astimezone(UTC)
         end = start + timedelta(days=1)
         with self._session_factory() as session:
-            row = session.scalar(
+            rows = list(session.scalars(
                 select(TrainingSession)
                 .where(TrainingSession.start_at < end)
                 .where(TrainingSession.end_at > start)
                 .where(TrainingSession.status != SessionStatus.CANCELLED.value)
                 .order_by(TrainingSession.start_at)
-                .limit(1)
-            )
-            if row is None:
-                return None
-            exercises = list(session.scalars(
-                select(TrainingExercise)
-                .where(TrainingExercise.session_id == row.id)
-                .order_by(TrainingExercise.position)
             ).all())
-            return self._session_dict(row, [self._exercise_dict(item) for item in exercises])
+            result = []
+            for row in rows:
+                exercises = list(session.scalars(
+                    select(TrainingExercise)
+                    .where(TrainingExercise.session_id == row.id)
+                    .order_by(TrainingExercise.position)
+                ).all())
+                result.append(self._session_dict(row, [self._exercise_dict(item) for item in exercises]))
+            return result
+
+    def log_matching_workout(
+        self,
+        local_date: date,
+        *,
+        kind: str | None = None,
+        exercises: list[dict] | None = None,
+        note: str | None = None,
+        now: datetime | None = None,
+    ) -> dict | None:
+        sessions = self.sessions_on(local_date)
+        chosen = next((item for item in sessions if kinds_match(item.get("planned_type"), kind)), None)
+        if chosen is None and not kind and sessions:
+            chosen = sessions[0]
+        if chosen is None:
+            return None
+        return self.log_workout_check(chosen["id"], exercises=exercises, note=note, now=now)
 
     def record_readiness(self, day: date, values: dict, *, now: datetime | None = None) -> dict:
         current = self._as_utc(now or datetime.now(UTC))
@@ -318,6 +366,44 @@ class TrainingService:
                     is_all_day=False, estimated_minutes=template.estimated_minutes, intensity=template.intensity,
                     reason="Gym chosen explicitly; the remaining week was rebuilt around it.",
                     coach_focus=["Strength maintenance, not a PR day."],
+                    source="manual", pinned=True, revision=1, created_at=current, updated_at=current,
+                )
+                session.add(row)
+                self._replace_exercises(session, row.id, template.exercises)
+            session.commit()
+        self.reconcile(current)
+        result = self.session(session_id)
+        assert result is not None
+        return result
+
+    def place_session(self, day: date, workout_type: str, *, now: datetime | None = None) -> dict:
+        current = self._as_utc(now or datetime.now(UTC))
+        target = WorkoutType(workout_type)
+        if target in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B}:
+            return self.schedule_gym(day, target.value, now=current)
+        if target == WorkoutType.REST:
+            existing = self.for_date(day)
+            if existing is None:
+                raise KeyError("No training session to rest.")
+            return self.replace_session(existing["id"], "rest", now=current)
+        if target not in WORKOUT_TEMPLATES:
+            raise ValueError(f"Cannot place {workout_type}.")
+        existing = self.for_date(day)
+        if existing is not None:
+            return self.replace_session(existing["id"], target.value, now=current)
+        template = WORKOUT_TEMPLATES[target]
+        start = datetime.combine(day, time(14, 0), self._timezone)
+        session_id = str(uuid5(NAMESPACE_URL, f"chili-training:place:{day.isoformat()}:{target.value}"))
+        with self._session_factory() as session:
+            row = session.get(TrainingSession, session_id)
+            if row is None:
+                row = TrainingSession(
+                    id=session_id, planned_type=target.value, status=SessionStatus.PLANNED.value,
+                    phase=phase_for_date(day).value, planned_week_start=self._training_week_start(day),
+                    start_at=start.astimezone(UTC), end_at=(start + timedelta(minutes=template.estimated_minutes)).astimezone(UTC),
+                    is_all_day=False, estimated_minutes=template.estimated_minutes, intensity=template.intensity,
+                    reason="Evening calendar check placed this for tournament readiness; rest and BJJ were left alone.",
+                    coach_focus=["Keep this repeatable. Do not turn an Open day into junk volume."],
                     source="manual", pinned=True, revision=1, created_at=current, updated_at=current,
                 )
                 session.add(row)
@@ -430,8 +516,9 @@ class TrainingService:
                 if item.get("name")
             }
             for item in items:
-                if item.name in done_by_name:
-                    item.done = done_by_name[item.name]
+                matched = exercise_done(item.name, done_by_name)
+                if matched is not None:
+                    item.done = matched
             if items:
                 done_count = sum(1 for item in items if item.done)
                 if done_count == 0:

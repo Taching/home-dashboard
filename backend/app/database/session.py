@@ -22,9 +22,16 @@ def initialise_database() -> None:
     Base.metadata.create_all(bind=engine)
     # `create_all` does not alter existing SQLite tables. Keep this small,
     # idempotent migration here until the project adopts a versioned migration tool.
-    columns = {column["name"] for column in inspect(engine).get_columns("calendar_bridge_events")}
-    if "is_all_day" not in columns:
-        with engine.begin() as connection:
-            connection.execute(
-                text("ALTER TABLE calendar_bridge_events ADD COLUMN is_all_day BOOLEAN NOT NULL DEFAULT 0")
-            )
+    _ensure_column("calendar_bridge_events", "is_all_day", "BOOLEAN NOT NULL DEFAULT 0")
+    _ensure_column("training_logs", "exercises", "TEXT")
+
+
+def _ensure_column(table: str, name: str, ddl: str) -> None:
+    inspector = inspect(engine)
+    if table not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns(table)}
+    if name in columns:
+        return
+    with engine.begin() as connection:
+        connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))

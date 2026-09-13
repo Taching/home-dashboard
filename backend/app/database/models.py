@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String
+from sqlalchemy import Boolean, Date, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.session import Base
@@ -112,3 +112,43 @@ class WalkingPadCollectorSync(Base):
 
     source: Mapped[str] = mapped_column(String(32), primary_key=True)
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class TrainingLog(Base):
+    __tablename__ = "training_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    logged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    completed: Mapped[str] = mapped_column(String(16))
+    feeling: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    rounds: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    duration_minutes: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_hr: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_hr: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    distance_km: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exercises: Mapped[str | None] = mapped_column(String, nullable=True)
+    source: Mapped[str] = mapped_column(String(16))
+
+
+class WeightLog(Base):
+    __tablename__ = "weight_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    logged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    weight_kg: Mapped[float] = mapped_column(Float)
+    source: Mapped[str] = mapped_column(String(16))
+
+
+class WeeklyReview(Base):
+    __tablename__ = "weekly_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    week_ending: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    logged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    previous_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    summary: Mapped[str | None] = mapped_column(String, nullable=True)
+    source: Mapped[str] = mapped_column(String(16))

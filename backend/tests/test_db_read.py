@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.router import api_router
-from app.database.models import SensorReading, WalkingPadSession
+from app.database.models import SensorReading, TrainingLog, WalkingPadSession
 from app.database.session import Base
 from app.domain.db_read import DbReadService
 
@@ -45,6 +45,15 @@ class DbReadServiceTests(unittest.TestCase):
                         steps=6500,
                         calories=250.0,
                     ),
+                    TrainingLog(
+                        logged_at=datetime(2026, 7, 13, 4, 0, tzinfo=UTC),
+                        kind="bjj",
+                        completed="yes",
+                        feeling="tired",
+                        note="guard retention",
+                        rounds="3x5",
+                        source="ui",
+                    ),
                 ]
             )
             session.commit()
@@ -54,6 +63,8 @@ class DbReadServiceTests(unittest.TestCase):
         # 2026-07-13 UTC morning is still 2026-07-13 in JST for these timestamps
         self.assertEqual(snapshot["summary"]["walk_total_steps"], 6500)
         self.assertEqual(snapshot["summary"]["walk_session_count"], 1)
+        self.assertEqual(snapshot["summary"]["training_log_count"], 1)
+        self.assertEqual(snapshot["training_logs"][0]["kind"], "bjj")
         self.assertEqual(len(snapshot["sensor_readings"]), 1)
 
     def test_rejects_inverted_range(self) -> None:

@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     openclaw_gateway_token: str | None = None
     openclaw_session_key: str = "agent:main:main"
     openclaw_prefer_telegram_session: bool = True
+    openclaw_notify_channel: str = "telegram"
+    openclaw_notify_target: str | None = None
     switchbot_token: str | None = None
     switchbot_secret: str | None = None
     switchbot_plug_device_id: str | None = None
@@ -59,6 +61,7 @@ class Settings(BaseSettings):
     walkingpad_reminder_end_hour: int = 20
     walkingpad_min_gap_before_meeting_min: int = 60
     walkingpad_min_session_minutes: int = 15
+    chili_public_url: str = "http://127.0.0.1:8080"
 
 
 settings = Settings()

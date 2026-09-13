@@ -74,7 +74,7 @@ class OpenClawService:
                 {
                     "message": self._message_with_context(message),
                     "sessionKey": self._session_key(),
-                    "deliver": True,
+                    "deliver": False,
                     "timeoutMs": 30_000,
                     "idempotencyKey": str(uuid4()),
                 },
@@ -86,6 +86,30 @@ class OpenClawService:
             return {"delivery_status": delivery, "reply": self._find_reply(payload)}
         except OpenClawError:
             self._last_error = "OpenClaw did not accept the message."
+            raise
+        except Exception as error:
+            self._last_error = "OpenClaw is unavailable."
+            raise OpenClawError(self._last_error) from error
+
+    def notify_user(self, message: str) -> dict[str, str | None]:
+        """Push text to Telegram. Does not run the agent or use chat.send."""
+        channel, target = self._notify_route()
+        try:
+            payload = self._request(
+                "send",
+                {
+                    "channel": channel,
+                    "target": target,
+                    "message": message,
+                },
+            )
+            delivery = self._find_channel_delivery_status(payload)
+            if delivery not in {"sent", "delivered", "ok", "accepted"}:
+                raise OpenClawError("OpenClaw did not confirm Telegram delivery.")
+            self._last_error = None
+            return {"delivery_status": delivery, "reply": None}
+        except OpenClawError:
+            self._last_error = "OpenClaw did not confirm Telegram delivery."
             raise
         except Exception as error:
             self._last_error = "OpenClaw is unavailable."
@@ -106,6 +130,24 @@ class OpenClawService:
             f"{context.strip()}\n\n"
             f"User request: {message}"
         )
+
+    def _notify_route(self) -> tuple[str, str]:
+        channel = (settings.openclaw_notify_channel or "telegram").strip() or "telegram"
+        target = (settings.openclaw_notify_target or "").strip()
+        if not target:
+            target = self._target_from_session_key(self._session_key())
+        if not target:
+            raise OpenClawError("No Telegram target configured for notifications.")
+        return channel, target
+
+    @staticmethod
+    def _target_from_session_key(session_key: str) -> str | None:
+        parts = [part for part in session_key.split(":") if part]
+        if len(parts) >= 2 and parts[-2] == "direct" and parts[-1].isdigit():
+            return parts[-1]
+        if parts and parts[-1].isdigit():
+            return parts[-1]
+        return None
 
     def _session_key(self) -> str:
         if not settings.openclaw_prefer_telegram_session:
@@ -268,6 +310,21 @@ class OpenClawService:
         result = as_dict(payload.get("result")) or payload
         value = result.get("deliveryStatus", result.get("delivery_status", result.get("status", "accepted")))
         return str(value) if value else None
+
+    @staticmethod
+    def _find_channel_delivery_status(payload: JsonDict) -> str | None:
+        result = as_dict(payload.get("result")) or payload
+        value = result.get(
+            "deliveryStatus",
+            result.get("delivery_status", result.get("status")),
+        )
+        if value:
+            return str(value)
+        if result.get("ok") is True or payload.get("ok") is True:
+            return "sent"
+        if result.get("messageId") or result.get("message_id"):
+            return "sent"
+        return None
 
     @staticmethod
     def _find_reply(payload: JsonDict) -> str | None:

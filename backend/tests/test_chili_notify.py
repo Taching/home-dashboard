@@ -24,6 +24,10 @@ class FakeOpenClaw:
         self.sent.append(message)
         return {"delivery_status": "started", "reply": None}
 
+    def notify_user(self, message: str) -> dict[str, str | None]:
+        self.sent.append(message)
+        return {"delivery_status": "sent", "reply": None}
+
 
 def test_session_factory():
     engine = create_engine(

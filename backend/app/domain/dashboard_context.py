@@ -16,6 +16,10 @@ class WalkingPadContextService(Protocol):
     def context_lines(self, calendar_events: list[CalendarEvent], now: datetime | None = None) -> list[str]: ...
 
 
+class TrainingContextService(Protocol):
+    def context_lines(self, calendar_events: list[CalendarEvent] | None = None, now: datetime | None = None) -> list[str]: ...
+
+
 class SensorContextService(Protocol):
     def current(self) -> Reading | None: ...
     def status(self) -> str: ...
@@ -52,6 +56,7 @@ class DashboardContextProvider:
         notion_service: NotionContextService,
         spotify_service: SpotifyContextService,
         walkingpad_service: WalkingPadContextService | None = None,
+        training_service: TrainingContextService | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._sensor_service = sensor_service
@@ -60,6 +65,7 @@ class DashboardContextProvider:
         self._notion_service = notion_service
         self._spotify_service = spotify_service
         self._walkingpad_service = walkingpad_service
+        self._training_service = training_service
         self._now = now or (lambda: datetime.now(UTC))
 
     def __call__(self) -> str:
@@ -71,6 +77,7 @@ class DashboardContextProvider:
         lines.extend(self._light_lines())
         lines.extend(self._calendar_lines())
         lines.extend(self._walking_lines())
+        lines.extend(self._training_lines())
         lines.extend(self._task_lines())
         lines.extend(self._spotify_lines())
         return "\n".join(lines)
@@ -140,6 +147,15 @@ class DashboardContextProvider:
             return self._walkingpad_service.context_lines(events, self._now())
         except Exception:
             return ["- Walking: unavailable."]
+
+    def _training_lines(self) -> list[str]:
+        if self._training_service is None:
+            return []
+        try:
+            _, _, events = self._calendar_service.today()
+            return self._training_service.context_lines(events, self._now())
+        except Exception:
+            return ["- Training: unavailable."]
 
     @staticmethod
     def _group_events_by_local_date(

@@ -14,6 +14,12 @@ import type {
   WeatherForecast,
   WalkReminder,
   WalkingPadToday,
+  TrainingPlan,
+  TrainingToday,
+  TrainingLogPayload,
+  TrainingLogResult,
+  WorkoutLogPayload,
+  DailyBriefing,
 } from '../types'
 
 async function requireJson<T>(response: Response): Promise<T> {
@@ -84,6 +90,67 @@ export async function fetchWalkingPadToday() {
 
 export async function fetchWalkingPadReminder() {
   return requireJson<WalkReminder>(await fetch('/api/v1/walkingpad/reminder'))
+}
+
+export async function fetchTrainingPlans() {
+  const result = await requireJson<{ plans: TrainingPlan[] }>(await fetch('/api/v1/training/plans'))
+  return result.plans
+}
+
+export async function fetchTrainingPlan(slug: string) {
+  return requireJson<TrainingPlan>(await fetch(`/api/v1/training/plans/${slug}`))
+}
+
+export async function fetchTrainingToday() {
+  return requireJson<TrainingToday>(await fetch('/api/v1/training/today'))
+}
+
+export async function logTraining(payload: TrainingLogPayload) {
+  return requireJson<TrainingLogResult>(await fetch('/api/v1/training/log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }))
+}
+
+export async function fetchDailyBriefing(day: string, preview?: string) {
+  const query = preview ? `?preview=${encodeURIComponent(preview)}` : ''
+  return requireJson<DailyBriefing>(await fetch(`/api/v1/daily/${day}${query}`))
+}
+
+export async function logDailyWorkout(day: string, payload: WorkoutLogPayload) {
+  return requireJson<TrainingLogResult>(await fetch(`/api/v1/daily/${day}/workout`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }))
+}
+
+export async function logWorkout(payload: WorkoutLogPayload) {
+  return requireJson<TrainingLogResult>(await fetch('/api/v1/training/workout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }))
+}
+
+export async function logSober(day: string, payload: { sober: boolean; note?: string }) {
+  return requireJson<TrainingLogResult>(await fetch(`/api/v1/daily/${day}/sober`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }))
+}
+
+export async function logSundayReview(
+  day: string,
+  payload: { weight_kg?: number; same_as_last?: boolean; note?: string },
+) {
+  return requireJson<DailyBriefing>(await fetch(`/api/v1/daily/${day}/sunday`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }))
 }
 
 export async function sendOpenClawMessage(message: string) {

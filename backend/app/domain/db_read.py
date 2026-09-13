@@ -14,10 +14,13 @@ from app.database.models import (
     ChiliNotifyDedupe,
     LightCommand,
     SensorReading,
+    TrainingLog,
     VoiceCommandLog,
     WalkingPadCollectorSync,
     WalkingPadSession,
     WaterPumpRun,
+    WeeklyReview,
+    WeightLog,
 )
 from app.database.session import SessionLocal
 
@@ -58,6 +61,9 @@ class DbReadService:
             voice = self._voice_rows(session, bounds)
             calendar = self._calendar_rows(session, bounds)
             notifies = self._notify_rows(session, bounds)
+            training = self._training_rows(session, bounds)
+            weights = self._weight_rows(session, bounds)
+            weekly = self._weekly_rows(session, bounds)
             walk_sync = session.get(WalkingPadCollectorSync, "walkingpad")
 
         return {
@@ -79,9 +85,15 @@ class DbReadService:
                 "voice_command_count": len(voice),
                 "calendar_event_count": len(calendar),
                 "notify_dedupe_count": len(notifies),
+                "training_log_count": len(training),
+                "weight_log_count": len(weights),
+                "weekly_review_count": len(weekly),
             },
             "sensor_readings": sensors,
             "walkingpad_sessions": walks,
+            "training_logs": training,
+            "weight_logs": weights,
+            "weekly_reviews": weekly,
             "light_commands": lights,
             "water_pump_runs": pumps,
             "voice_command_logs": voice,
@@ -220,6 +232,70 @@ class DbReadService:
                 "start_at": self._iso(row.start_at),
                 "end_at": self._iso(row.end_at),
                 "is_all_day": row.is_all_day,
+            }
+            for row in rows
+        ]
+
+    def _training_rows(self, session, bounds: DbDayBounds) -> list[dict]:
+        rows = session.scalars(
+            select(TrainingLog)
+            .where(TrainingLog.logged_at >= bounds.start_utc)
+            .where(TrainingLog.logged_at < bounds.end_utc)
+            .order_by(TrainingLog.logged_at)
+        ).all()
+        return [
+            {
+                "id": row.id,
+                "logged_at": self._iso(row.logged_at),
+                "kind": row.kind,
+                "completed": row.completed,
+                "feeling": row.feeling,
+                "note": row.note,
+                "rounds": row.rounds,
+                "duration_minutes": row.duration_minutes,
+                "avg_hr": row.avg_hr,
+                "max_hr": row.max_hr,
+                "distance_km": row.distance_km,
+                "exercises": row.exercises,
+                "source": row.source,
+            }
+            for row in rows
+        ]
+
+    def _weight_rows(self, session, bounds: DbDayBounds) -> list[dict]:
+        rows = session.scalars(
+            select(WeightLog)
+            .where(WeightLog.logged_at >= bounds.start_utc)
+            .where(WeightLog.logged_at < bounds.end_utc)
+            .order_by(WeightLog.logged_at)
+        ).all()
+        return [
+            {
+                "id": row.id,
+                "logged_at": self._iso(row.logged_at),
+                "weight_kg": row.weight_kg,
+                "source": row.source,
+            }
+            for row in rows
+        ]
+
+    def _weekly_rows(self, session, bounds: DbDayBounds) -> list[dict]:
+        rows = session.scalars(
+            select(WeeklyReview)
+            .where(WeeklyReview.week_ending >= bounds.start)
+            .where(WeeklyReview.week_ending <= bounds.end)
+            .order_by(WeeklyReview.week_ending)
+        ).all()
+        return [
+            {
+                "id": row.id,
+                "week_ending": row.week_ending.isoformat(),
+                "logged_at": self._iso(row.logged_at),
+                "weight_kg": row.weight_kg,
+                "previous_weight_kg": row.previous_weight_kg,
+                "note": row.note,
+                "summary": row.summary,
+                "source": row.source,
             }
             for row in rows
         ]

@@ -20,6 +20,8 @@ import { useToday } from './hooks/useClock'
 import { useVoiceMonitor } from './hooks/useVoiceMonitor'
 import { getMotionMode } from './lib/motionMode'
 import { setDisplaySchedule, fetchDashboard } from './lib/api'
+import { DailyBriefingPage } from './pages/DailyBriefingPage'
+import { WorkoutApp } from './pages/WorkoutApp'
 import type { Light, WaterPump, Display } from './types'
 import './styles.css'
 
@@ -288,4 +290,23 @@ function DashboardApp({
   )
 }
 
-createRoot(document.getElementById('root')!).render(<AppShell />)
+function isWorkoutPath() {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/'
+  return path === '/workout' || path.startsWith('/workout/')
+}
+
+function isDailyPath() {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/'
+  return path === '/daily' || path.startsWith('/daily/')
+}
+
+if (isWorkoutPath() || isDailyPath()) document.documentElement.classList.add('is-workout')
+
+function PhoneApp() {
+  if (isDailyPath()) return <DailyBriefingPage />
+  return <WorkoutApp />
+}
+
+createRoot(document.getElementById('root')!).render(
+  isWorkoutPath() || isDailyPath() ? <PhoneApp /> : <AppShell />,
+)

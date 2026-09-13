@@ -24,10 +24,13 @@ from app.domain.voice_commands import VoiceCommandInterpreter
 from app.domain.system_volume import PiVolumeService
 from app.domain.water_pump import WaterPumpService
 from app.domain.walkingpad import WalkingPadService
+from app.domain.training import TrainingService
+from app.domain.weekly import WeeklyService
 from app.domain.db_read import DbReadService
 from app.domain.display import DisplayService
 from app.jobs.display_scheduler import run_display_scheduler
 from app.jobs.sensor_polling import run_sensor_poller
+from app.jobs.sunday_review import run_sunday_review_reminder
 
 
 @asynccontextmanager
@@ -41,6 +44,8 @@ async def lifespan(application: FastAPI):
     application.state.light_service = light_service
     application.state.calendar_bridge_service = CalendarBridgeService()
     application.state.walkingpad_service = WalkingPadService()
+    application.state.training_service = TrainingService()
+    application.state.weekly_service = WeeklyService()
     application.state.db_read_service = DbReadService()
     application.state.notion_service = NotionService()
     application.state.spotify_service = SpotifyService()
@@ -64,6 +69,7 @@ async def lifespan(application: FastAPI):
             notion_service=application.state.notion_service,
             spotify_service=application.state.spotify_service,
             walkingpad_service=application.state.walkingpad_service,
+            training_service=application.state.training_service,
         )
     )
     display_service = DisplayService()
@@ -71,12 +77,14 @@ async def lifespan(application: FastAPI):
     application.state.display_service = display_service
     poller = asyncio.create_task(run_sensor_poller(sensor_service))
     display_scheduler = asyncio.create_task(run_display_scheduler(display_service))
+    sunday_review = asyncio.create_task(run_sunday_review_reminder(application))
     try:
         yield
     finally:
         display_scheduler.cancel()
+        sunday_review.cancel()
         poller.cancel()
-        for task in (display_scheduler, poller):
+        for task in (display_scheduler, sunday_review, poller):
             try:
                 await task
             except asyncio.CancelledError:

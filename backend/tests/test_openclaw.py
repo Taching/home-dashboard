@@ -126,6 +126,34 @@ class OpenClawServiceTests(unittest.TestCase):
 
         self.assertEqual(result, {"delivery_status": "started", "reply": None})
 
+    def test_notify_user_uses_channel_send(self):
+        service = FakeOpenClawService(
+            [{"result": {"deliveryStatus": "sent", "messageId": "1"}}],
+        )
+        service._session_key = lambda: "agent:main:telegram:direct:8188515149"  # type: ignore[method-assign]
+
+        result = service.notify_user("Today: https://example.test/daily/2026-09-13")
+
+        self.assertEqual(result["delivery_status"], "sent")
+        method, params = service.requests[0]
+        self.assertEqual(method, "send")
+        self.assertEqual(params["channel"], "telegram")
+        self.assertEqual(params["target"], "8188515149")
+        self.assertIn("/daily/2026-09-13", params["message"])
+
+    def test_notify_user_fails_without_channel_confirmation(self):
+        service = FakeOpenClawService([{"result": {"deliveryStatus": "queued"}}])
+        service._session_key = lambda: "agent:main:telegram:direct:8188515149"  # type: ignore[method-assign]
+
+        with self.assertRaises(OpenClawError):
+            service.notify_user("Hello")
+
+    def test_target_from_telegram_session_key(self):
+        self.assertEqual(
+            OpenClawService._target_from_session_key("agent:main:telegram:direct:8188515149"),
+            "8188515149",
+        )
+
     def test_send_fails_without_delivery_confirmation(self):
         service = FakeOpenClawService([{"result": {"deliveryStatus": "failed"}}])
 

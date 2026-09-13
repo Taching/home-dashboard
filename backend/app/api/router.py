@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.core.settings import settings
 from app.api.activity_log import log_activity, preview
+from app.domain.training import ExerciseDone
 
 api_router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -352,6 +353,114 @@ class AutomationWalkLogResponse(BaseModel):
     today: WalkingPadTodayResponse | None = None
 
 
+class TrainingBlockResponse(BaseModel):
+    title: str
+    prescription: str | None = None
+    details: list[str] = []
+
+
+class TrainingPlanResponse(BaseModel):
+    slug: str
+    kind: str
+    name: str
+    duration: str
+    category: str
+    summary: str
+    blocks: list[TrainingBlockResponse] = []
+    notes: list[str] = []
+    questions: list[str] = []
+
+
+class TrainingExerciseResponse(BaseModel):
+    name: str
+    done: bool
+
+
+class TrainingLogResponse(BaseModel):
+    id: int
+    logged_at: datetime
+    kind: str
+    completed: str
+    feeling: str | None = None
+    note: str | None = None
+    rounds: str | None = None
+    duration_minutes: float | None = None
+    avg_hr: int | None = None
+    max_hr: int | None = None
+    distance_km: float | None = None
+    exercises: list[TrainingExerciseResponse] = []
+    source: str
+
+
+class TrainingTodayResponse(BaseModel):
+    date: date
+    suggested: list[TrainingPlanResponse]
+    suggested_source: Literal["calendar", "week"]
+    logs: list[TrainingLogResponse] = []
+    sober: TrainingLogResponse | None = None
+    workout_url: str
+
+
+class TrainingPlansResponse(BaseModel):
+    plans: list[TrainingPlanResponse]
+
+
+class TrainingExerciseRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    done: bool = False
+
+
+class TrainingLogRequest(BaseModel):
+    kind: str | None = Field(default=None, max_length=32)
+    completed: str | None = Field(default=None, max_length=16)
+    feeling: str | None = Field(default=None, max_length=16)
+    note: str | None = Field(default=None, max_length=500)
+    rounds: str | None = Field(default=None, max_length=32)
+    duration_minutes: float | None = Field(default=None, gt=0, le=600)
+    avg_hr: int | None = Field(default=None, ge=30, le=230)
+    max_hr: int | None = Field(default=None, ge=30, le=230)
+    distance_km: float | None = Field(default=None, gt=0, le=200)
+    exercises: list[TrainingExerciseRequest] = []
+    message: str | None = Field(default=None, min_length=1, max_length=500)
+
+
+class DailyWorkoutRequest(BaseModel):
+    kind: str | None = Field(default=None, max_length=32)
+    exercises: list[TrainingExerciseRequest] = []
+    note: str | None = Field(default=None, max_length=500)
+
+
+class DailySoberRequest(BaseModel):
+    sober: bool
+    note: str | None = Field(default=None, max_length=500)
+
+
+class DailySundayRequest(BaseModel):
+    weight_kg: float | None = Field(default=None, ge=30, le=250)
+    same_as_last: bool = False
+    note: str | None = Field(default=None, max_length=500)
+
+
+class TrainingLogApiResponse(BaseModel):
+    status: Literal["logged", "failed"]
+    message: str
+    log: TrainingLogResponse | None = None
+
+
+class ManagedTrainingEventResponse(BaseModel):
+    session_id: str
+    title: str
+    start_at: datetime
+    end_at: datetime
+    is_all_day: bool
+    notes: str
+
+
+class ManagedTrainingPlanResponse(BaseModel):
+    calendar_name: str
+    events: list[ManagedTrainingEventResponse]
+
+
 class WeatherDayResponse(BaseModel):
     date: date
     label: str
@@ -577,6 +686,17 @@ async def sync_apple_calendar(
         )
 
 
+@api_router.get("/calendar/apple/training-plan", response_model=ManagedTrainingPlanResponse)
+async def apple_training_plan(request: Request) -> ManagedTrainingPlanResponse:
+    expected = request.app.state.calendar_bridge_service.configured() and settings.apple_calendar_bridge_token
+    provided = request.headers.get("X-Chili-Bridge-Token", "")
+    if not expected or not hmac.compare_digest(provided, expected):
+        raise HTTPException(status_code=401, detail="Invalid calendar bridge token.")
+    return ManagedTrainingPlanResponse.model_validate(
+        request.app.state.training_service.managed_calendar_plan()
+    )
+
+
 def _walkingpad_response(snapshot) -> WalkingPadTodayResponse:
     active = None
     if snapshot.active_session is not None:
@@ -689,6 +809,384 @@ async def automation_walkingpad_log(
     if not _automation_authorized(authorization):
         raise HTTPException(status_code=401, detail="Unauthorized")
     return _log_manual_walk(request, body)
+
+
+def _training_plan_response(plan) -> TrainingPlanResponse:
+    return TrainingPlanResponse(
+        slug=plan.slug,
+        kind=plan.kind,
+        name=plan.name,
+        duration=plan.duration,
+        category=plan.category,
+        summary=plan.summary,
+        blocks=[
+            TrainingBlockResponse(
+                title=block.title,
+                prescription=block.prescription,
+                details=list(block.details),
+            )
+            for block in plan.blocks
+        ],
+        notes=list(plan.notes),
+        questions=list(request_training_questions(plan.kind)),
+    )
+
+
+def request_training_questions(kind: str) -> tuple[str, ...]:
+    from app.domain.training_questions import questions_for
+
+    return questions_for(kind)  # type: ignore[arg-type]
+
+
+def _training_log_response(record) -> TrainingLogResponse:
+    return TrainingLogResponse(
+        id=record.id,
+        logged_at=record.logged_at,
+        kind=record.kind,
+        completed=record.completed,
+        feeling=record.feeling,
+        note=record.note,
+        rounds=record.rounds,
+        duration_minutes=record.duration_minutes,
+        avg_hr=record.avg_hr,
+        max_hr=record.max_hr,
+        distance_km=record.distance_km,
+        exercises=[
+            TrainingExerciseResponse(name=item.name, done=item.done)
+            for item in record.exercises
+        ],
+        source=record.source,
+    )
+
+
+def _today_calendar_events(request: Request) -> list:
+    calendar = getattr(request.app.state, "calendar_bridge_service", None)
+    if calendar is None:
+        return []
+    _, _, events = calendar.today()
+    return events
+
+
+def _log_training(
+    request: Request,
+    body: TrainingLogRequest,
+    *,
+    source: Literal["ui", "openclaw", "automation"],
+) -> TrainingLogApiResponse:
+    service = getattr(request.app.state, "training_service", None)
+    if service is None:
+        return TrainingLogApiResponse(status="failed", message="Training is not configured.")
+    try:
+        if body.message and not body.kind:
+            parsed = service.try_parse_manual_message(body.message)
+            if parsed is None:
+                return TrainingLogApiResponse(
+                    status="failed",
+                    message="Could not parse a training check-in from the message.",
+                )
+            record = service.log_parsed(parsed, source=source)
+        else:
+            if not body.kind or not body.completed:
+                return TrainingLogApiResponse(
+                    status="failed",
+                    message="kind and completed are required unless message is provided.",
+                )
+            record = service.log(
+                kind=body.kind,
+                completed=body.completed,
+                feeling=body.feeling,
+                note=body.note,
+                rounds=body.rounds,
+                duration_minutes=body.duration_minutes,
+                avg_hr=body.avg_hr,
+                max_hr=body.max_hr,
+                distance_km=body.distance_km,
+                exercises=[
+                    ExerciseDone(name=item.name, done=item.done)
+                    for item in body.exercises
+                ] or None,
+                source=source,
+            )
+    except ValueError as error:
+        return TrainingLogApiResponse(status="failed", message=str(error))
+    log_activity(request, "in", "training", f"{record.kind} {record.completed}")
+    return TrainingLogApiResponse(
+        status="logged",
+        message=f"Logged {record.kind}: {record.completed}.",
+        log=_training_log_response(record),
+    )
+
+
+@api_router.get("/training/plans", response_model=TrainingPlansResponse)
+async def training_plans(request: Request) -> TrainingPlansResponse:
+    service = request.app.state.training_service
+    return TrainingPlansResponse(plans=[_training_plan_response(plan) for plan in service.plans()])
+
+
+@api_router.get("/training/plans/{slug}", response_model=TrainingPlanResponse)
+async def training_plan(request: Request, slug: str) -> TrainingPlanResponse:
+    plan = request.app.state.training_service.plan(slug)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Unknown training plan.")
+    return _training_plan_response(plan)
+
+
+@api_router.get("/training/today", response_model=TrainingTodayResponse)
+async def training_today(request: Request) -> TrainingTodayResponse:
+    service = request.app.state.training_service
+    snapshot = service.today(calendar_events=_today_calendar_events(request))
+    suggested = []
+    for kind in snapshot.suggested:
+        plan = service.plan(kind)
+        if plan is not None:
+            suggested.append(_training_plan_response(plan))
+    return TrainingTodayResponse(
+        date=snapshot.date,
+        suggested=suggested,
+        suggested_source=snapshot.suggested_source,
+        logs=[_training_log_response(row) for row in snapshot.logs],
+        sober=_training_log_response(snapshot.sober) if snapshot.sober is not None else None,
+        workout_url=service.public_url("/workout"),
+    )
+
+
+@api_router.post("/training/log", response_model=TrainingLogApiResponse)
+async def training_log(request: Request, body: TrainingLogRequest) -> TrainingLogApiResponse:
+    return _log_training(request, body, source="ui")
+
+
+@api_router.post("/automation/training/log", response_model=TrainingLogApiResponse)
+async def automation_training_log(
+    request: Request,
+    body: TrainingLogRequest,
+    authorization: str | None = Header(default=None),
+) -> TrainingLogApiResponse:
+    if not _automation_authorized(authorization):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return _log_training(request, body, source="automation")
+
+
+def _calendar_day(request: Request, day: date) -> tuple[str, list]:
+    calendar = getattr(request.app.state, "calendar_bridge_service", None)
+    if calendar is None:
+        return "not_configured", []
+    status, _, events = calendar.events_for_range(day, 1)
+    return status, events
+
+
+def _daily_payload(request: Request, day: date, preview: str | None = None) -> dict:
+    training = request.app.state.training_service
+    weekly = request.app.state.weekly_service
+    status, events = _calendar_day(request, day)
+    briefing = training.daily(
+        day,
+        preview=preview,
+        calendar_events=events,
+        calendar_status=status,
+    )
+    sunday = weekly.sunday_check_in(day, training)
+    return {
+        "date": briefing.date.isoformat(),
+        "timezone": briefing.timezone,
+        "workouts": [
+            {
+                "kind": workout.kind,
+                "title": workout.title,
+                "summary": workout.summary,
+                "status": workout.status,
+                "completed": workout.completed,
+                "note": workout.note,
+                "exercises": [
+                    {
+                        "name": item.name,
+                        "prescription": item.prescription,
+                        "details": list(item.details),
+                        "done": item.done,
+                    }
+                    for item in workout.exercises
+                ],
+            }
+            for workout in briefing.workouts
+        ],
+        "calendar": {
+            "status": briefing.calendar_status,
+            "meetings": [
+                {
+                    "title": meeting.title,
+                    "start_at": meeting.start_at.isoformat(),
+                    "end_at": meeting.end_at.isoformat(),
+                    "is_all_day": meeting.is_all_day,
+                }
+                for meeting in briefing.meetings
+            ],
+        },
+        "sobriety": {
+            "days": briefing.sober_days,
+            "answered": briefing.sober_answered,
+            "note": briefing.sober_note,
+        },
+        "sleep": None,
+        "sunday": None
+        if sunday is None
+        else {
+            "week_start": sunday.week_start.isoformat(),
+            "week_ending": sunday.week_ending.isoformat(),
+            "weight_kg": sunday.weight_kg,
+            "previous_weight_kg": sunday.previous_weight_kg,
+            "delta_kg": sunday.delta_kg,
+            "review_note": sunday.review_note,
+            "submitted": sunday.submitted,
+            "sessions": [
+                {
+                    "date": session.date.isoformat(),
+                    "kind": session.kind,
+                    "title": session.title,
+                    "completed": session.completed,
+                    "note": session.note,
+                    "exercises": [
+                        {"name": item.name, "done": item.done}
+                        for item in session.exercises
+                    ],
+                }
+                for session in sunday.sessions
+            ],
+        },
+        "preview": briefing.preview,
+        "daily_url": briefing.daily_url,
+    }
+
+
+def _ask_chili(request: Request, prompt: str) -> str | None:
+    openclaw = getattr(request.app.state, "openclaw_service", None)
+    if openclaw is None or not openclaw.configured():
+        return None
+    try:
+        result = openclaw.send(prompt)
+    except Exception:
+        logger.exception("Sunday Chili review failed")
+        return None
+    if isinstance(result, dict):
+        return result.get("reply")
+    return None
+
+
+def _notify_chili(request: Request, message: str, dedupe_key: str) -> None:
+    openclaw = getattr(request.app.state, "openclaw_service", None)
+    notify_service = getattr(request.app.state, "chili_notify_service", None)
+    if openclaw is None or notify_service is None or not openclaw.configured():
+        return
+    if not notify_service.should_send(dedupe_key):
+        return
+    try:
+        notify = getattr(openclaw, "notify_user", None)
+        result = notify(message) if callable(notify) else openclaw.send(message)
+        delivery = result.get("delivery_status") if isinstance(result, dict) else None
+        if delivery not in {None, "sent", "delivered", "ok"}:
+            raise RuntimeError(f"OpenClaw delivery was {delivery}")
+        notify_service.mark_sent(dedupe_key)
+    except Exception:
+        notify_service.release(dedupe_key)
+        logger.exception("Chili notify failed")
+
+
+@api_router.get("/daily/{day}")
+async def daily_briefing(
+    request: Request,
+    day: str,
+    preview: str | None = Query(default=None),
+) -> dict:
+    return _daily_payload(request, _parse_iso_date(day), preview)
+
+
+@api_router.post("/daily/{day}/workout", response_model=TrainingLogApiResponse)
+async def daily_workout(request: Request, day: str, body: DailyWorkoutRequest) -> TrainingLogApiResponse:
+    parsed = _parse_iso_date(day)
+    training = request.app.state.training_service
+    kind = body.kind
+    if not kind:
+        snapshot = training.for_day(parsed, calendar_events=_calendar_day(request, parsed)[1])
+        kind = snapshot.suggested[0] if snapshot.suggested else None
+    if not kind:
+        return TrainingLogApiResponse(status="failed", message="No workout to log.")
+    try:
+        record = training.log_workout(
+            kind=kind,
+            exercises=[ExerciseDone(name=item.name, done=item.done) for item in body.exercises],
+            note=body.note,
+            source="ui",
+            now=training.stamp_for_day(parsed),
+        )
+    except ValueError as error:
+        return TrainingLogApiResponse(status="failed", message=str(error))
+    log_activity(request, "in", "training", f"{record.kind} {record.completed}")
+    return TrainingLogApiResponse(
+        status="logged",
+        message=f"Logged {record.kind}: {record.completed}.",
+        log=_training_log_response(record),
+    )
+
+
+@api_router.post("/training/workout", response_model=TrainingLogApiResponse)
+async def training_workout(request: Request, body: DailyWorkoutRequest) -> TrainingLogApiResponse:
+    today = request.app.state.training_service.today(
+        calendar_events=_today_calendar_events(request)
+    )
+    return await daily_workout(
+        request,
+        today.date.isoformat(),
+        DailyWorkoutRequest(kind=body.kind, exercises=body.exercises, note=body.note),
+    )
+
+
+@api_router.post("/daily/{day}/sober", response_model=TrainingLogApiResponse)
+async def daily_sober(request: Request, day: str, body: DailySoberRequest) -> TrainingLogApiResponse:
+    parsed = _parse_iso_date(day)
+    training = request.app.state.training_service
+    try:
+        record = training.log_sober(
+            sober=body.sober,
+            note=body.note,
+            source="ui",
+            now=training.stamp_for_day(parsed),
+        )
+    except ValueError as error:
+        return TrainingLogApiResponse(status="failed", message=str(error))
+    log_activity(request, "in", "training", f"sober {record.completed}")
+    return TrainingLogApiResponse(
+        status="logged",
+        message=f"Logged sober: {record.completed}.",
+        log=_training_log_response(record),
+    )
+
+
+@api_router.post("/daily/{day}/sunday")
+async def daily_sunday(request: Request, day: str, body: DailySundayRequest) -> dict:
+    parsed = _parse_iso_date(day)
+    training = request.app.state.training_service
+    weekly = request.app.state.weekly_service
+    try:
+        saved = weekly.save_sunday(
+            parsed,
+            training,
+            weight_kg=body.weight_kg,
+            same_as_last=body.same_as_last,
+            note=body.note,
+            source="ui",
+            now=training.stamp_for_day(parsed),
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    log_activity(request, "in", "training", f"sunday weight {saved.check_in.weight_kg}")
+    _notify_chili(
+        request,
+        saved.notify_message,
+        f"sunday-saved-{parsed.isoformat()}",
+    )
+    advice = _ask_chili(request, saved.review_prompt)
+    payload = _daily_payload(request, parsed)
+    payload["advice"] = advice
+    payload["message"] = saved.notify_message
+    return payload
 
 
 def _parse_iso_date(value: str, field_name: str = "date") -> date:
@@ -808,6 +1306,19 @@ async def send_openclaw_message(
                 reply=result.message,
                 message=result.message,
             )
+    training = getattr(request.app.state, "training_service", None)
+    if training is not None and training.try_parse_manual_message(message) is not None:
+        result = _log_training(
+            request,
+            TrainingLogRequest(message=message),
+            source="openclaw",
+        )
+        if result.status == "logged":
+            return OpenClawSendResponse(
+                status="success",
+                reply=result.message,
+                message=result.message,
+            )
     service = request.app.state.openclaw_service
     if not service.configured():
         return OpenClawSendResponse(status="failed", message="OpenClaw is not configured.")
@@ -834,7 +1345,16 @@ async def chili_notify(request: Request, body: ChiliNotifyRequest) -> ChiliNotif
         return ChiliNotifyResponse(status="skipped")
 
     try:
-        openclaw.send(message)
+        notify = getattr(openclaw, "notify_user", None)
+        if callable(notify):
+            result = notify(message)
+        else:
+            result = openclaw.send(message)
+        delivery = None
+        if isinstance(result, dict):
+            delivery = result.get("delivery_status")
+        if delivery not in {None, "sent", "delivered", "ok"}:
+            raise RuntimeError(f"OpenClaw delivery was {delivery}")
         notify_service.mark_sent(dedupe_key)
         log_activity(request, "out", "chili", message, dedupe_key=dedupe_key)
         return ChiliNotifyResponse(status="sent")
@@ -1097,7 +1617,11 @@ async def automation_water(
 
     if result.status == "failed" and openclaw.configured():
         try:
-            openclaw.send(f"Plant pump failed: {result.message}")
+            notify = getattr(openclaw, "notify_user", None)
+            if callable(notify):
+                notify(f"Plant pump failed: {result.message}")
+            else:
+                openclaw.send(f"Plant pump failed: {result.message}")
         except Exception:
             logger.exception("Could not notify OpenClaw about plant pump failure")
 

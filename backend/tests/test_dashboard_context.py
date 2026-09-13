@@ -87,6 +87,16 @@ class FakeWalkingPad:
         ]
 
 
+class FakeTraining:
+    def context_lines(self, calendar_events=None, now=None):
+        _ = calendar_events, now
+        return [
+            "- Training today (2026-07-04, via calendar): BJJ.",
+            "- Training logs today: none. Sober: not logged.",
+            "- Walks still use POST /api/v1/automation/walkingpad/log — do not duplicate walks here.",
+        ]
+
+
 class DashboardContextProviderTests(unittest.TestCase):
     def test_snapshot_includes_dashboard_data_for_openclaw(self):
         provider = DashboardContextProvider(
@@ -96,6 +106,7 @@ class DashboardContextProviderTests(unittest.TestCase):
             notion_service=FakeNotion(),
             spotify_service=FakeSpotify(),
             walkingpad_service=FakeWalkingPad(),
+            training_service=FakeTraining(),
             now=lambda: datetime(2026, 7, 4, 1, 5, tzinfo=UTC),
         )
 
@@ -107,6 +118,8 @@ class DashboardContextProviderTests(unittest.TestCase):
         self.assertIn("2026-07-04 (Saturday): 1 event(s)", context)
         self.assertIn("Lunch", context)
         self.assertIn("Walking: ready", context)
+        self.assertIn("Training today", context)
+        self.assertIn("do not duplicate walks", context)
         self.assertIn("Tasks: ready", context)
         self.assertIn("Water plants", context)
         self.assertIn("Spotify: ready; playing; Summer Song by The Band", context)

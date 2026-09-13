@@ -67,17 +67,19 @@ bash {baseDir}/scripts/training-control.sh move SESSION_ID ISO_DATETIME_WITH_OFF
 bash {baseDir}/scripts/training-control.sh replace SESSION_ID WORKOUT_TYPE
 bash {baseDir}/scripts/training-control.sh recovery SESSION_ID
 bash {baseDir}/scripts/training-control.sh add-bjj ISO_DATETIME_WITH_OFFSET [normal|hard]
-bash {baseDir}/scripts/training-control.sh confirm-bjj YYYY-MM-DD
-bash {baseDir}/scripts/training-control.sh decline-bjj YYYY-MM-DD
-bash {baseDir}/scripts/training-control.sh fatigue YYYY-MM-DD normal|tired|very_fatigued|pain
-bash {baseDir}/scripts/training-control.sh gym-today YYYY-MM-DD strength_a|strength_b
-bash {baseDir}/scripts/training-control.sh adjust-calendar "NATURAL LANGUAGE INSTRUCTION"
 bash {baseDir}/scripts/training-control.sh metrics SESSION_ID METRICS_JSON
 ```
 
+Natural-language plan changes and the mutate verbs `adjust-calendar`,
+`confirm-bjj`, `decline-bjj`, `fatigue`, `gym-today`, and rest belong on the
+`daily-os` skill (`plan-control.sh`). Do not run those through this script.
+This skill is for competition policy, reading `today` / `week` / `plan`, and
+session status (`start` / `complete` / `partial` / `skip` / `metrics` / `move` /
+`replace`).
+
 When Toshi changes the plan in natural language — “I want Strength A today”,
-“can’t make tomorrow morning”, “rest today”, “move gym to Friday” — run
-`adjust-calendar` with his words. Do not say you cannot rewrite the saved plan.
+“can’t make tomorrow morning”, “rest today”, “move gym to Friday” — use
+`daily-os` `adjust-calendar` with his words. Do not say you cannot rewrite the saved plan.
 The API analyzes the request, mutates `TrainingSession`, rebuilds the remaining
 week, syncs Notion and the Chili Training calendar, then sends a How/Why
 notification in Chili's voice. Do not rewrite that notification into coach-speak.

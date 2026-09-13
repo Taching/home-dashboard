@@ -201,12 +201,14 @@ class WalkingPadService:
         self,
         calendar_events: list[CalendarEvent],
         now: datetime | None = None,
+        snapshot: WalkingPadTodaySnapshot | None = None,
     ) -> WalkReminder:
         current = self._as_utc(now or datetime.now(UTC))
         inactive = WalkReminder(active=False, message="", dedupe_key="")
         if not self.configured():
             return inactive
-        snapshot = self.today(current)
+        if snapshot is None:
+            snapshot = self.today(current)
         if snapshot.goal_met:
             return inactive
         local_now = current.astimezone(self._timezone)

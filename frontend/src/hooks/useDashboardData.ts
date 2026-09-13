@@ -3,18 +3,14 @@ import { addDays } from '../components/PlanningRegion'
 import {
   fetchCalendarEvents,
   fetchDashboard,
-  fetchNotionToday,
-  fetchOpenClawMessages,
   fetchSpotifyNowPlaying,
-  fetchWalkingPadReminder,
   fetchWalkingPadToday,
   fetchWeather,
   fetchDailyPlan,
-  fetchTrainingOverview,
-  openOpenClawMessageStream,
   setSystemVolume,
 } from '../lib/api'
-import type { CalendarToday, DailyBriefing, Dashboard, NotionToday, OpenClawConversation, SpotifyNowPlaying, TrainingOverview, WalkReminder, WalkingPadToday, WeatherForecast } from '../types'
+import { notionFromPlan, trainingOverviewFromPlan, walkReminderFromPlan } from '../lib/dailyPlan'
+import type { CalendarToday, DailyBriefing, Dashboard, NotionToday, SpotifyNowPlaying, TrainingOverview, WalkReminder, WalkingPadToday, WeatherForecast } from '../types'
 import { usePolling } from './usePolling'
 
 /** Calendar API max is 30 days; anchor 7 days before the selected day. */
@@ -72,7 +68,6 @@ export const initialDashboard: Dashboard = {
 export const initialCalendar: CalendarToday = { status: 'not_configured', synced_at: null, events: [] }
 export const initialNotion: NotionToday = { status: 'not_configured', synced_at: null, tasks: [] }
 export const initialSpotify: SpotifyNowPlaying = { status: 'not_configured', synced_at: null, track: null, artist: null, artwork_url: null, device_name: null, is_playing: false }
-export const initialOpenClaw: OpenClawConversation = { status: 'not_configured', messages: [], message: null }
 export const initialWeather: WeatherForecast = { status: 'not_configured', location: '', synced_at: null, today: null, tomorrow: null }
 export const initialWalkingPad: WalkingPadToday = {
   status: 'not_configured',
@@ -98,18 +93,15 @@ export const initialTraining: TrainingOverview = {
 
 const DASHBOARD_REFRESH_MS = 60_000
 const DASHBOARD_FAST_REFRESH_MS = 2_000
-const NOTION_REFRESH_MS = 30_000
 const WALKINGPAD_REFRESH_MS = 30_000
 const CALENDAR_REFRESH_MS = 15 * 60_000
 const WEATHER_REFRESH_MS = 30 * 60_000
-const OPENCLAW_FALLBACK_REFRESH_MS = 5_000
 
 export type DashboardInitialData = {
   dashboard: Dashboard
   calendar: CalendarToday
   notion: NotionToday
   spotify: SpotifyNowPlaying
-  openclaw: OpenClawConversation
   weather: WeatherForecast
   walkingPad?: WalkingPadToday
   walkReminder?: WalkReminder
@@ -123,7 +115,6 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
   const [calendar, setCalendar] = useState(initialData?.calendar ?? initialCalendar)
   const [notion, setNotion] = useState(initialData?.notion ?? initialNotion)
   const [spotify, setSpotify] = useState(initialData?.spotify ?? initialSpotify)
-  const [openclaw, setOpenClaw] = useState(initialData?.openclaw ?? initialOpenClaw)
   const [weather, setWeather] = useState(initialData?.weather ?? initialWeather)
   const [walkingPad, setWalkingPad] = useState(initialData?.walkingPad ?? initialWalkingPad)
   const [walkReminder, setWalkReminder] = useState(initialData?.walkReminder ?? initialWalkReminder)
@@ -133,17 +124,16 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
   const [volumePending, setVolumePending] = useState(false)
   const skipImmediatePoll = Boolean(initialData)
 
-  const refreshNotion = useCallback(async () => {
-    try {
-      setNotion(await fetchNotionToday())
-    } catch {
-      // Keep the last Notion snapshot until the next refresh succeeds.
-    }
+  const applyPlan = useCallback((next: DailyBriefing) => {
+    setPlan(next)
+    setTraining(trainingOverviewFromPlan(next, initialTraining))
+    setNotion(notionFromPlan(next, initialNotion))
+    setWalkReminder(walkReminderFromPlan(next, initialWalkReminder))
   }, [])
 
   const refresh = useCallback(async () => {
     const results = await Promise.allSettled([
-      fetchDashboard(), fetchSpotifyNowPlaying(), fetchTrainingOverview(), fetchDailyPlan(today),
+      fetchDashboard(), fetchSpotifyNowPlaying(), fetchDailyPlan(today),
     ])
     if (results[0].status === 'fulfilled') {
       const value = results[0].value
@@ -153,9 +143,8 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
       })
     }
     if (results[1].status === 'fulfilled') setSpotify(results[1].value)
-    if (results[2].status === 'fulfilled') setTraining(results[2].value)
-    if (results[3].status === 'fulfilled') setPlan(results[3].value)
-  }, [today])
+    if (results[2].status === 'fulfilled') applyPlan(results[2].value)
+  }, [applyPlan, today])
 
   const refreshCalendar = useCallback(async (anchorDate = selectedCalendarDate) => {
     try {
@@ -176,22 +165,9 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
 
   const refreshWalkingPad = useCallback(async () => {
     try {
-      const [todaySnapshot, reminder] = await Promise.all([
-        fetchWalkingPadToday(),
-        fetchWalkingPadReminder(),
-      ])
-      setWalkingPad(todaySnapshot)
-      setWalkReminder(reminder)
+      setWalkingPad(await fetchWalkingPadToday())
     } catch {
       // Keep the last walking snapshot until the next refresh succeeds.
-    }
-  }, [])
-
-  const refreshOpenClaw = useCallback(async () => {
-    try {
-      setOpenClaw(await fetchOpenClawMessages())
-    } catch {
-      setOpenClaw({ status: 'unavailable', messages: [], message: 'OpenClaw is unavailable.' })
     }
   }, [])
 
@@ -218,12 +194,11 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
 
   useEffect(() => {
     if (!plan) {
-      void fetchDailyPlan(today).then(setPlan).catch(() => {
+      void fetchDailyPlan(today).then(applyPlan).catch(() => {
         // Keep the wall up; the next dashboard poll retries the Daily Plan.
       })
     }
-  }, [plan, today])
-  usePolling(refreshNotion, NOTION_REFRESH_MS, !skipImmediatePoll)
+  }, [applyPlan, plan, today])
   usePolling(refreshCalendar, CALENDAR_REFRESH_MS, !skipImmediatePoll)
   usePolling(refreshWeather, WEATHER_REFRESH_MS, !skipImmediatePoll)
   usePolling(refreshWalkingPad, WALKINGPAD_REFRESH_MS, true)
@@ -236,24 +211,11 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
     void refreshCalendar(selectedCalendarDate)
   }, [selectedCalendarDate, refreshCalendar])
 
-  useEffect(() => {
-    if (typeof EventSource === 'undefined') {
-      const interval = window.setInterval(async () => {
-        try { setOpenClaw(await fetchOpenClawMessages()) } catch { /* retry on next interval */ }
-      }, OPENCLAW_FALLBACK_REFRESH_MS)
-      return () => window.clearInterval(interval)
-    }
-
-    const stream = openOpenClawMessageStream(setOpenClaw)
-    return () => stream.close()
-  }, [])
-
   return {
     dashboard,
     calendar,
     notion,
     spotify,
-    openclaw,
     weather,
     walkingPad,
     walkReminder,
@@ -265,7 +227,6 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
     setSelectedCalendarDate,
     refresh,
     refreshCalendar,
-    refreshOpenClaw,
     setVolume,
   }
 }

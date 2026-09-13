@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
+import threading
+import time as time_module
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -25,11 +27,20 @@ class NotionTask:
     task_type: str | None = None
 
 
+CACHE_TTL_SECONDS = 300.0
+NEGATIVE_TTL_SECONDS = 30.0
+
+
 class NotionService:
     def __init__(self, client: httpx.Client | None = None) -> None:
         self._client = client
+        self._owns_client = client is None
         self._timezone = ZoneInfo(settings.timezone)
         self._last_error: str | None = None
+        self._lock = threading.Lock()
+        self._cache: tuple[NotionStatus, datetime | None, list[NotionTask]] | None = None
+        self._cache_at: float | None = None
+        self._failed_at: float | None = None
 
     def configured(self) -> bool:
         return bool(settings.notion_token and (settings.notion_data_source_id or settings.notion_database_id))
@@ -83,27 +94,21 @@ class NotionService:
             "Generated": {"date": {"start": datetime.now(self._timezone).date().isoformat()}},
         }
         children = self._markdown_blocks(content)
-        client = self._client or httpx.Client(timeout=15)
-        close_client = self._client is None
-        try:
-            response = client.post(
-                "https://api.notion.com/v1/pages",
-                headers=self._headers("2026-03-11"),
-                json={
-                    "parent": {"type": "data_source_id", "data_source_id": settings.notion_progress_data_source_id},
-                    "properties": properties,
-                    "children": children,
-                    "icon": {"type": "emoji", "emoji": "📈"},
-                },
-            )
-            response.raise_for_status()
-            page_id = response.json().get("id")
-            if not page_id:
-                raise ValueError("Notion did not return a progress page ID.")
-            return str(page_id)
-        finally:
-            if close_client:
-                client.close()
+        response = self._http().post(
+            "https://api.notion.com/v1/pages",
+            headers=self._headers("2026-03-11"),
+            json={
+                "parent": {"type": "data_source_id", "data_source_id": settings.notion_progress_data_source_id},
+                "properties": properties,
+                "children": children,
+                "icon": {"type": "emoji", "emoji": "📈"},
+            },
+        )
+        response.raise_for_status()
+        page_id = response.json().get("id")
+        if not page_id:
+            raise ValueError("Notion did not return a progress page ID.")
+        return str(page_id)
 
     def _headers(self, notion_version: str) -> dict[str, str]:
         assert settings.notion_token
@@ -133,6 +138,17 @@ class NotionService:
             blocks.append({"object": "block", "type": block_type, block_type: {"rich_text": [{"type": "text", "text": {"content": text}}]}})
         return blocks
 
+    def close(self) -> None:
+        if self._owns_client and self._client is not None:
+            self._client.close()
+            self._client = None
+
+    def _http(self):
+        if self._client is None:
+            self._client = httpx.Client(timeout=15)
+            self._owns_client = True
+        return self._client
+
     def complete(self, page_id: str) -> None:
         if not self.configured():
             raise ValueError("Notion is not configured.")
@@ -142,8 +158,7 @@ class NotionService:
             properties[settings.notion_done_property] = {"checkbox": True}
         if settings.notion_status_property:
             properties[settings.notion_status_property] = {"status": {"name": done_status}}
-        client = self._client or httpx.Client(timeout=15)
-        close_client = self._client is None
+        client = self._http()
         try:
             response = client.patch(
                 f"https://api.notion.com/v1/pages/{page_id}",
@@ -159,30 +174,51 @@ class NotionService:
                 )
             response.raise_for_status()
             self._last_error = None
+            self._invalidate_cache()
         except (httpx.HTTPError, AttributeError, ValueError, KeyError, TypeError) as error:
             self._last_error = str(error) or "Notion could not complete the task."
             raise
-        finally:
-            if close_client:
-                client.close()
 
     def today(self) -> tuple[NotionStatus, datetime | None, list[NotionTask]]:
         if not self.configured():
             return "not_configured", None, []
-        try:
-            pages = self._query_pages()
-            now = datetime.now(self._timezone)
-            today = now.date()
-            tasks = [
-                task for task in (self._page_to_task(page, today) for page in pages)
-                if task is not None
-            ]
-            tasks.sort(key=self._sort_key)
-            self._last_error = None
-            return "ready", datetime.now(UTC), tasks
-        except (httpx.HTTPError, AttributeError, ValueError, KeyError, TypeError) as error:
-            self._last_error = str(error) or "Notion is unavailable."
-            return "unavailable", datetime.now(UTC), []
+        with self._lock:
+            now = time_module.monotonic()
+            if self._cache is not None and self._cache_at is not None and now - self._cache_at < CACHE_TTL_SECONDS:
+                return self._cache
+            if (
+                self._cache is None
+                and self._failed_at is not None
+                and now - self._failed_at < NEGATIVE_TTL_SECONDS
+            ):
+                return "unavailable", datetime.now(UTC), []
+            try:
+                pages = self._query_pages()
+                local_today = datetime.now(self._timezone).date()
+                tasks = [
+                    task for task in (self._page_to_task(page, local_today) for page in pages)
+                    if task is not None
+                ]
+                tasks.sort(key=self._sort_key)
+                snapshot: tuple[NotionStatus, datetime | None, list[NotionTask]] = (
+                    "ready", datetime.now(UTC), tasks,
+                )
+                self._last_error = None
+                self._cache = snapshot
+                self._cache_at = now
+                self._failed_at = None
+                return snapshot
+            except (httpx.HTTPError, AttributeError, ValueError, KeyError, TypeError) as error:
+                self._last_error = str(error) or "Notion is unavailable."
+                if self._cache is not None:
+                    return self._cache
+                self._failed_at = now
+                return "unavailable", datetime.now(UTC), []
+
+    def _invalidate_cache(self) -> None:
+        self._cache = None
+        self._cache_at = None
+        self._failed_at = None
 
     def _query_pages(self) -> list[JsonDict]:
         assert settings.notion_token
@@ -192,26 +228,20 @@ class NotionService:
         else:
             url = f"https://api.notion.com/v1/databases/{settings.notion_database_id}/query"
             notion_version = "2022-06-28"
-        client = self._client or httpx.Client(timeout=15)
-        close_client = self._client is None
-        try:
-            response = client.post(
-                url,
-                headers={
-                    "Authorization": f"Bearer {settings.notion_token}",
-                    "Notion-Version": notion_version,
-                    "Content-Type": "application/json",
-                },
-                json={"page_size": 100},
-            )
-            response.raise_for_status()
-            payload = response.json()
-            if not isinstance(payload, dict):
-                return []
-            return [page for page in as_list(payload.get("results")) if isinstance(page, dict)]
-        finally:
-            if close_client:
-                client.close()
+        response = self._http().post(
+            url,
+            headers={
+                "Authorization": f"Bearer {settings.notion_token}",
+                "Notion-Version": notion_version,
+                "Content-Type": "application/json",
+            },
+            json={"page_size": 100},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            return []
+        return [page for page in as_list(payload.get("results")) if isinstance(page, dict)]
 
     def _sort_key(self, task: NotionTask) -> tuple[int, bool, datetime, str]:
         return (

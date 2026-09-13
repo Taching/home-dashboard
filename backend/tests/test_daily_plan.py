@@ -65,9 +65,20 @@ class FakeTraining:
 
     def overview(self, now=None):
         return {
+            "generated_at": "2026-09-14T07:00:00+09:00",
+            "phase": "build_october",
+            "week_start": "2026-09-14",
             "week": [dict(self.session)],
+            "upcoming": [dict(self.session)],
+            "countdowns": [{
+                "id": "oct", "name": "All Japan", "start_date": "2026-10-10",
+                "end_date": "2026-10-11", "days_remaining": 26,
+            }],
+            "compliance": {"bjj": {"completed": 0, "target": 3}},
             "week_quality": "good",
             "bjj_candidates": [],
+            "trends": {"bike_decay": [], "bjj_capacity": [], "weight_7d_average": 81.4},
+            "readiness": {"date": "2026-09-14", "level": "normal", "weight_kg": 81.2},
             "tomorrow_prescription": {
                 "session": self.session["planned_type"],
                 "time": "07:30",
@@ -102,6 +113,19 @@ class FakeTraining:
         self.reconciled += 1
 
 
+class FakeWalking:
+    def today(self, now=None):
+        return SimpleNamespace(goal_met=False, total_steps=2500, goal_steps=10000)
+
+    def reminder(self, events, now=None, snapshot=None):
+        self.snapshot = snapshot
+        return SimpleNamespace(
+            active=True,
+            message="You've walked 2,500 of 10,000 steps today.",
+            dedupe_key="walk:window:2026-09-14:meeting-1",
+        )
+
+
 class FakeNotion:
     def __init__(self):
         self.completed = []
@@ -131,6 +155,7 @@ class DailyPlanTests(unittest.TestCase):
         self.app.state.training_service = FakeTraining()
         self.app.state.notion_service = FakeNotion()
         self.app.state.weekly_service = SimpleNamespace(sunday_check_in=lambda day, training: None)
+        self.app.state.walkingpad_service = FakeWalking()
         self.client = TestClient(self.app)
         self.service = DailyPlanService("Asia/Tokyo")
 
@@ -144,6 +169,16 @@ class DailyPlanTests(unittest.TestCase):
         self.assertEqual(plan["tomorrow"]["week_quality"], "good")
         self.assertIn(plan["advice_window"], {"morning", "lunch", "evening"})
         self.assertEqual(daily["advice_window"], plan["advice_window"])
+        self.assertEqual(plan["phase"], "build_october")
+        self.assertEqual(plan["week_start"], "2026-09-14")
+        self.assertEqual(plan["week"][0]["planned_type"], "strength_a")
+        self.assertEqual(plan["upcoming"][0]["title"], "Strength A + Intervals")
+        self.assertEqual(plan["countdowns"][0]["id"], "oct")
+        self.assertEqual(plan["trends"]["weight_7d_average"], 81.4)
+        self.assertEqual(plan["readiness"]["weight_kg"], 81.2)
+        self.assertEqual(plan["walk_reminder"]["dedupe_key"], "walk:window:2026-09-14:meeting-1")
+        self.assertTrue(plan["walk_reminder"]["active"])
+        self.assertEqual(self.app.state.walkingpad_service.snapshot.total_steps, 2500)
 
     def test_rest_today_replaces_and_returns_plan(self):
         result = self.service.rest_today(self.app.state.training_service, self.day)

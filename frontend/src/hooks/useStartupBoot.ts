@@ -3,21 +3,20 @@ import { dayKey } from '../components/PlanningRegion'
 import {
   fetchCalendarEvents,
   fetchDashboard,
-  fetchNotionToday,
-  fetchOpenClawMessages,
+  fetchDailyPlan,
   fetchSpotifyNowPlaying,
   fetchWeather,
-  fetchTrainingOverview,
 } from '../lib/api'
-import type { IntegrationStatus } from '../types'
+import { notionFromPlan, trainingOverviewFromPlan, walkReminderFromPlan } from '../lib/dailyPlan'
+import type { DailyBriefing, IntegrationStatus } from '../types'
 import type { DashboardInitialData } from './useDashboardData'
 import {
   initialCalendar,
   initialDashboard,
   initialNotion,
-  initialOpenClaw,
   initialSpotify,
   initialTraining,
+  initialWalkReminder,
   initialWeather,
 } from './useDashboardData'
 
@@ -41,9 +40,8 @@ const FADE_MS = 400
 const CHECK_DEFS = [
   { id: 'backend', label: 'Backend' },
   { id: 'calendar', label: 'Calendar bridge' },
-  { id: 'notion', label: 'Notion' },
+  { id: 'plan', label: 'Daily plan' },
   { id: 'spotify', label: 'Spotify' },
-  { id: 'openclaw', label: 'OpenClaw' },
   { id: 'weather', label: 'Weather' },
 ] as const
 
@@ -72,8 +70,10 @@ type ServiceCheckResult = {
   calendar?: typeof initialCalendar
   notion?: typeof initialNotion
   spotify?: typeof initialSpotify
-  openclaw?: typeof initialOpenClaw
   weather?: typeof initialWeather
+  plan?: DailyBriefing | null
+  training?: typeof initialTraining
+  walkReminder?: typeof initialWalkReminder
 }
 
 async function runBackendCheck(): Promise<{ check: CheckResult, dashboard: typeof initialDashboard }> {
@@ -100,18 +100,30 @@ async function runCalendarCheck(today: string): Promise<{ check: CheckResult, ca
   }
 }
 
-async function runNotionCheck(): Promise<{ check: CheckResult, notion: typeof initialNotion }> {
+async function runPlanCheck(today: string): Promise<{
+  check: CheckResult
+  plan: DailyBriefing | null
+  training: typeof initialTraining
+  notion: typeof initialNotion
+  walkReminder: typeof initialWalkReminder
+}> {
   try {
-    const notion = await fetchNotionToday()
+    const plan = await fetchDailyPlan(today)
     return {
-      check: {
-        state: integrationState(notion.status),
-        detail: notion.status === 'not_configured' ? 'Optional' : undefined,
-      },
-      notion,
+      check: { state: 'ok' },
+      plan,
+      training: trainingOverviewFromPlan(plan, initialTraining),
+      notion: notionFromPlan(plan, initialNotion),
+      walkReminder: walkReminderFromPlan(plan, initialWalkReminder),
     }
   } catch {
-    return { check: { state: 'failed', detail: 'Unreachable' }, notion: initialNotion }
+    return {
+      check: { state: 'failed', detail: 'Unreachable' },
+      plan: null,
+      training: initialTraining,
+      notion: initialNotion,
+      walkReminder: initialWalkReminder,
+    }
   }
 }
 
@@ -127,24 +139,6 @@ async function runSpotifyCheck(): Promise<{ check: CheckResult, spotify: typeof 
     }
   } catch {
     return { check: { state: 'failed', detail: 'Unreachable' }, spotify: initialSpotify }
-  }
-}
-
-async function runOpenClawCheck(): Promise<{ check: CheckResult, openclaw: typeof initialOpenClaw }> {
-  try {
-    const openclaw = await fetchOpenClawMessages()
-    return {
-      check: {
-        state: integrationState(openclaw.status),
-        detail: openclaw.status === 'not_configured' ? 'Optional' : undefined,
-      },
-      openclaw,
-    }
-  } catch {
-    return {
-      check: { state: 'failed', detail: 'Unreachable' },
-      openclaw: { status: 'unavailable', messages: [], message: 'OpenClaw is unavailable.' },
-    }
   }
 }
 
@@ -187,9 +181,8 @@ export function useStartupBoot() {
       switch (id) {
         case 'backend': return runBackendCheck()
         case 'calendar': return runCalendarCheck(today)
-        case 'notion': return runNotionCheck()
+        case 'plan': return runPlanCheck(today)
         case 'spotify': return runSpotifyCheck()
-        case 'openclaw': return runOpenClawCheck()
         case 'weather': return runWeatherCheck()
         default: return null
       }
@@ -203,9 +196,10 @@ export function useStartupBoot() {
       let calendar = initialCalendar
       let notion = initialNotion
       let spotify = initialSpotify
-      let openclaw = initialOpenClaw
       let weather = initialWeather
       let training = initialTraining
+      let plan: DailyBriefing | null = null
+      let walkReminder = initialWalkReminder
       const results = new Map<string, CheckResult>()
 
       const applyResult = (id: string, result: ServiceCheckResult | null) => {
@@ -219,8 +213,10 @@ export function useStartupBoot() {
         if (result.calendar) calendar = result.calendar
         if (result.notion) notion = result.notion
         if (result.spotify) spotify = result.spotify
-        if (result.openclaw) openclaw = result.openclaw
         if (result.weather) weather = result.weather
+        if (result.plan) plan = result.plan
+        if (result.training) training = result.training
+        if (result.walkReminder) walkReminder = result.walkReminder
         results.set(id, result.check)
         updateCheck(id, result.check)
       }
@@ -232,11 +228,6 @@ export function useStartupBoot() {
       }
 
       await runAll()
-      try {
-        training = await fetchTrainingOverview()
-      } catch {
-        training = initialTraining
-      }
 
       for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
         const failed = CHECK_DEFS.filter((def) => results.get(def.id)?.state === 'failed')
@@ -269,9 +260,10 @@ export function useStartupBoot() {
         calendar,
         notion,
         spotify,
-        openclaw,
         weather,
         training,
+        plan,
+        walkReminder,
         selectedCalendarDate: resolveSelectedCalendarDate(calendar, today),
       })
       setPhase('fading')

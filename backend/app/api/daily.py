@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.core.settings import settings
 from app.domain.daily_plan import DailyPlanService, preview_workout_dict
 from app.domain.training.adjust import CalendarAdjuster
-from app.domain.training.review import local_workout_review, workout_review_prompt
+from app.domain.training.review import local_workout_review
 
 
 daily_router = APIRouter()
@@ -109,19 +109,6 @@ def _briefing(request: Request, day: date, preview_workout: str | None = None) -
     )
 
 
-def _ask_chili(request: Request, prompt: str) -> str | None:
-    openclaw = getattr(request.app.state, "openclaw_service", None)
-    if openclaw is None or not openclaw.configured():
-        return None
-    try:
-        result = openclaw.send(prompt)
-    except Exception:
-        return None
-    if isinstance(result, dict):
-        return result.get("reply")
-    return None
-
-
 def review_logged_workout(
     request: Request,
     day: date,
@@ -133,17 +120,14 @@ def review_logged_workout(
 ) -> str:
     training = getattr(request.app.state, "training_service", None)
     overview = training.overview() if training is not None and hasattr(training, "overview") else {}
-    prompt = workout_review_prompt(
-        session=session, kind=kind, note=note, exercises=exercises, overview=overview,
-    )
-    advice = _ask_chili(request, prompt) or local_workout_review(
+    advice = local_workout_review(
         session=session, kind=kind, note=note, overview=overview,
     )
     wellbeing = getattr(request.app.state, "wellbeing_service", None)
     if wellbeing is not None:
         wellbeing.store_advice(day, advice)
     session_id = (session or {}).get("id") or day.isoformat()
-    _notify_chili(request, advice, f"workout-review:{session_id}")
+    _notify_chili(request, f"{_daily_url(day)}\n\n{advice}", f"workout-review:{session_id}")
     return advice
 
 
@@ -249,11 +233,7 @@ def daily_sunday(request: Request, day: date, body: DailySundayRequest) -> dict:
         source="daily-page",
     )
     _notify_chili(request, saved.notify_message, f"sunday-saved-{day.isoformat()}")
-    advice = _ask_chili(request, saved.review_prompt)
-    if advice:
-        request.app.state.wellbeing_service.store_advice(day, advice)
     payload = _briefing(request, day)
-    payload["advice"] = advice or payload.get("advice")
     payload["message"] = saved.notify_message
     return payload
 

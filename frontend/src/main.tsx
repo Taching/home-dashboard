@@ -2,7 +2,6 @@ import { useMemo } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Header } from './components/Header'
 import { MediaRegion } from './components/MediaRegion'
-import { OpenClawChat } from './components/OpenClawChat'
 import { addDays, PlanningRegion, TaskRegion } from './components/PlanningRegion'
 import { ChiliAdvice } from './components/TodayHero'
 import { StartupSplash } from './components/StartupSplash'
@@ -55,7 +54,6 @@ function DashboardApp({
     calendar,
     notion,
     spotify,
-    openclaw,
     weather,
     walkingPad,
     walkReminder,
@@ -70,7 +68,7 @@ function DashboardApp({
     calendar,
     notion,
     spotify,
-    openclaw,
+    openclaw: { status: 'not_configured', messages: [], message: null },
     voiceStatus: { state: 'offline', updated_at: null, transcript: null, message: null },
     spotifyIntentToken: 0,
     walkReminder,
@@ -100,7 +98,6 @@ function DashboardApp({
       <div className="dashboard-workspace">
         <aside className="environment-region" aria-label="Chili's advice, assistant activity, and music">
           <ChiliAdvice plan={plan} />
-          <OpenClawChat conversation={openclaw} />
           <MediaRegion spotify={spotify} />
         </aside>
         <PlanningRegion

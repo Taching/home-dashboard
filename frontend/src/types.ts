@@ -411,6 +411,7 @@ export type DailyPlanItem = {
   is_overdue?: boolean
   priority?: string | null
   task_type?: string | null
+  status?: string | null
   kind?: string
   detail?: string
 }
@@ -436,6 +437,7 @@ export type DailyBriefing = {
   workouts?: DailyWorkout[]
   calendar: {
     status: IntegrationStatus
+    synced_at?: string | null
     meetings: DailyMeeting[]
   }
   sobriety: {
@@ -453,6 +455,18 @@ export type DailyBriefing = {
   today?: DailyPlanDay
   tomorrow?: DailyPlanDay
   last_adjustment?: PlanAdjustment | null
+  generated_at?: string
+  phase?: string
+  week_start?: string
+  week?: TrainingSession[]
+  upcoming?: TrainingSession[]
+  countdowns?: TrainingOverview['countdowns']
+  compliance?: TrainingWeeklyStatus
+  week_quality?: string | null
+  bjj_candidates?: BjjCandidate[]
+  trends?: TrainingOverview['trends'] | null
+  readiness?: TrainingOverview['readiness']
+  walk_reminder?: WalkReminder
 }
 
 export type TrainingLogResult = {

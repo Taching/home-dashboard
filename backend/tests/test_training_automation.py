@@ -10,8 +10,10 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.router import api_router
 from app.database.session import Base
+from app.database import models  # noqa: F401
 from app.domain.activity_feed import ActivityFeedService
 from app.domain.calendar_bridge import CalendarBridgeService, CalendarEvent
+from app.domain.chili_notify import ChiliNotifyService
 from app.domain.training_logs import TrainingService
 from app.domain.walkingpad import WalkingPadService
 from app.domain.weekly import WeeklyService
@@ -71,11 +73,20 @@ class FakePlanner:
 
 
 class FakeOpenClaw:
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+        self.notified: list[str] = []
+
     def configured(self) -> bool:
         return True
 
     def send(self, message: str) -> dict[str, str | None]:
+        self.sent.append(message)
         return {"delivery_status": "started", "reply": f"forwarded:{message}"}
+
+    def notify_user(self, message: str) -> dict[str, str | None]:
+        self.notified.append(message)
+        return {"delivery_status": "sent", "reply": None}
 
 
 class TrainingAutomationApiTests(unittest.TestCase):
@@ -100,6 +111,7 @@ class TrainingAutomationApiTests(unittest.TestCase):
             bridge_token="calendar-token",
         )
         self.app.state.openclaw_service = FakeOpenClaw()
+        self.app.state.chili_notify_service = ChiliNotifyService(factory)
         self.client = TestClient(self.app)
         self.token = "automation-token"
 
@@ -202,7 +214,14 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(workout.status_code, 200)
         self.assertEqual(workout.json()["status"], "logged")
         self.assertIn("Strength A", workout.json()["message"])
-        self.assertTrue(workout.json()["advice"])
+        advice = workout.json()["advice"]
+        self.assertTrue(advice)
+        self.assertNotIn("/daily/", advice)
+        self.assertEqual(self.app.state.openclaw_service.sent, [])
+        self.assertEqual(len(self.app.state.openclaw_service.notified), 1)
+        notify = self.app.state.openclaw_service.notified[0]
+        self.assertTrue(notify.startswith("http://127.0.0.1:8080/daily/2026-09-15\n\n"))
+        self.assertIn(advice, notify)
         sober = self.client.post(
             "/api/v1/daily/2026-09-15/sober",
             json={"sober": True, "note": "evening"},
@@ -230,6 +249,10 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(body["sunday"]["previous_weight_kg"], 82.8)
         self.assertEqual(body["sunday"]["delta_kg"], -0.4)
         self.assertIn("down 0.4 kg", body["message"])
+        self.assertEqual(self.app.state.openclaw_service.sent, [])
+        self.assertTrue(any(item.startswith("http://127.0.0.1:8080/daily/2026-09-13") for item in self.app.state.openclaw_service.notified))
+        self.assertNotEqual(body["advice"], body["message"])
+        self.assertNotIn("/daily/", body["advice"] or "")
 
     def test_workout_page_log_completes_planner_and_returns_advice(self) -> None:
         response = self.client.post(

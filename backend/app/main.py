@@ -109,6 +109,9 @@ async def lifespan(application: FastAPI):
                 await task
             except asyncio.CancelledError:
                 pass
+        closer = getattr(application.state.notion_service, "close", None)
+        if callable(closer):
+            closer()
 
 
 app = FastAPI(

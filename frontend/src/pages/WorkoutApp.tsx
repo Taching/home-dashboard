@@ -1,8 +1,8 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import chiliLogo from '../assets/chili-logo.svg'
-import { fetchTrainingPlan, fetchTrainingPlans, fetchTrainingToday, logDailyWorkout, logWorkout } from '../lib/api'
+import { fetchDailyBriefing, fetchTrainingPlan, fetchTrainingPlans, logDailyWorkout } from '../lib/api'
 import { formatDate } from '../lib/format'
-import type { TrainingKind, TrainingLog, TrainingPlan, TrainingToday } from '../types'
+import type { DailyBriefing, PlannedWorkout, TrainingKind, TrainingPlan } from '../types'
 import '../workout.css'
 
 function workoutPath() {
@@ -15,16 +15,43 @@ function planSlugFromPath(path: string) {
 }
 
 function todayStamp() {
-  const now = new Date()
-  const offset = now.getTimezoneOffset() * 60_000
-  return new Date(now.getTime() - offset).toISOString().slice(0, 10)
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' })
 }
 
-function logSummary(log: TrainingLog) {
-  const bits: string[] = [log.completed]
-  const done = (log.exercises ?? []).filter((item) => item.done).map((item) => item.name)
-  if (done.length) bits.push(done.join(', '))
-  return bits.join(' · ')
+function normalizeKind(kind: string | undefined) {
+  const value = (kind || '').toLowerCase()
+  if (value === 'zone_2') return 'zone2'
+  return value
+}
+
+function kindsMatch(planned: string | undefined, logged: string | undefined) {
+  const plannedKind = normalizeKind(planned)
+  const loggedKind = normalizeKind(logged)
+  if (!loggedKind) return true
+  if (loggedKind === 'bjj') return plannedKind.startsWith('bjj') || plannedKind === 'competition'
+  if (loggedKind === 'rest') return plannedKind === 'rest' || plannedKind === 'recovery'
+  return plannedKind === loggedKind
+}
+
+function workoutAlreadyLogged(status: string) {
+  return ['completed', 'partial', 'skipped'].includes(status)
+}
+
+function exerciseDone(name: string, doneByName: Map<string, boolean>) {
+  if (doneByName.has(name)) return Boolean(doneByName.get(name))
+  const needle = name.toLowerCase()
+  for (const [key, value] of doneByName) {
+    const hay = key.toLowerCase()
+    if (hay === needle || hay.includes(needle) || needle.includes(hay)) return Boolean(value)
+  }
+  return false
+}
+
+function slugForType(type: string) {
+  if (type === 'zone_2') return 'zone2'
+  if (type === 'bjj_hard') return 'bjj_hard'
+  if (type.startsWith('bjj_')) return 'bjj'
+  return type
 }
 
 export function WorkoutApp() {
@@ -42,15 +69,16 @@ export function WorkoutApp() {
 }
 
 function TodayPage() {
-  const [today, setToday] = useState<TrainingToday | null>(null)
+  const [briefing, setBriefing] = useState<DailyBriefing | null>(null)
   const [plans, setPlans] = useState<TrainingPlan[]>([])
   const [error, setError] = useState<string | null>(null)
-  const day = today?.date ?? todayStamp()
+  const day = briefing?.date ?? todayStamp()
+  const workout = briefing?.workout
 
   const load = () => {
-    Promise.all([fetchTrainingToday(), fetchTrainingPlans()])
-      .then(([nextToday, nextPlans]) => {
-        setToday(nextToday)
+    Promise.all([fetchDailyBriefing(day), fetchTrainingPlans()])
+      .then(([nextBriefing, nextPlans]) => {
+        setBriefing(nextBriefing)
         setPlans(nextPlans)
         setError(null)
       })
@@ -61,12 +89,17 @@ function TodayPage() {
     load()
   }, [])
 
+  const suggestedSlug = workout && workout.planned_type !== 'rest' ? slugForType(workout.planned_type) : null
+  const suggested = useMemo(
+    () => plans.filter((plan) => plan.kind !== 'sober' && suggestedSlug === plan.slug),
+    [plans, suggestedSlug],
+  )
   const extraPlans = useMemo(() => {
-    const suggested = new Set((today?.suggested ?? []).map((plan) => plan.slug))
-    return plans.filter((plan) => plan.kind !== 'sober' && !suggested.has(plan.slug))
-  }, [plans, today])
+    return plans.filter((plan) => plan.kind !== 'sober' && plan.slug !== suggestedSlug)
+  }, [plans, suggestedSlug])
 
-  const headingDate = today ? formatDate(new Date(`${today.date}T12:00:00`)) : 'Today'
+  const headingDate = briefing ? formatDate(new Date(`${briefing.date}T12:00:00`)) : 'Today'
+  const logged = workout && workoutAlreadyLogged(workout.status)
 
   return (
     <div className="workout-page">
@@ -80,37 +113,33 @@ function TodayPage() {
       <section className="workout-hero">
         <p>Today</p>
         <h1>{headingDate}</h1>
-        <span>
-          {today?.suggested_source === 'calendar' ? 'From Chili Training calendar' : 'Week plan fallback'}
-        </span>
+        <span>{workout ? workout.title : 'No prescribed session'}</span>
       </section>
       {error && <p className="workout-status">{error}</p>}
       <section className="workout-section">
         <h2>Suggested</h2>
-        {(today?.suggested ?? []).map((plan) => (
+        {suggested.map((plan) => (
           <a key={plan.slug} className="workout-plan-link" href={`/workout/${plan.slug}`}>
             <strong>{plan.name}</strong>
             <span>{plan.duration} · {plan.summary}</span>
           </a>
         ))}
-        {!today?.suggested.length && <p className="workout-empty">No suggested session.</p>}
+        {!suggested.length && <p className="workout-empty">No suggested session.</p>}
       </section>
-      {today && today.logs.filter((log) => log.kind !== 'sober').length > 0 && (
+      {logged && workout && (
         <section className="workout-section">
           <h2>Logged today</h2>
-          {today.logs.filter((log) => log.kind !== 'sober').map((log) => (
-            <div key={log.id} className="workout-log">
-              <strong>{log.kind.replaceAll('_', ' ')}</strong>
-              <span>{logSummary(log)}</span>
-              {log.note && <span>{log.note}</span>}
-            </div>
-          ))}
+          <div className="workout-log">
+            <strong>{workout.title}</strong>
+            <span>{workout.status}</span>
+            {workout.notes && <span>{workout.notes}</span>}
+          </div>
         </section>
       )}
-      {today?.advice && (
+      {briefing?.advice && (
         <section className="workout-section workout-chili">
           <h2>Chili</h2>
-          <p className="workout-advice">{today.advice}</p>
+          <p className="workout-advice">{briefing.advice}</p>
         </section>
       )}
       <section className="workout-section">
@@ -135,46 +164,26 @@ function TodayPage() {
 
 function PlanPage({ slug }: { slug: string }) {
   const [plan, setPlan] = useState<TrainingPlan | null>(null)
-  const [today, setToday] = useState<TrainingToday | null>(null)
+  const [session, setSession] = useState<PlannedWorkout | null>(null)
+  const [advice, setAdvice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [syncing, setSyncing] = useState(false)
-  const synced = useRef(false)
+  const day = todayStamp()
 
   useEffect(() => {
-    Promise.all([fetchTrainingPlan(slug), fetchTrainingToday()])
-      .then(([next, nextToday]) => {
+    Promise.all([fetchTrainingPlan(slug), fetchDailyBriefing(day)])
+      .then(([next, briefing]) => {
         setPlan(next)
-        setToday(nextToday)
+        const workout = briefing.workout
+        setSession(workout && kindsMatch(workout.planned_type, next.kind) ? workout : null)
+        setAdvice(briefing.advice ?? null)
         setError(null)
         document.title = `${next.name} · Chili`
       })
       .catch(() => setError('Unknown session.'))
-  }, [slug])
+  }, [day, slug])
 
-  const existing = today?.logs.find((log) => log.kind === plan?.kind)
-
-  useEffect(() => {
-    if (!plan || !existing || synced.current) return
-    if (today?.planner_status && today.planner_status !== 'planned') return
-    synced.current = true
-    setSyncing(true)
-    void logWorkout({
-      kind: plan.kind,
-      exercises: existing.exercises,
-      note: existing.note ?? undefined,
-    })
-      .then((result) => {
-        if (result.status === 'logged') {
-          setToday((current) => (
-            current
-              ? { ...current, advice: result.advice ?? current.advice, planner_status: 'completed' }
-              : current
-          ))
-        }
-      })
-      .finally(() => setSyncing(false))
-  }, [plan, existing, today?.planner_status])
-  const doneByName = new Map((existing?.exercises ?? []).map((item) => [item.name, item.done]))
+  const saved = Boolean(session && workoutAlreadyLogged(session.status))
+  const doneByName = new Map((session?.exercises ?? []).map((item) => [item.name, Boolean(item.done)]))
 
   return (
     <div className="workout-page">
@@ -195,23 +204,23 @@ function PlanPage({ slug }: { slug: string }) {
           </section>
           <WorkoutCheckForm
             kind={plan.kind}
+            day={day}
             items={plan.blocks.length > 0
               ? plan.blocks.map((block) => ({
                   name: block.title,
                   prescription: block.prescription,
                   details: block.details,
-                  done: Boolean(doneByName.get(block.title)),
+                  done: exerciseDone(block.title, doneByName),
                 }))
               : [{
                   name: plan.kind === 'rest' ? 'Full rest' : plan.name,
                   prescription: null,
                   details: [],
-                  done: Boolean(existing),
+                  done: saved,
                 }]}
-            initialNote={existing?.note ?? ''}
-            initialSaved={Boolean(existing)}
-            initialAdvice={today?.advice ?? null}
-            reviewing={syncing}
+            initialNote={session?.notes ?? ''}
+            initialSaved={saved}
+            initialAdvice={advice}
           />
           {plan.notes.length > 0 && (
             <section className="workout-section">
@@ -235,16 +244,14 @@ export function WorkoutCheckForm({
   initialNote = '',
   initialSaved = false,
   initialAdvice = null,
-  reviewing = false,
 }: {
   kind: TrainingKind
   items: { name: string; prescription: string | null; details: string[]; done: boolean }[]
-  day?: string
+  day: string
   onLogged?: () => void
   initialNote?: string
   initialSaved?: boolean
   initialAdvice?: string | null
-  reviewing?: boolean
 }) {
   const [done, setDone] = useState<Record<string, boolean>>(
     Object.fromEntries(items.map((item) => [item.name, item.done])),
@@ -275,8 +282,7 @@ export function WorkoutCheckForm({
       note: note.trim() || undefined,
     }
     setPending(true)
-    const request = day ? logDailyWorkout(day, payload) : logWorkout(payload)
-    void request
+    void logDailyWorkout(day, payload)
       .then((result) => {
         setStatus(result.message)
         if (result.status === 'logged') {
@@ -302,7 +308,6 @@ export function WorkoutCheckForm({
           ))}
         </div>
         {note.trim() && <p className="workout-status">{note}</p>}
-        {reviewing && !advice && <p className="workout-status">Chili is reading the week…</p>}
         {advice && (
           <div className="workout-chili">
             <h2>Chili</h2>
@@ -344,7 +349,7 @@ export function WorkoutCheckForm({
             placeholder="Felt easy, squat was heavy, skipped the last interval…"
           />
         </label>
-        <button type="submit" disabled={pending}>{pending ? 'Asking Chili…' : 'Submit workout'}</button>
+        <button type="submit" disabled={pending}>{pending ? 'Saving…' : 'Submit workout'}</button>
         {status && <p className="workout-status">{status}</p>}
       </form>
     </section>

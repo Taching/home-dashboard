@@ -1,4 +1,6 @@
 from datetime import UTC, date, datetime
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -8,11 +10,28 @@ from app.domain.notion import NotionService
 
 
 class FakeClient:
-    def __init__(self, pages):
+    def __init__(self, pages, fail_after=None, patch_status=200):
         self.pages = pages
+        self.posts = 0
+        self.patches = 0
+        self.fail_after = fail_after
+        self.patch_status = patch_status
+        self._lock = threading.Lock()
 
     def post(self, *args, **kwargs):
+        with self._lock:
+            self.posts += 1
+            count = self.posts
+        if self.fail_after is not None and count > self.fail_after:
+            raise httpx.ConnectError("notion down")
         return httpx.Response(200, json={"results": self.pages}, request=httpx.Request("POST", "https://api.notion.com"))
+
+    def patch(self, *args, **kwargs):
+        self.patches += 1
+        request = httpx.Request("PATCH", "https://api.notion.com/v1/pages/task")
+        if self.patch_status >= 400:
+            return httpx.Response(self.patch_status, json={"message": "fail"}, request=request)
+        return httpx.Response(200, json={}, request=request)
 
 
 def page(page_id, title, due, done=False, task_type=None, status=None, priority=None):
@@ -129,6 +148,91 @@ class NotionServiceTests(unittest.TestCase):
         self.assertEqual(status, "not_configured")
         self.assertIsNone(synced_at)
         self.assertEqual(tasks, [])
+
+    def _today(self, client):
+        service = NotionService(client=client)
+        with patch("app.domain.notion.datetime") as fake_datetime:
+            fake_datetime.now.side_effect = lambda tz=None: datetime(2026, 7, 4, 12, tzinfo=tz or UTC)
+            fake_datetime.fromisoformat.side_effect = datetime.fromisoformat
+            fake_datetime.combine.side_effect = datetime.combine
+            fake_datetime.max = datetime.max
+            return service, service.today()
+
+    @patch("app.domain.notion.settings.notion_token", "secret")
+    @patch("app.domain.notion.settings.notion_database_id", "database")
+    @patch("app.domain.notion.settings.notion_data_source_id", None)
+    def test_today_is_cached_and_serialized(self):
+        client = FakeClient([page("today", "Buy milk", "2026-07-04")])
+        service, first = self._today(client)
+        second = service.today()
+        self.assertEqual(first[0], "ready")
+        self.assertEqual([task.id for task in second[2]], ["today"])
+        self.assertEqual(client.posts, 1)
+
+        started = []
+
+        def worker():
+            started.append(True)
+            service.today()
+
+        threads = [threading.Thread(target=worker) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(client.posts, 1)
+        self.assertEqual(len(started), 4)
+
+    @patch("app.domain.notion.settings.notion_token", "secret")
+    @patch("app.domain.notion.settings.notion_database_id", "database")
+    @patch("app.domain.notion.settings.notion_data_source_id", None)
+    def test_failed_query_keeps_last_good_snapshot(self):
+        client = FakeClient([page("today", "Buy milk", "2026-07-04")], fail_after=1)
+        service, first = self._today(client)
+        self.assertEqual(first[0], "ready")
+        service._cache_at = time.monotonic() - 400
+        status, _, tasks = service.today()
+        self.assertEqual(status, "ready")
+        self.assertEqual([task.id for task in tasks], ["today"])
+        self.assertEqual(client.posts, 2)
+
+    @patch("app.domain.notion.settings.notion_token", "secret")
+    @patch("app.domain.notion.settings.notion_database_id", "database")
+    @patch("app.domain.notion.settings.notion_data_source_id", None)
+    def test_failed_query_without_cache_uses_short_negative_ttl(self):
+        client = FakeClient([page("today", "Buy milk", "2026-07-04")], fail_after=0)
+        service, first = self._today(client)
+        self.assertEqual(first[0], "unavailable")
+        self.assertEqual(first[2], [])
+        second = service.today()
+        self.assertEqual(second[0], "unavailable")
+        self.assertEqual(client.posts, 1)
+
+    @patch("app.domain.notion.settings.notion_token", "secret")
+    @patch("app.domain.notion.settings.notion_database_id", "database")
+    @patch("app.domain.notion.settings.notion_data_source_id", None)
+    @patch("app.domain.notion.settings.notion_done_property", "Done")
+    @patch("app.domain.notion.settings.notion_status_property", "Status")
+    def test_successful_complete_invalidates_cache(self):
+        client = FakeClient([page("today", "Buy milk", "2026-07-04")])
+        service, _ = self._today(client)
+        service.complete("today")
+        service.today()
+        self.assertEqual(client.patches, 1)
+        self.assertEqual(client.posts, 2)
+
+    @patch("app.domain.notion.settings.notion_token", "secret")
+    @patch("app.domain.notion.settings.notion_database_id", "database")
+    @patch("app.domain.notion.settings.notion_data_source_id", None)
+    @patch("app.domain.notion.settings.notion_done_property", "Done")
+    @patch("app.domain.notion.settings.notion_status_property", "Status")
+    def test_failed_complete_keeps_cache(self):
+        client = FakeClient([page("today", "Buy milk", "2026-07-04")], patch_status=500)
+        service, _ = self._today(client)
+        with self.assertRaises(httpx.HTTPError):
+            service.complete("today")
+        service.today()
+        self.assertEqual(client.posts, 1)
 
 
 if __name__ == "__main__":

@@ -98,13 +98,16 @@ def _reminders(
     timezone: ZoneInfo,
     walking,
     check_in: dict | None,
+    walking_snapshot=None,
 ) -> list[dict]:
     reminders: list[dict] = []
-    if walking is not None and hasattr(walking, "today"):
+    snapshot = walking_snapshot
+    if snapshot is None and walking is not None and hasattr(walking, "today"):
         try:
             snapshot = walking.today(now)
         except TypeError:
             snapshot = walking.today()
+    if snapshot is not None:
         goal_steps = int(getattr(snapshot, "goal_steps", 0) or 0)
         total_steps = int(getattr(snapshot, "total_steps", 0) or 0)
         remaining = max(0, goal_steps - total_steps)
@@ -354,9 +357,27 @@ class DailyPlanService:
                 _serialize_task(item)
                 for item in _priority_tasks(raw_tasks, tomorrow, self._timezone, limit=3)
             ]
+        walking_snapshot = None
+        if walking is not None and hasattr(walking, "today"):
+            try:
+                walking_snapshot = walking.today(current)
+            except TypeError:
+                walking_snapshot = walking.today()
         today_reminders = _reminders(
             day=day, now=current, timezone=self._timezone, walking=walking, check_in=check_in,
+            walking_snapshot=walking_snapshot,
         )
+        walk_reminder = {"active": False, "message": "", "dedupe_key": ""}
+        if walking is not None and hasattr(walking, "reminder"):
+            try:
+                nudge = walking.reminder(today_events, current, snapshot=walking_snapshot)
+            except TypeError:
+                nudge = walking.reminder(today_events, current)
+            walk_reminder = {
+                "active": bool(getattr(nudge, "active", False)),
+                "message": str(getattr(nudge, "message", "") or ""),
+                "dedupe_key": str(getattr(nudge, "dedupe_key", "") or ""),
+            }
         today_block = {
             "date": day.isoformat(),
             "emphasis": _emphasis(workout, today_meetings, day, self._timezone),
@@ -446,6 +467,18 @@ class DailyPlanService:
             "today": today_block,
             "tomorrow": tomorrow_block,
             "last_adjustment": overview.get("last_adjustment") if isinstance(overview, dict) else None,
+            "generated_at": overview.get("generated_at") if isinstance(overview, dict) else current.isoformat(),
+            "phase": overview.get("phase") if isinstance(overview, dict) else None,
+            "week_start": overview.get("week_start") if isinstance(overview, dict) else None,
+            "week": overview.get("week") if isinstance(overview, dict) else [],
+            "upcoming": overview.get("upcoming") if isinstance(overview, dict) else [],
+            "countdowns": overview.get("countdowns") if isinstance(overview, dict) else [],
+            "compliance": overview.get("compliance") if isinstance(overview, dict) else {},
+            "week_quality": overview.get("week_quality") if isinstance(overview, dict) else None,
+            "bjj_candidates": overview.get("bjj_candidates") if isinstance(overview, dict) else [],
+            "trends": overview.get("trends") if isinstance(overview, dict) else None,
+            "readiness": overview.get("readiness") if isinstance(overview, dict) else None,
+            "walk_reminder": walk_reminder,
         }
 
     def set_fatigue(self, training, day: date, state: str) -> dict:

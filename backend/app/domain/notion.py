@@ -40,6 +40,7 @@ class NotionService:
         self._lock = threading.Lock()
         self._cache: tuple[NotionStatus, datetime | None, list[NotionTask]] | None = None
         self._cache_at: float | None = None
+        self._cache_day: date | None = None
         self._failed_at: float | None = None
 
     def configured(self) -> bool:
@@ -173,8 +174,9 @@ class NotionService:
                     json={"properties": properties},
                 )
             response.raise_for_status()
-            self._last_error = None
-            self._invalidate_cache()
+            with self._lock:
+                self._last_error = None
+                self._invalidate_cache()
         except (httpx.HTTPError, AttributeError, ValueError, KeyError, TypeError) as error:
             self._last_error = str(error) or "Notion could not complete the task."
             raise
@@ -182,9 +184,15 @@ class NotionService:
     def today(self) -> tuple[NotionStatus, datetime | None, list[NotionTask]]:
         if not self.configured():
             return "not_configured", None, []
+        local_today = datetime.now(self._timezone).date()
         with self._lock:
             now = time_module.monotonic()
-            if self._cache is not None and self._cache_at is not None and now - self._cache_at < CACHE_TTL_SECONDS:
+            if (
+                self._cache is not None
+                and self._cache_at is not None
+                and self._cache_day == local_today
+                and now - self._cache_at < CACHE_TTL_SECONDS
+            ):
                 return self._cache
             if (
                 self._cache is None
@@ -194,7 +202,6 @@ class NotionService:
                 return "unavailable", datetime.now(UTC), []
             try:
                 pages = self._query_pages()
-                local_today = datetime.now(self._timezone).date()
                 tasks = [
                     task for task in (self._page_to_task(page, local_today) for page in pages)
                     if task is not None
@@ -206,11 +213,12 @@ class NotionService:
                 self._last_error = None
                 self._cache = snapshot
                 self._cache_at = now
+                self._cache_day = local_today
                 self._failed_at = None
                 return snapshot
             except (httpx.HTTPError, AttributeError, ValueError, KeyError, TypeError) as error:
                 self._last_error = str(error) or "Notion is unavailable."
-                if self._cache is not None:
+                if self._cache is not None and self._cache_day == local_today:
                     return self._cache
                 self._failed_at = now
                 return "unavailable", datetime.now(UTC), []
@@ -218,6 +226,7 @@ class NotionService:
     def _invalidate_cache(self) -> None:
         self._cache = None
         self._cache_at = None
+        self._cache_day = None
         self._failed_at = None
 
     def _query_pages(self) -> list[JsonDict]:

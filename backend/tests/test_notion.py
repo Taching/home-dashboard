@@ -149,14 +149,20 @@ class NotionServiceTests(unittest.TestCase):
         self.assertIsNone(synced_at)
         self.assertEqual(tasks, [])
 
+    def _clock(self, when=datetime(2026, 7, 4, 12, tzinfo=UTC)):
+        fake_datetime = patch("app.domain.notion.datetime")
+        mocked = fake_datetime.start()
+        mocked.now.side_effect = lambda tz=None, _when=when: _when.replace(tzinfo=tz or _when.tzinfo)
+        mocked.fromisoformat.side_effect = datetime.fromisoformat
+        mocked.combine.side_effect = datetime.combine
+        mocked.max = datetime.max
+        self.addCleanup(fake_datetime.stop)
+        return mocked
+
     def _today(self, client):
+        self._clock()
         service = NotionService(client=client)
-        with patch("app.domain.notion.datetime") as fake_datetime:
-            fake_datetime.now.side_effect = lambda tz=None: datetime(2026, 7, 4, 12, tzinfo=tz or UTC)
-            fake_datetime.fromisoformat.side_effect = datetime.fromisoformat
-            fake_datetime.combine.side_effect = datetime.combine
-            fake_datetime.max = datetime.max
-            return service, service.today()
+        return service, service.today()
 
     @patch("app.domain.notion.settings.notion_token", "secret")
     @patch("app.domain.notion.settings.notion_database_id", "database")
@@ -233,6 +239,27 @@ class NotionServiceTests(unittest.TestCase):
             service.complete("today")
         service.today()
         self.assertEqual(client.posts, 1)
+
+    @patch("app.domain.notion.settings.notion_token", "secret")
+    @patch("app.domain.notion.settings.notion_database_id", "database")
+    @patch("app.domain.notion.settings.notion_data_source_id", None)
+    def test_cache_is_not_reused_after_local_midnight(self):
+        client = FakeClient([page("today", "Buy milk", "2026-07-04")])
+        service = NotionService(client=client)
+        with patch("app.domain.notion.datetime") as fake_datetime:
+            fake_datetime.now.side_effect = lambda tz=None: datetime(2026, 7, 4, 23, 50, tzinfo=tz or UTC)
+            fake_datetime.fromisoformat.side_effect = datetime.fromisoformat
+            fake_datetime.combine.side_effect = datetime.combine
+            fake_datetime.max = datetime.max
+            service.today()
+        self.assertEqual(client.posts, 1)
+        with patch("app.domain.notion.datetime") as fake_datetime:
+            fake_datetime.now.side_effect = lambda tz=None: datetime(2026, 7, 5, 0, 10, tzinfo=tz or UTC)
+            fake_datetime.fromisoformat.side_effect = datetime.fromisoformat
+            fake_datetime.combine.side_effect = datetime.combine
+            fake_datetime.max = datetime.max
+            service.today()
+        self.assertEqual(client.posts, 2)
 
 
 if __name__ == "__main__":

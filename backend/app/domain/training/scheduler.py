@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 from app.domain.training.policy import (
     BJJ_TYPES,
+    COMPLETED_STATUSES,
     HARD_TYPES,
     PREFERRED_BJJ_GROUPS,
     assess_week_quality,
@@ -143,10 +144,37 @@ class TrainingScheduler:
             for offset in range(7)
         )
         declined = set(declined_bjj)
+        decided_statuses = ACTIVE_STATUSES | {SessionStatus.SKIPPED}
+        missed_bjj = any(
+            (item.type in BJJ_TYPES or item.suppresses_type in BJJ_TYPES)
+            and (
+                item.status == SessionStatus.SKIPPED
+                or (
+                    item.status == SessionStatus.PLANNED
+                    and item.type in BJJ_TYPES
+                    and item.end_at <= current
+                )
+            )
+            for item in existing
+        )
+        hard_bjj_satisfied = any(
+            item.type == WorkoutType.BJJ_HARD and self._is_live(item, current)
+            for item in existing
+        )
+        strength_a_days = {
+            item.start_at.astimezone(self.timezone).date()
+            for item in existing
+            if item.type == WorkoutType.STRENGTH_A and item.status in COMPLETED_STATUSES
+        }
+        user_locked_days = {
+            item.start_at.astimezone(self.timezone).date()
+            for item in existing
+            if item.pinned and item.source == "manual" and self._is_live(item, current)
+        }
         occupied_days = {
             item.start_at.astimezone(self.timezone).date()
             for item in existing
-            if item.status in ACTIVE_STATUSES and item.type in {
+            if self._is_live(item, current) and item.type in {
                 *BJJ_TYPES, WorkoutType.COMPETITION, WorkoutType.RECOVERY, WorkoutType.REST,
             }
         }
@@ -168,16 +196,21 @@ class TrainingScheduler:
 
         for event in fixed_bjj:
             day = event.start_at.astimezone(self.timezone).date()
-            if day in occupied_days:
+            if day in occupied_days or event.end_at <= current:
                 continue
             workout_type = self._bjj_type(day)
+            if workout_type == WorkoutType.BJJ_HARD and (
+                hard_bjj_satisfied or day in strength_a_days
+            ):
+                workout_type = WorkoutType.BJJ_NORMAL
             planned.append(self._bjj_session(day, workout_type, event.start_at, event.end_at, event.external_id, "calendar"))
             occupied_days.add(day)
+            hard_bjj_satisfied = hard_bjj_satisfied or workout_type == WorkoutType.BJJ_HARD
 
         retained_bjj_days = {
             item.start_at.astimezone(self.timezone).date()
             for item in existing
-            if item.type in BJJ_TYPES and item.status in ACTIVE_STATUSES
+            if item.type in BJJ_TYPES and self._is_live(item, current)
         }
         occupied_days.update(retained_bjj_days)
 
@@ -186,17 +219,29 @@ class TrainingScheduler:
             for item in planned if item.type in BJJ_TYPES
         } | retained_bjj_days
         target_bjj = weekly_targets(phase_for_date(week_start), bjj_count=len(confirmed_bjj))["bjj"]
+        # A missed or already-ended BJJ class closes that slot, but does not
+        # lower the BJJ objective. Search remaining usual class windows before
+        # assigning gym, Zone 2, or grip. Candidates reserve the day; they are
+        # not timed sessions until a real class exists or Toshi confirms.
         candidates = self._bjj_candidates(
-            week_start, current.date(), confirmed_bjj, occupied_days, declined, busy, labeled_busy, target_bjj,
+            week_start, current.date(), confirmed_bjj, occupied_days | user_locked_days,
+            declined, busy, labeled_busy, target_bjj, missed=missed_bjj,
         )
-        reserved_days = occupied_days | {item.day for item in candidates}
+        existing_training_days = {
+            item.start_at.astimezone(self.timezone).date()
+            for item in existing
+            if self._is_live(item, current)
+        }
+        reserved_days = occupied_days | existing_training_days | user_locked_days | {item.day for item in candidates}
 
         four_bjj = len(confirmed_bjj) >= 4
+        strength_targets = {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B}
         existing_strength_types = {
-            item.suppresses_type or item.type for item in existing
-            if (item.type in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B}
-                or item.suppresses_type in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B})
-            and item.status != SessionStatus.CANCELLED
+            workout_type
+            for item in existing
+            if item.status in decided_statuses
+            for workout_type in (item.type, item.suppresses_type)
+            if workout_type in strength_targets
         }
         completed_strength = len(existing_strength_types)
         strength_types: list[WorkoutType] = [
@@ -216,7 +261,7 @@ class TrainingScheduler:
         } | {
             item.start_at.astimezone(self.timezone).date()
             for item in existing
-            if item.type in HARD_TYPES and item.status in ACTIVE_STATUSES
+            if item.type in HARD_TYPES and self._is_live(item, current)
         }
         hard_bjj_days = {
             item.start_at.astimezone(self.timezone).date()
@@ -224,7 +269,7 @@ class TrainingScheduler:
         } | {
             item.start_at.astimezone(self.timezone).date()
             for item in existing
-            if item.type == WorkoutType.BJJ_HARD and item.status in ACTIVE_STATUSES
+            if item.type == WorkoutType.BJJ_HARD and self._is_live(item, current)
         } | {item.day for item in candidates if item.suggested_type == WorkoutType.BJJ_HARD}
         hard_days |= {item.day for item in candidates if item.suggested_type in HARD_TYPES}
 
@@ -255,22 +300,10 @@ class TrainingScheduler:
 
         zone2_decided = any(
             (item.type == WorkoutType.ZONE_2 or item.suppresses_type == WorkoutType.ZONE_2)
-            and item.status in {SessionStatus.COMPLETED, SessionStatus.PARTIAL, SessionStatus.IN_PROGRESS}
-            for item in existing
-        )
-        zone2_skipped = any(
-            (item.type == WorkoutType.ZONE_2 or item.suppresses_type == WorkoutType.ZONE_2)
-            and item.status == SessionStatus.SKIPPED
+            and item.status in decided_statuses
             for item in existing
         )
         place_zone2 = not zone2_decided and not late_partial_week and not four_bjj
-        if zone2_skipped:
-            remaining_free = [
-                week_start + timedelta(days=i) for i in range(7)
-                if week_start + timedelta(days=i) > current.date()
-                and week_start + timedelta(days=i) not in reserved_days
-            ]
-            place_zone2 = place_zone2 and len(remaining_free) >= 2
         chosen_zone2 = None if not place_zone2 else self._choose_day(
             week_start, current.date(), reserved_days, busy, duration=45,
             reject=lambda day: self._work_load(day, labeled_busy) == "heavy",
@@ -285,7 +318,16 @@ class TrainingScheduler:
             reserved_days.add(day)
 
         bjj_days = confirmed_bjj | {item.day for item in candidates}
-        self._attach_grip(planned, bjj_days, fatigue, four_bjj=four_bjj, taper=taper_week)
+        decided_grip = sum(
+            item.type == WorkoutType.GRIP and item.status in decided_statuses
+            for item in existing
+        )
+        bjj_reserved = len(bjj_days)
+        self._attach_grip(
+            planned, bjj_days, fatigue, four_bjj=four_bjj, taper=taper_week,
+            already_decided=decided_grip,
+            hunting_bjj=bjj_reserved < target_bjj,
+        )
 
         planned = [self._adapt_tomorrow(item, fatigue) if item.local_date == tomorrow else item for item in planned]
         if fatigue in {FatigueState.VERY_FATIGUED, FatigueState.PAIN}:
@@ -301,7 +343,12 @@ class TrainingScheduler:
             if week_start + timedelta(days=i) > current.date()
             and week_start + timedelta(days=i) not in reserved_days
         ]
-        if free_days:
+        rest_satisfied = any(
+            item.type in {WorkoutType.REST, WorkoutType.RECOVERY}
+            and item.status in ACTIVE_STATUSES
+            for item in existing
+        ) or any(item.type in {WorkoutType.REST, WorkoutType.RECOVERY} for item in planned)
+        if free_days and not rest_satisfied:
             day = free_days[-1]
             planned.append(self._all_day(day, WorkoutType.REST, phase_for_date(day), "A complete rest day protects BJJ quality and adaptation."))
 
@@ -330,6 +377,7 @@ class TrainingScheduler:
         busy: tuple[tuple[datetime, datetime], ...],
         labeled_busy: tuple[tuple[datetime, datetime, str], ...],
         target: int,
+        missed: bool = False,
     ) -> list[BjjCandidate]:
         needed = max(0, target - len(confirmed))
         if needed == 0:
@@ -349,18 +397,21 @@ class TrainingScheduler:
                     or phase_for_date(day) in {
                         TrainingPhase.COMPETITION_1, TrainingPhase.COMPETITION_2, TrainingPhase.RECOVERY_1,
                     }
-                    or self._work_load(day, labeled_busy) == "heavy"
                 ):
                     continue
                 start_clock = time(10, 0) if offset == 5 else time(7, 30)
-                if self._exact_slot(day, start_clock, 90, busy) is None:
-                    continue
+                slot = self._exact_slot(day, start_clock, 90, busy)
+                if slot is None:
+                    if not missed or self._travel_day(day, labeled_busy):
+                        continue
+                    start_clock = None
                 workout_type = self._bjj_type(day)
-                candidates.append(BjjCandidate(
-                    day, workout_type,
-                    "Candidate BJJ day. Confirm or add a calendar class before it becomes a timed session.",
-                    start_clock,
-                ))
+                reason = (
+                    "Replacement BJJ after a miss. Confirm the class; gym work moves around it."
+                    if missed else
+                    "Candidate BJJ day. Confirm or add a calendar class before it becomes a timed session."
+                )
+                candidates.append(BjjCandidate(day, workout_type, reason, start_clock))
                 needed -= 1
                 break
         return candidates
@@ -487,11 +538,14 @@ class TrainingScheduler:
         *,
         four_bjj: bool,
         taper: bool,
+        already_decided: int = 0,
+        hunting_bjj: bool = False,
     ) -> None:
-        if fatigue in {FatigueState.VERY_FATIGUED, FatigueState.PAIN}:
+        if fatigue in {FatigueState.VERY_FATIGUED, FatigueState.PAIN} or hunting_bjj:
             return
         grip = WORKOUT_TEMPLATES[WorkoutType.GRIP].exercises[0]
-        limit = 1 if four_bjj or taper or fatigue == FatigueState.TIRED else 2
+        target = 1 if four_bjj or taper or fatigue == FatigueState.TIRED else 2
+        limit = max(0, target - already_decided)
         eligible: list[int] = []
         for index, item in enumerate(planned):
             if item.type not in {WorkoutType.ZONE_2, WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B}:
@@ -533,6 +587,18 @@ class TrainingScheduler:
         start = datetime.combine(day, start_clock, self.timezone)
         end = start + timedelta(minutes=duration)
         return None if self._overlaps(start, end, busy) else (start, end)
+
+    def _travel_day(self, day: date, labeled_busy: tuple[tuple[datetime, datetime, str], ...]) -> bool:
+        day_start = datetime.combine(day, time.min, self.timezone)
+        day_end = day_start + timedelta(days=1)
+        titles = []
+        for start, end, title in labeled_busy:
+            clipped_start = max(start.astimezone(self.timezone), day_start)
+            clipped_end = min(end.astimezone(self.timezone), day_end)
+            if clipped_end > clipped_start:
+                titles.append(title.lower())
+        blob = " ".join(titles)
+        return any(marker in blob for marker in TRAVEL_MARKERS)
 
     def _work_load(self, day: date, labeled_busy: tuple[tuple[datetime, datetime, str], ...]) -> str:
         day_start = datetime.combine(day, time.min, self.timezone)
@@ -585,3 +651,14 @@ class TrainingScheduler:
     def _all_day(self, day: date, workout_type: WorkoutType, phase: TrainingPhase, reason: str) -> PlannedSession:
         start = datetime.combine(day, time.min, self.timezone)
         return PlannedSession(workout_type, start, start + timedelta(days=1), phase, reason, "easy", is_all_day=True)
+
+    def _is_live(self, item: ExistingSession, now: datetime) -> bool:
+        if item.status in COMPLETED_STATUSES:
+            return True
+        if item.status in {SessionStatus.RECOVERY, SessionStatus.COMPETITION}:
+            return True
+        if item.status != SessionStatus.PLANNED:
+            return False
+        if item.type in {WorkoutType.REST, WorkoutType.RECOVERY, WorkoutType.COMPETITION}:
+            return item.start_at.astimezone(self.timezone).date() >= now.astimezone(self.timezone).date()
+        return item.end_at > now

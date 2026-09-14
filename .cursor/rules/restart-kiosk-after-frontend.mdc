@@ -1,0 +1,22 @@
+---
+description: Restart wall Chromium after any frontend deploy
+alwaysApply: true
+---
+
+# Restart kiosk after frontend changes
+
+After any change that rebuilds or recreates the `frontend` container (UI, CSS, React, nginx static assets):
+
+1. Deploy the frontend image as usual.
+2. Inspect `chili-kiosk.service`, then restart it:
+
+```bash
+systemctl is-active chili-kiosk.service
+sudo systemctl restart chili-kiosk.service
+```
+
+3. Confirm the unit is `active` again.
+
+Chromium kiosk caches the old hashed JS/CSS bundle. A frontend rebuild without a kiosk restart leaves the wall on stale UI.
+
+Do not restart the kiosk for backend-only changes.

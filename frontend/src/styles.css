@@ -1968,12 +1968,24 @@ button { font: inherit; }
   .daily-rail { grid-template-rows: minmax(18rem, .75fr) minmax(24rem, 1.25fr); }
 }
 
-/* Chili Today and Spotify stay content-sized; the assistant fills leftover left-rail space. */
+/* Left rail stays content-sized: Chili morning, events, then Spotify. No stretched pane. */
 .environment-region {
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  align-content: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
   gap: .75rem;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.environment-region > .events-panel,
+.environment-region > .chili-advice {
+  flex: 0 0 auto;
+}
+.environment-region > .media-region {
+  flex: 0 0 auto;
+  margin-top: 0;
+  min-height: 0;
 }
 .environment-region > .voice-assistant {
   min-height: 0;
@@ -2029,6 +2041,36 @@ button { font: inherit; }
 .today-training-date { display: block; margin-top: .18rem; color: #9eb0cb; font-size: .82rem; font-weight: 650; letter-spacing: .01em; }
 .training-meta { display: grid; justify-items: end; gap: .08rem; color: #8da0bd; font-size: .74rem; text-transform: capitalize; }
 .training-meta strong { color: #8de8ff; font-size: .96rem; }
+.today-training.is-done { border-left-color: #8af0cf; }
+.today-done-mark {
+  display: inline-flex;
+  align-items: center;
+  margin-top: .18rem;
+  padding: .12rem .42rem;
+  border-radius: 999px;
+  color: #071711;
+  background: #8af0cf;
+  font-size: .62rem;
+  font-weight: 820;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.chili-advice .eyebrow { display: flex; align-items: center; gap: .45rem; }
+.chili-advice-done {
+  display: inline-flex;
+  align-items: center;
+  padding: .1rem .4rem;
+  border-radius: 999px;
+  color: #071711;
+  background: #8af0cf;
+  font-size: .58rem;
+  font-weight: 820;
+  letter-spacing: .06em;
+}
+.calendar-event.is-done {
+  border-left-color: #8af0cf;
+  background: linear-gradient(135deg, #2f6d5d, #2d5a7a);
+}
 .training-main-work { display: flex; flex-wrap: wrap; gap: .28rem .38rem; }
 .training-main-work span { padding: .2rem .42rem; border-radius: .25rem; color: #dce8fa; background: rgba(38,53,84,.55); font-size: .8rem; line-height: 1.25; }
 .training-prescription { display: grid; grid-template-columns: 5.8rem minmax(0, 1fr); align-items: start; gap: .45rem; }
@@ -2167,13 +2209,88 @@ button { font: inherit; }
 .tomorrow-decision > span.week-quality { color: #79e6bd; font-weight: 700; }
 .training-week.is-upcoming .training-day.is-bjj-candidate > small { color: #c7b6f3; }
 .training-week.is-upcoming .training-day.is-bjj-candidate { border-style: dashed; }
-.tournament-list { display: grid; gap: .34rem; padding-top: .12rem; }
-.tournament-row { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .48rem .15rem; border-bottom: 1px solid rgba(61,78,111,.42); }
-.tournament-row:last-child { border-bottom: 0; }
-.tournament-row > span { color: #d9e4f5; font-size: .84rem; font-weight: 700; }
-.tournament-row small { display: block; margin-top: .1rem; color: #8fa0b9; font-size: .68rem; font-weight: 620; text-transform: none; }
-.tournament-row > strong { color: #ffcb77; font-size: 1.22rem; text-align: right; }
-.tournament-row > strong small { display: inline; color: #b49a72; font-size: .68rem; }
+.events-panel {
+  display: grid;
+  gap: .55rem;
+  min-width: 0;
+  padding: .7rem .76rem .76rem;
+  border: 1px solid rgba(255, 203, 119, .26);
+  border-left: .22rem solid #ffcb77;
+  border-radius: .55rem;
+  background: linear-gradient(155deg, rgba(46, 34, 16, .94), rgba(12, 18, 32, .92));
+}
+.events-panel-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: .7rem;
+}
+.events-panel-heading h2 {
+  margin: .12rem 0 0;
+  color: #fff6e6;
+  font-size: 1.18rem;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.1;
+}
+.events-phase {
+  flex: 0 0 auto;
+  padding: .22rem .48rem;
+  border: 1px solid rgba(255, 203, 119, .28);
+  border-radius: 999px;
+  color: #ffd9a0;
+  font-size: .64rem;
+  font-weight: 780;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.events-list {
+  display: grid;
+  gap: .38rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.events-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .7rem;
+  padding: .52rem .58rem;
+  border: 1px solid rgba(255, 203, 119, .14);
+  border-radius: .42rem;
+  background: rgba(12, 18, 30, .55);
+}
+.events-item.is-next {
+  border-color: rgba(255, 203, 119, .36);
+  background: linear-gradient(145deg, rgba(86, 58, 18, .42), rgba(18, 22, 36, .72));
+}
+.events-item strong {
+  display: block;
+  color: #fff3dc;
+  font-size: .92rem;
+  font-weight: 720;
+  line-height: 1.2;
+}
+.events-item time {
+  display: block;
+  margin-top: .16rem;
+  color: #c7b08a;
+  font-size: .72rem;
+  font-weight: 620;
+}
+.events-item em {
+  flex: 0 0 auto;
+  color: #ffcb77;
+  font-size: .92rem;
+  font-style: normal;
+  font-weight: 780;
+  letter-spacing: -.01em;
+  text-align: right;
+  white-space: nowrap;
+}
+.events-item.is-next em { font-size: 1.05rem; }
 
 @media (max-width: 1100px) {
   .daily-rail.training-rail { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; grid-template-rows: auto; overflow: visible; }

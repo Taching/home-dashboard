@@ -440,6 +440,11 @@ export type DailyBriefing = {
     synced_at?: string | null
     meetings: DailyMeeting[]
   }
+  notion?: {
+    status: IntegrationStatus
+    synced_at?: string | null
+    tasks: DailyPlanItem[]
+  }
   sobriety: {
     days: number
     answered: 'yes' | 'no' | null

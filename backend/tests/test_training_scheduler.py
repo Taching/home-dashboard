@@ -135,6 +135,219 @@ class TrainingSchedulerTests(unittest.TestCase):
         self.assertEqual([item.type for item in tuesday], [WorkoutType.BJJ_NORMAL])
         self.assertTrue(any(item.type == WorkoutType.STRENGTH_A and item.local_date > date(2026, 9, 15) for item in plan.sessions))
 
+    def test_example_24_missed_monday_bjj_after_sunday_strength_a(self) -> None:
+        existing = (
+            ExistingSession(
+                "sun-strength", WorkoutType.STRENGTH_A,
+                datetime(2026, 9, 13, 14, 0, tzinfo=TOKYO),
+                datetime(2026, 9, 13, 15, 0, tzinfo=TOKYO),
+                SessionStatus.COMPLETED,
+            ),
+            ExistingSession(
+                "mon-bjj", WorkoutType.BJJ_NORMAL,
+                datetime(2026, 9, 14, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 14, 9, 0, tzinfo=TOKYO),
+                SessionStatus.SKIPPED,
+            ),
+        )
+        plan = self.scheduler.plan_week(
+            date(2026, 9, 14), now=datetime(2026, 9, 14, 9, 32, tzinfo=TOKYO),
+            existing=existing,
+        )
+        by_day = {item.local_date: item.type for item in plan.sessions}
+
+        self.assertEqual([item.day for item in plan.candidates], [
+            date(2026, 9, 15), date(2026, 9, 17), date(2026, 9, 19),
+        ])
+        self.assertNotIn(date(2026, 9, 15), by_day)
+        self.assertFalse(any(item.type == WorkoutType.STRENGTH_A for item in plan.sessions))
+        self.assertEqual(by_day.get(date(2026, 9, 16)), WorkoutType.STRENGTH_B)
+        self.assertFalse(any(
+            exercise.name == "Towel kettlebell hold" for item in plan.sessions for exercise in item.exercises
+        ))
+        self.assertEqual(by_day.get(date(2026, 9, 20)), WorkoutType.REST)
+        self.assertIn("Replacement BJJ", plan.candidates[0].reason)
+
+    def test_evening_work_does_not_block_replacement_bjj(self) -> None:
+        existing = (
+            ExistingSession(
+                "sun-strength", WorkoutType.STRENGTH_A,
+                datetime(2026, 9, 13, 14, 0, tzinfo=TOKYO),
+                datetime(2026, 9, 13, 15, 0, tzinfo=TOKYO),
+                SessionStatus.COMPLETED,
+            ),
+            ExistingSession(
+                "mon-bjj", WorkoutType.BJJ_NORMAL,
+                datetime(2026, 9, 14, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 14, 9, 0, tzinfo=TOKYO),
+                SessionStatus.SKIPPED,
+            ),
+        )
+        labeled = (
+            (datetime(2026, 9, 15, 9, tzinfo=TOKYO), datetime(2026, 9, 15, 10, tzinfo=TOKYO), "Mango Standup"),
+            (datetime(2026, 9, 15, 19, tzinfo=TOKYO), datetime(2026, 9, 15, 20, tzinfo=TOKYO), "特許選手権_壁打ち会"),
+        )
+        plan = self.scheduler.plan_week(
+            date(2026, 9, 14), now=datetime(2026, 9, 14, 9, 32, tzinfo=TOKYO),
+            existing=existing, labeled_busy=labeled,
+        )
+
+        self.assertEqual(plan.candidates[0].day, date(2026, 9, 15))
+        self.assertFalse(any(
+            item.type == WorkoutType.STRENGTH_B and item.local_date == date(2026, 9, 15)
+            for item in plan.sessions
+        ))
+
+    def test_past_due_planned_bjj_is_treated_as_a_miss(self) -> None:
+        existing = (
+            ExistingSession(
+                "sun-strength", WorkoutType.STRENGTH_A,
+                datetime(2026, 9, 13, 14, 0, tzinfo=TOKYO),
+                datetime(2026, 9, 13, 15, 0, tzinfo=TOKYO),
+                SessionStatus.COMPLETED,
+            ),
+            ExistingSession(
+                "mon-bjj", WorkoutType.BJJ_NORMAL,
+                datetime(2026, 9, 14, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 14, 9, 0, tzinfo=TOKYO),
+                SessionStatus.PLANNED,
+            ),
+        )
+        plan = self.scheduler.plan_week(
+            date(2026, 9, 14), now=datetime(2026, 9, 14, 9, 32, tzinfo=TOKYO),
+            existing=existing,
+        )
+
+        self.assertEqual(plan.candidates[0].day, date(2026, 9, 15))
+        self.assertFalse(any(
+            item.type == WorkoutType.STRENGTH_B and item.local_date == date(2026, 9, 15)
+            for item in plan.sessions
+        ))
+
+    def test_missed_bjj_searches_next_viable_window_before_lower_priority_work(self) -> None:
+        existing = (
+            ExistingSession(
+                "sun-strength", WorkoutType.STRENGTH_A,
+                datetime(2026, 9, 13, 14, 0, tzinfo=TOKYO),
+                datetime(2026, 9, 13, 15, 0, tzinfo=TOKYO),
+                SessionStatus.COMPLETED,
+            ),
+            ExistingSession(
+                "mon-bjj", WorkoutType.BJJ_NORMAL,
+                datetime(2026, 9, 14, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 14, 9, 0, tzinfo=TOKYO),
+                SessionStatus.SKIPPED,
+            ),
+        )
+        fixed = (
+            FixedBjjEvent(
+                "wed-bjj", "BJJ",
+                datetime(2026, 9, 16, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 16, 9, 0, tzinfo=TOKYO),
+            ),
+            FixedBjjEvent(
+                "sat-bjj", "BJJ",
+                datetime(2026, 9, 19, 10, 0, tzinfo=TOKYO),
+                datetime(2026, 9, 19, 11, 30, tzinfo=TOKYO),
+            ),
+        )
+
+        plan = self.scheduler.plan_week(
+            date(2026, 9, 14), now=datetime(2026, 9, 14, 20, tzinfo=TOKYO),
+            fixed_bjj=fixed, existing=existing,
+        )
+
+        self.assertEqual([item.day for item in plan.candidates], [date(2026, 9, 15)])
+        self.assertFalse(any(
+            item.type in {WorkoutType.BJJ_TECHNICAL, WorkoutType.BJJ_NORMAL, WorkoutType.BJJ_HARD}
+            and item.local_date == date(2026, 9, 15)
+            for item in plan.sessions
+        ))
+        self.assertFalse(any(item.type == WorkoutType.STRENGTH_A for item in plan.sessions))
+        self.assertEqual(sum(item.type == WorkoutType.STRENGTH_B for item in plan.sessions), 1)
+        self.assertEqual(sum(item.type == WorkoutType.ZONE_2 for item in plan.sessions), 1)
+        saturday = [item.type for item in plan.sessions if item.local_date == date(2026, 9, 19)]
+        self.assertEqual(saturday, [WorkoutType.BJJ_HARD])
+
+    def test_skipped_replacement_still_searches_for_bjj_before_lower_priority_work(self) -> None:
+        existing = (
+            ExistingSession(
+                "replaced-bjj", WorkoutType.GRIP,
+                datetime(2026, 9, 14, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 14, 7, 40, tzinfo=TOKYO),
+                SessionStatus.SKIPPED,
+                suppresses_type=WorkoutType.BJJ_NORMAL,
+            ),
+        )
+        fixed = (
+            FixedBjjEvent(
+                "thu-bjj", "BJJ",
+                datetime(2026, 9, 17, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 17, 9, 0, tzinfo=TOKYO),
+            ),
+            FixedBjjEvent(
+                "sat-bjj", "BJJ",
+                datetime(2026, 9, 19, 10, 0, tzinfo=TOKYO),
+                datetime(2026, 9, 19, 11, 30, tzinfo=TOKYO),
+            ),
+        )
+
+        plan = self.scheduler.plan_week(
+            date(2026, 9, 14), now=datetime(2026, 9, 14, 9, 0, tzinfo=TOKYO),
+            fixed_bjj=fixed, existing=existing,
+        )
+
+        self.assertEqual([item.day for item in plan.candidates], [date(2026, 9, 15)])
+
+    def test_completed_hard_bjj_prevents_a_second_hard_bjj_target(self) -> None:
+        existing = (
+            ExistingSession(
+                "hard-done", WorkoutType.BJJ_HARD,
+                datetime(2026, 9, 14, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 14, 9, 0, tzinfo=TOKYO),
+                SessionStatus.COMPLETED,
+            ),
+        )
+        fixed = (
+            FixedBjjEvent(
+                "sat-bjj", "BJJ",
+                datetime(2026, 9, 19, 10, 0, tzinfo=TOKYO),
+                datetime(2026, 9, 19, 11, 30, tzinfo=TOKYO),
+            ),
+        )
+
+        plan = self.scheduler.plan_week(
+            date(2026, 9, 14), now=datetime(2026, 9, 15, 20, tzinfo=TOKYO),
+            fixed_bjj=fixed, existing=existing,
+        )
+
+        saturday = next(item for item in plan.sessions if item.local_date == date(2026, 9, 19))
+        self.assertEqual(saturday.type, WorkoutType.BJJ_NORMAL)
+
+    def test_decided_zone2_and_rest_are_not_duplicated(self) -> None:
+        existing = (
+            ExistingSession(
+                "zone", WorkoutType.ZONE_2,
+                datetime(2026, 9, 14, 7, 30, tzinfo=TOKYO),
+                datetime(2026, 9, 14, 8, 15, tzinfo=TOKYO),
+                SessionStatus.COMPLETED,
+            ),
+            ExistingSession(
+                "rest", WorkoutType.REST,
+                datetime(2026, 9, 15, 0, 0, tzinfo=TOKYO),
+                datetime(2026, 9, 16, 0, 0, tzinfo=TOKYO),
+                SessionStatus.COMPLETED,
+            ),
+        )
+
+        plan = self.scheduler.plan_week(
+            date(2026, 9, 14), now=datetime(2026, 9, 15, 20, tzinfo=TOKYO),
+            existing=existing,
+        )
+
+        self.assertFalse(any(item.type == WorkoutType.ZONE_2 for item in plan.sessions))
+        self.assertFalse(any(item.type == WorkoutType.REST for item in plan.sessions))
+
     def test_three_consecutive_hard_days_are_rejected(self) -> None:
         existing = (
             ExistingSession(

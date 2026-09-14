@@ -350,8 +350,10 @@ class DailyPlanService:
         summary = wellbeing.summary(current)
         tasks: list[dict] = []
         tomorrow_tasks: list[dict] = []
+        notion_status = "not_configured"
+        notion_synced_at = None
         if notion is not None and hasattr(notion, "today"):
-            _, _, raw_tasks = notion.today()
+            notion_status, notion_synced_at, raw_tasks = notion.today()
             tasks = [_serialize_task(item) for item in _priority_tasks(raw_tasks, day, self._timezone)]
             tomorrow_tasks = [
                 _serialize_task(item)
@@ -447,6 +449,11 @@ class DailyPlanService:
                 "status": calendar_status,
                 "synced_at": synced_at.isoformat() if synced_at else None,
                 "meetings": today_meetings,
+            },
+            "notion": {
+                "status": notion_status,
+                "synced_at": notion_synced_at.isoformat() if notion_synced_at else None,
+                "tasks": tasks,
             },
             "sobriety": {
                 "days": summary.sober_days,

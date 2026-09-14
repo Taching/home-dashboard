@@ -18,7 +18,12 @@ from app.database.models import (
     TrainingSession,
 )
 from app.database.session import SessionLocal
-from app.domain.training.policy import assess_week_quality, weekly_targets
+from app.domain.training.policy import (
+    BJJ_DISPLACEABLE_TYPES,
+    BJJ_TYPES,
+    assess_week_quality,
+    weekly_targets,
+)
 from app.domain.training.scheduler import TrainingScheduler, assess_readiness, phase_for_date
 from app.domain.training.review import exercise_done, kinds_match
 from app.domain.training.templates import WORKOUT_TEMPLATES
@@ -86,6 +91,17 @@ class TrainingService:
                 .where(or_(
                     (TrainingSession.start_at < end) & (TrainingSession.end_at > start),
                     TrainingSession.planned_week_start == week_start,
+                    (
+                        (TrainingSession.start_at >= start - timedelta(days=1))
+                        & (TrainingSession.start_at < start)
+                        & TrainingSession.planned_type.in_([
+                            WorkoutType.STRENGTH_A.value, WorkoutType.STRENGTH_B.value,
+                        ])
+                        & TrainingSession.status.in_([
+                            SessionStatus.COMPLETED.value, SessionStatus.PARTIAL.value,
+                            SessionStatus.IN_PROGRESS.value,
+                        ])
+                    ),
                 ))
             ).all())
             retained = [row for row in all_sessions if self._retained(row, now)]
@@ -99,6 +115,31 @@ class TrainingService:
                 for row in calendar_rows
                 if row.managed_session_id is None and any(keyword.lower() in row.title.lower() for keyword in keywords)
             )
+            confirmed_bjj_days = {
+                item.start_at.astimezone(self._timezone).date()
+                for item in fixed_bjj
+            } | {
+                self._as_utc(row.start_at).astimezone(self._timezone).date()
+                for row in retained
+                if WorkoutType(row.planned_type) in BJJ_TYPES
+                and row.status in {
+                    SessionStatus.PLANNED.value, SessionStatus.IN_PROGRESS.value,
+                    SessionStatus.COMPLETED.value, SessionStatus.PARTIAL.value,
+                }
+            }
+            self._skip_past_due(retained, now)
+            displaced_ids = {
+                row.id for row in retained
+                if WorkoutType(row.planned_type) in BJJ_DISPLACEABLE_TYPES
+                and row.status == SessionStatus.PLANNED.value
+                and self._as_utc(row.start_at).astimezone(self._timezone).date() in confirmed_bjj_days
+            }
+            # Confirmed BJJ owns its day. Cancel the future lower-priority slot
+            # before planning so it can be placed elsewhere only if recovery
+            # and the remaining week safely allow it. Completed/active work is
+            # never rewritten here.
+            self._cancel_displaced(session, retained, displaced_ids, now, "confirmed BJJ")
+            retained = [row for row in retained if row.id not in displaced_ids]
             labeled_busy = tuple(
                 (
                     self._as_utc(row.start_at).astimezone(self._timezone),
@@ -109,11 +150,31 @@ class TrainingService:
             )
             busy = tuple((start, end) for start, end, _ in labeled_busy)
             existing = tuple(self._existing(row) for row in retained)
+            fatigue = self._latest_fatigue(session, now)
+            declined = self._declined_dates(planner_settings, week_start)
             plan = self._scheduler.plan_week(
                 week_start, now=now, busy=busy, labeled_busy=labeled_busy, fixed_bjj=fixed_bjj,
-                existing=existing, fatigue=self._latest_fatigue(session, now),
-                weather=self._weather_hints(), declined_bjj=self._declined_dates(planner_settings, week_start),
+                existing=existing, fatigue=fatigue, weather=self._weather_hints(), declined_bjj=declined,
             )
+            candidate_days = {item.day for item in plan.candidates}
+            candidate_displaced_ids = {
+                row.id for row in retained
+                if WorkoutType(row.planned_type) in BJJ_DISPLACEABLE_TYPES
+                and row.status == SessionStatus.PLANNED.value
+                and self._as_utc(row.start_at).astimezone(self._timezone).date() in candidate_days
+                and not (row.pinned and row.source == "manual")
+            }
+            if candidate_displaced_ids:
+                self._cancel_displaced(
+                    session, retained, candidate_displaced_ids, now,
+                    "a replacement BJJ opportunity",
+                )
+                retained = [row for row in retained if row.id not in candidate_displaced_ids]
+                plan = self._scheduler.plan_week(
+                    week_start, now=now, busy=busy, labeled_busy=labeled_busy, fixed_bjj=fixed_bjj,
+                    existing=tuple(self._existing(row) for row in retained),
+                    fatigue=fatigue, weather=self._weather_hints(), declined_bjj=declined,
+                )
             desired_ids: set[str] = set()
             for item in plan.sessions:
                 stable_key = item.source_calendar_event_id or f"{item.local_date.isoformat()}:{item.type.value}:{item.source}"
@@ -162,7 +223,19 @@ class TrainingService:
         with self._session_factory() as session:
             rows = list(session.scalars(
                 select(TrainingSession)
-                .where(TrainingSession.start_at >= window_start)
+                .where(or_(
+                    TrainingSession.start_at >= window_start,
+                    (
+                        (TrainingSession.start_at >= window_start - timedelta(days=1))
+                        & TrainingSession.planned_type.in_([
+                            WorkoutType.STRENGTH_A.value, WorkoutType.STRENGTH_B.value,
+                        ])
+                        & TrainingSession.status.in_([
+                            SessionStatus.COMPLETED.value, SessionStatus.PARTIAL.value,
+                            SessionStatus.IN_PROGRESS.value,
+                        ])
+                    ),
+                ))
                 .where(TrainingSession.start_at < window_end)
                 .where(TrainingSession.status != SessionStatus.CANCELLED.value)
                 .order_by(TrainingSession.start_at)
@@ -182,21 +255,34 @@ class TrainingService:
         for item in exercises:
             exercise_map.setdefault(item.session_id, []).append(self._exercise_dict(item))
         serialized = [self._session_dict(row, exercise_map.get(row.id, [])) for row in rows]
-        today_sessions = [item for item in serialized if self._local_date(item["start_at"]) == local_day]
+        visible = [item for item in serialized if item["status"] != SessionStatus.SKIPPED.value]
+        today_sessions = [item for item in visible if self._local_date(item["start_at"]) == local_day]
         tomorrow = local_day + timedelta(days=1)
-        tomorrow_sessions = [item for item in serialized if self._local_date(item["start_at"]) == tomorrow]
-        current_week = [item for item in serialized if week_start <= self._local_date(item["start_at"]) < week_start + timedelta(days=7)]
-        upcoming = [
+        tomorrow_sessions = [item for item in visible if self._local_date(item["start_at"]) == tomorrow]
+        current_week = [
             item for item in serialized
+            if week_start <= self._local_date(item["start_at"]) < week_start + timedelta(days=7)
+            or (
+                self._local_date(item["start_at"]) == week_start - timedelta(days=1)
+                and item["planned_type"] in {WorkoutType.STRENGTH_A.value, WorkoutType.STRENGTH_B.value}
+                and item["status"] in {
+                    SessionStatus.COMPLETED.value, SessionStatus.PARTIAL.value,
+                    SessionStatus.IN_PROGRESS.value,
+                }
+            )
+        ]
+        upcoming = [
+            item for item in visible
             if local_day <= self._local_date(item["start_at"]) < local_day + timedelta(days=7)
         ]
         candidates = self._candidate_dicts(week_start, current)
+        tomorrow_session = tomorrow_sessions[0] if tomorrow_sessions else None
         return {
             "generated_at": current.isoformat(),
             "timezone": self._timezone.key,
             "phase": phase_for_date(local_day).value,
             "today": today_sessions[0] if today_sessions else None,
-            "tomorrow": tomorrow_sessions[0] if tomorrow_sessions else None,
+            "tomorrow": tomorrow_session,
             "week_start": week_start.isoformat(),
             "week": current_week,
             "upcoming": upcoming,
@@ -210,9 +296,11 @@ class TrainingService:
             "bjj_candidates": candidates,
             "week_quality": self._week_quality(current_week, candidates),
             "tomorrow_prescription": self._tomorrow_prescription(
-                tomorrow_sessions[0] if tomorrow_sessions else None,
+                tomorrow_session,
                 current_week,
                 phase_for_date(local_day),
+                tomorrow=tomorrow,
+                candidates=candidates,
             ),
             "last_adjustment": self.last_adjustment(),
         }
@@ -248,7 +336,11 @@ class TrainingService:
 
     def for_date(self, local_date: date) -> dict | None:
         sessions = self.sessions_on(local_date)
-        return sessions[0] if sessions else None
+        active = [
+            item for item in sessions
+            if item["status"] not in {SessionStatus.SKIPPED.value, SessionStatus.CANCELLED.value}
+        ]
+        return (active or sessions)[0] if sessions else None
 
     def sessions_on(self, local_date: date) -> list[dict]:
         start = datetime.combine(local_date, time.min, self._timezone).astimezone(UTC)
@@ -347,6 +439,12 @@ class TrainingService:
         target = WorkoutType(workout_type)
         if target not in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B}:
             raise ValueError("Gym day must be strength_a or strength_b.")
+        if target == WorkoutType.STRENGTH_A and any(
+            item.get("planned_type") == WorkoutType.BJJ_HARD.value
+            and item.get("status") not in {SessionStatus.SKIPPED.value, SessionStatus.CANCELLED.value}
+            for item in self.sessions_on(day)
+        ):
+            raise ValueError("Strength A cannot be scheduled on a Hard BJJ day.")
         existing = self.for_date(day)
         if existing is not None:
             updated = self.replace_session(existing["id"], target.value, now=current)
@@ -376,11 +474,13 @@ class TrainingService:
         assert result is not None
         return result
 
-    def place_session(self, day: date, workout_type: str, *, now: datetime | None = None) -> dict:
+    def place_session(self, day: date, workout_type: str, *, now: datetime | None = None, pinned: bool = False) -> dict:
         current = self._as_utc(now or datetime.now(UTC))
         target = WorkoutType(workout_type)
         if target in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B}:
-            return self.schedule_gym(day, target.value, now=current)
+            if pinned:
+                return self.schedule_gym(day, target.value, now=current)
+            return self._place_template(day, target, now=current, pinned=False, source="scheduler")
         if target == WorkoutType.REST:
             existing = self.for_date(day)
             if existing is None:
@@ -391,9 +491,19 @@ class TrainingService:
         existing = self.for_date(day)
         if existing is not None:
             return self.replace_session(existing["id"], target.value, now=current)
+        return self._place_template(day, target, now=current, pinned=pinned, source="manual" if pinned else "scheduler")
+
+    def _place_template(
+        self, day: date, target: WorkoutType, *, now: datetime, pinned: bool, source: str,
+    ) -> dict:
         template = WORKOUT_TEMPLATES[target]
         start = datetime.combine(day, time(14, 0), self._timezone)
         session_id = str(uuid5(NAMESPACE_URL, f"chili-training:place:{day.isoformat()}:{target.value}"))
+        reason = (
+            "Gym chosen explicitly; the remaining week was rebuilt around it."
+            if pinned else
+            "Placed around BJJ only if the remaining week still had a safe open day."
+        )
         with self._session_factory() as session:
             row = session.get(TrainingSession, session_id)
             if row is None:
@@ -402,14 +512,14 @@ class TrainingService:
                     phase=phase_for_date(day).value, planned_week_start=self._training_week_start(day),
                     start_at=start.astimezone(UTC), end_at=(start + timedelta(minutes=template.estimated_minutes)).astimezone(UTC),
                     is_all_day=False, estimated_minutes=template.estimated_minutes, intensity=template.intensity,
-                    reason="Evening calendar check placed this for tournament readiness; rest and BJJ were left alone.",
+                    reason=reason,
                     coach_focus=["Keep this repeatable. Do not turn an Open day into junk volume."],
-                    source="manual", pinned=True, revision=1, created_at=current, updated_at=current,
+                    source=source, pinned=pinned, revision=1, created_at=now, updated_at=now,
                 )
                 session.add(row)
                 self._replace_exercises(session, row.id, template.exercises)
             session.commit()
-        self.reconcile(current)
+        self.reconcile(now)
         result = self.session(session_id)
         assert result is not None
         return result
@@ -476,6 +586,8 @@ class TrainingService:
                     ))
             if row.status in {SessionStatus.COMPLETED.value, SessionStatus.PARTIAL.value}:
                 local_date = self._as_utc(row.start_at).astimezone(self._timezone).date()
+                if row.planned_type in {WorkoutType.STRENGTH_A.value, WorkoutType.STRENGTH_B.value}:
+                    row.planned_week_start = self._training_week_start(local_date)
                 wellbeing = session.get(DailyWellbeingCheckIn, local_date)
                 if wellbeing is None:
                     wellbeing = DailyWellbeingCheckIn(local_date=local_date, updated_at=current, source="training")
@@ -536,6 +648,8 @@ class TrainingService:
             row.updated_at = current
             if row.status in {SessionStatus.COMPLETED.value, SessionStatus.PARTIAL.value}:
                 local_date = self._as_utc(row.start_at).astimezone(self._timezone).date()
+                if row.planned_type in {WorkoutType.STRENGTH_A.value, WorkoutType.STRENGTH_B.value}:
+                    row.planned_week_start = self._training_week_start(local_date)
                 wellbeing = session.get(DailyWellbeingCheckIn, local_date)
                 if wellbeing is None:
                     wellbeing = DailyWellbeingCheckIn(
@@ -798,6 +912,34 @@ class TrainingService:
             for item in plan.candidates
         ]
 
+    def _skip_past_due(self, rows: list[TrainingSession], now: datetime) -> None:
+        for row in rows:
+            if row.status != SessionStatus.PLANNED.value or row.is_all_day:
+                continue
+            if row.planned_type in {WorkoutType.REST.value, WorkoutType.RECOVERY.value, WorkoutType.COMPETITION.value}:
+                continue
+            if self._as_utc(row.end_at) > now:
+                continue
+            row.status = SessionStatus.SKIPPED.value
+            if not row.notes:
+                row.notes = "Missed. Remaining week replanned from completed training."
+            row.revision += 1
+            row.updated_at = now
+
+    def _cancel_displaced(
+        self, session, rows: list[TrainingSession], displaced_ids: set[str], now: datetime, reason: str,
+    ) -> None:
+        for row in rows:
+            if row.id not in displaced_ids:
+                continue
+            row.status = SessionStatus.CANCELLED.value
+            row.notes = f"Displaced by {reason}; lower-priority work was replanned from the remaining week."
+            row.revision += 1
+            row.updated_at = now
+            for reminder in session.scalars(select(TrainingReminder).where(TrainingReminder.session_id == row.id)):
+                if reminder.status == "pending":
+                    reminder.status = "cancelled"
+
     def _retained(self, row: TrainingSession, now: datetime) -> bool:
         start = self._as_utc(row.start_at)
         end = self._as_utc(row.end_at)
@@ -948,7 +1090,33 @@ class TrainingService:
             rest=any(item["planned_type"] in {"rest", "recovery"} for item in active),
         ).value
 
-    def _tomorrow_prescription(self, session: dict | None, week: list[dict], phase) -> dict:
+    def _tomorrow_prescription(
+        self, session: dict | None, week: list[dict], phase, *,
+        tomorrow: date | None = None, candidates: list[dict] | None = None,
+    ) -> dict:
+        candidate = next(
+            (
+                item for item in (candidates or [])
+                if tomorrow and item.get("date") == tomorrow.isoformat()
+            ),
+            None,
+        )
+        if session is None and candidate is not None:
+            status = self._status_after(week, {
+                "planned_type": candidate.get("suggested_type"),
+                "status": "planned",
+                "exercises": [],
+            }, phase)
+            clock = candidate.get("preferred_clock")
+            return {
+                "session": candidate.get("suggested_type") or "bjj_normal",
+                "time": clock,
+                "work": "Confirm this BJJ class. It is the replacement for a missed or open mat window.",
+                "focus": "Show up ready",
+                "why": candidate.get("reason") or "BJJ has priority over gym quotas.",
+                "weekly_status": status,
+                "candidate": True,
+            }
         status = self._status_after(week, session, phase)
         if session is None:
             return {

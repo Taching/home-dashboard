@@ -108,7 +108,7 @@ test('walkReminderFromPlan keeps nudge shape', () => {
   })
 })
 
-test('notionFromPlan maps today tasks', () => {
+test('notionFromPlan uses the dedicated Notion field, not calendar', () => {
   const notion = notionFromPlan({
     today: {
       date: '2026-09-14',
@@ -119,8 +119,14 @@ test('notionFromPlan maps today tasks', () => {
       reminders: [],
       tasks: [{ id: 't1', title: 'HMO deck', status: 'To do', is_overdue: false }],
     },
-    calendar: { status: 'ready', synced_at: '2026-09-14T07:00:00+09:00', meetings: [] },
+    calendar: { status: 'unavailable', synced_at: '2026-09-14T07:00:00+09:00', meetings: [] },
+    notion: {
+      status: 'ready',
+      synced_at: '2026-09-14T08:15:00+09:00',
+      tasks: [{ id: 't1', title: 'HMO deck', status: 'To do', is_overdue: false }],
+    },
   } as DailyBriefing, { status: 'not_configured', synced_at: null, tasks: [] })
   assert.equal(notion.status, 'ready')
+  assert.equal(notion.synced_at, '2026-09-14T08:15:00+09:00')
   assert.equal(notion.tasks[0]?.title, 'HMO deck')
 })

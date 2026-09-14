@@ -2,26 +2,29 @@ from __future__ import annotations
 
 from app.domain.training.types import (
     FatigueState,
+    SessionStatus,
     TrainingPhase,
     WeekQuality,
     WorkoutType,
 )
 
+# Hard Rules V2 priority when two sessions conflict.
+# Calendar weekday labels are suggestions. Completed training is truth.
 PRIORITY = (
-    "bjj",
-    "recovery",
+    "confirmed_bjj",
+    "required_recovery",
+    "hard_competition_bjj",
     "strength_maintenance",
-    "aerobic_conditioning",
+    "zone_2",
     "grip_accessories",
 )
 
+# First sacrificed when the week is crowded or a BJJ opportunity appears.
 SACRIFICE_ORDER = (
-    "extra_grip",
-    "strength_accessories",
+    "grip",
+    "zone_2",
     "strength_b",
     "strength_a",
-    "zone_2",
-    "secondary_volume",
 )
 
 HARD_TYPES = frozenset({
@@ -36,9 +39,32 @@ BJJ_TYPES = frozenset({
     WorkoutType.BJJ_HARD,
 })
 
+# Future sessions in this set yield to a BJJ opportunity. They may be
+# replanned elsewhere after BJJ and recovery have reserved their space.
+BJJ_DISPLACEABLE_TYPES = frozenset({
+    WorkoutType.STRENGTH_A,
+    WorkoutType.STRENGTH_B,
+    WorkoutType.ZONE_2,
+    WorkoutType.GRIP,
+})
+
 DECISIVE_STATUSES = frozenset({"completed", "partial", "in_progress", "skipped"})
 COUNTED_STATUSES = frozenset({"planned", "completed", "partial", "in_progress", "recovery", "competition"})
+LIVE_STATUSES = frozenset({
+    SessionStatus.PLANNED,
+    SessionStatus.IN_PROGRESS,
+    SessionStatus.COMPLETED,
+    SessionStatus.PARTIAL,
+    SessionStatus.RECOVERY,
+    SessionStatus.COMPETITION,
+})
+COMPLETED_STATUSES = frozenset({
+    SessionStatus.COMPLETED,
+    SessionStatus.PARTIAL,
+    SessionStatus.IN_PROGRESS,
+})
 
+# Usual class windows. These are opportunities, not permanent weekday assignments.
 PREFERRED_BJJ_GROUPS = ((0, 1), (3, 4), (5,))
 
 
@@ -57,6 +83,10 @@ def weekly_targets(phase: TrainingPhase, *, bjj_count: int = 0) -> dict[str, int
 
 def is_hard(workout_type: WorkoutType) -> bool:
     return workout_type in HARD_TYPES
+
+
+def is_bjj(workout_type: WorkoutType) -> bool:
+    return workout_type in BJJ_TYPES
 
 
 def assess_week_quality(

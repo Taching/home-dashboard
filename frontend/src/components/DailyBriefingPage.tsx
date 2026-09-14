@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { fetchDailyBriefing, logDailyWorkout, logSober, logSundayReview } from '../lib/api'
+import { doneMarkLabel, workoutAlreadyLogged } from '../lib/workoutMatch'
 import type { DailyBriefing, PlannedExercise } from '../types'
 
 function formatTime(value: string, allDay = false) {
@@ -14,10 +15,6 @@ function exerciseDetail(item: PlannedExercise) {
     item.reps && `${item.reps} reps`,
     item.duration_seconds && `${item.duration_seconds}s`,
   ].filter(Boolean).join(' · ')
-}
-
-function workoutAlreadyLogged(status: string) {
-  return ['completed', 'partial', 'skipped'].includes(status)
 }
 
 function DoneBadge() {
@@ -52,6 +49,7 @@ export function DailyBriefingPage({ day }: { day: string }) {
   if (loading) return <main className="daily-briefing-shell daily-loading">Loading your day…</main>
   if (!briefing) return <main className="daily-briefing-shell daily-loading">{error}</main>
   const workout = briefing.workout
+  const workoutDone = workout ? doneMarkLabel(workout.status) : null
 
   return (
     <main className="daily-briefing-shell">
@@ -73,8 +71,13 @@ export function DailyBriefingPage({ day }: { day: string }) {
               <>
                 <div className="daily-card-title">
                   <h2>{workout.title}</h2>
-                  <span>{workout.is_all_day ? 'Recovery day' : `${workout.estimated_minutes} min · ${workout.intensity}`}</span>
+                  {workoutDone ? <DoneBadge /> : (
+                    <span>{workout.is_all_day ? 'Recovery day' : `${workout.estimated_minutes} min · ${workout.intensity}`}</span>
+                  )}
                 </div>
+                {workoutDone && (
+                  <span>{workoutDone}{workout.is_all_day ? '' : ` · ${workout.estimated_minutes} min · ${workout.intensity}`}</span>
+                )}
                 <p>{workout.reason}</p>
                 {workout.coach_focus.length > 0 && <ul>{workout.coach_focus.map((focus) => <li key={focus}>{focus}</li>)}</ul>}
                 {briefing.last_adjustment?.how?.length ? (

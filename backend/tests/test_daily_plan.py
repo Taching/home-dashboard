@@ -179,6 +179,9 @@ class DailyPlanTests(unittest.TestCase):
         self.assertEqual(plan["walk_reminder"]["dedupe_key"], "walk:window:2026-09-14:meeting-1")
         self.assertTrue(plan["walk_reminder"]["active"])
         self.assertEqual(self.app.state.walkingpad_service.snapshot.total_steps, 2500)
+        self.assertEqual(plan["notion"]["status"], "ready")
+        self.assertEqual(plan["notion"]["tasks"][0]["title"], "Prepare HMO deck")
+        self.assertIsNotNone(plan["notion"]["synced_at"])
 
     def test_rest_today_replaces_and_returns_plan(self):
         result = self.service.rest_today(self.app.state.training_service, self.day)

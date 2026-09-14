@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.core.settings import settings
 from app.domain.daily_plan import DailyPlanService, preview_workout_dict
 from app.domain.training.adjust import CalendarAdjuster
-from app.domain.training.review import local_workout_review
+from app.domain.training.review import kinds_match, local_workout_review
 
 
 daily_router = APIRouter()
@@ -170,6 +170,11 @@ def daily_workout(request: Request, day: date, body: DailyWorkoutRequest) -> dic
     workout = request.app.state.training_service.for_date(day)
     if workout is None or workout.get("planned_type") == "rest" or workout.get("status") == "preview":
         raise HTTPException(status_code=400, detail="There is no workout to log for this date.")
+    if body.kind and not kinds_match(workout.get("planned_type"), body.kind):
+        raise HTTPException(
+            status_code=400,
+            detail="That is not today's session. Change the plan first, then log it.",
+        )
     try:
         updated = request.app.state.training_service.log_workout_check(
             workout["id"],

@@ -1,6 +1,7 @@
 import { useClock } from '../hooks/useClock'
 import type { CalendarEvent, CalendarToday, NotionTask, NotionToday, TrainingOverview } from '../types'
-import { TodayTrainingCard, TrainingWeekStrip } from './TrainingPlanner'
+import { doneMarkLabel } from '../lib/workoutMatch'
+import { sessionOnDate, TodayTrainingCard, TrainingWeekStrip } from './TrainingPlanner'
 import { priorityLevel } from './TaskPriorityBars'
 
 const TIME_ZONE = 'Asia/Tokyo'
@@ -211,9 +212,10 @@ function syncAge(value: string | null) {
 }
 
 function CalendarSchedule({
-  calendar, selectedDate, onPrevious, onToday, onNext,
+  calendar, training, selectedDate, onPrevious, onToday, onNext,
 }: {
   calendar: CalendarToday
+  training: TrainingOverview
   selectedDate: string
   onPrevious: () => void
   onToday: () => void
@@ -251,6 +253,8 @@ function CalendarSchedule({
 
   const beforeHint = overflowHint(before, 'earlier')
   const afterHint = overflowHint(after, 'later')
+  const selectedSession = sessionOnDate(training, selectedDate)
+  const selectedDoneLabel = selectedSession ? doneMarkLabel(selectedSession.status) : null
 
   return (
     <section className="calendar-schedule" aria-label={`Calendar for ${dayLabel(selectedDate)}`}>
@@ -293,22 +297,29 @@ function CalendarSchedule({
                 const top = ((event.startMinute - START_HOUR * 60) / TOTAL_MINUTES) * 100
                 const height = ((event.endMinute - event.startMinute) / TOTAL_MINUTES) * 100
                 const compact = event.endMinute - event.startMinute < 45
+                const isTraining = event.source === 'training' || Boolean(event.training_session_id)
+                const isDone = Boolean(selectedDoneLabel && isTraining && (
+                  !event.training_session_id
+                  || !selectedSession
+                  || event.training_session_id === selectedSession.id
+                ))
                 return (
                   <article
-                    className={`calendar-event${compact ? ' is-compact' : ''}${event.is_current ? ' is-current' : ''}${event.source === 'training' ? ' is-training' : ''}`}
+                    className={`calendar-event${compact ? ' is-compact' : ''}${event.is_current ? ' is-current' : ''}${isTraining ? ' is-training' : ''}${isDone ? ' is-done' : ''}`}
                     key={event.id}
                     style={{
                       top: `${top}%`, height: `${height}%`,
                       left: `calc(${(event.column / event.columns) * 100}% + 3px)`,
                       width: `calc(${100 / event.columns}% - 6px)`,
                     }}
-                    aria-label={`${event.title}, ${eventTime(event)}${event.is_current ? ', now' : ''}`}
+                    aria-label={`${event.title}, ${eventTime(event)}${event.is_current ? ', now' : ''}${isDone ? `, ${selectedDoneLabel}` : ''}`}
                   >
-                    <strong>{compact ? `${eventTime(event)} ${event.title}` : event.title}</strong>
+                    <strong>{isDone ? '✓ ' : ''}{compact ? `${eventTime(event)} ${event.title}` : event.title}</strong>
                     {!compact && (
                       <span>
                         {eventTime(event)}
                         {event.is_current ? ' · NOW' : ''}
+                        {isDone ? ` · ${selectedDoneLabel}` : ''}
                       </span>
                     )}
                   </article>
@@ -419,6 +430,7 @@ export function PlanningRegion({
       <div className="compact-calendar">
         <CalendarSchedule
           calendar={calendar}
+          training={training}
           selectedDate={selectedDate}
           onPrevious={onPrevious}
           onToday={onToday}

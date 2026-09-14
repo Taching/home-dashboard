@@ -31,26 +31,32 @@ def test_session_factory():
 
 
 class FakePlanner:
+    def __init__(self) -> None:
+        self.planned_type = "strength_a"
+        self.logged: list[tuple[str, list | None, str | None]] = []
+
     def for_date(self, day):
+        rest = self.planned_type == "rest"
         return {
             "id": "session-1",
-            "title": "Strength A + Intervals",
+            "title": "Rest" if rest else "Strength A + Intervals",
             "reason": "Build.",
             "coach_focus": [],
             "exercises": [{"name": "Back Squat", "done": False}],
             "estimated_minutes": 60,
             "intensity": "normal",
-            "planned_type": "strength_a",
+            "planned_type": self.planned_type,
             "status": "planned",
             "notes": None,
         }
 
     def log_workout_check(self, session_id, *, exercises=None, note=None):
+        self.logged.append((session_id, exercises, note))
         return {
             "id": session_id,
             "title": "Strength A + Intervals",
             "status": "completed",
-            "planned_type": "strength_a",
+            "planned_type": self.planned_type,
             "notes": note,
         }
 
@@ -274,6 +280,31 @@ class TrainingAutomationApiTests(unittest.TestCase):
         today = self.client.get("/api/v1/training/today").json()
         self.assertEqual(today["logs"][0]["kind"], "strength_a")
         self.assertTrue(today["advice"])
+
+    def test_daily_workout_rejects_mismatched_kind(self) -> None:
+        response = self.client.post(
+            "/api/v1/daily/2026-09-15/workout",
+            json={
+                "kind": "strength_b",
+                "exercises": [{"name": "Warm-up", "done": True}],
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("not today's session", response.json()["detail"])
+        self.assertEqual(self.app.state.training_service.logged, [])
+
+    def test_daily_workout_rejects_rest_day(self) -> None:
+        self.app.state.training_service.planned_type = "rest"
+        response = self.client.post(
+            "/api/v1/daily/2026-09-15/workout",
+            json={
+                "kind": "rest",
+                "exercises": [{"name": "Full rest", "done": True}],
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("no workout to log", response.json()["detail"])
+        self.assertEqual(self.app.state.training_service.logged, [])
 
 
 if __name__ == "__main__":

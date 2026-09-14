@@ -10,6 +10,7 @@ import {
   setSystemVolume,
 } from '../lib/api'
 import { notionFromPlan, trainingOverviewFromPlan, walkReminderFromPlan } from '../lib/dailyPlan'
+import { subscribeToPlanningChanges } from '../lib/planningRefresh'
 import type { CalendarToday, DailyBriefing, Dashboard, NotionToday, SpotifyNowPlaying, TrainingOverview, WalkReminder, WalkingPadToday, WeatherForecast } from '../types'
 import { usePolling } from './usePolling'
 
@@ -94,7 +95,7 @@ export const initialTraining: TrainingOverview = {
 const DASHBOARD_REFRESH_MS = 60_000
 const DASHBOARD_FAST_REFRESH_MS = 2_000
 const WALKINGPAD_REFRESH_MS = 30_000
-const CALENDAR_REFRESH_MS = 15 * 60_000
+const PLANNING_REFRESH_MS = 15_000
 const WEATHER_REFRESH_MS = 30 * 60_000
 
 export type DashboardInitialData = {
@@ -133,7 +134,7 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
 
   const refresh = useCallback(async () => {
     const results = await Promise.allSettled([
-      fetchDashboard(), fetchSpotifyNowPlaying(), fetchDailyPlan(today),
+      fetchDashboard(), fetchSpotifyNowPlaying(),
     ])
     if (results[0].status === 'fulfilled') {
       const value = results[0].value
@@ -143,8 +144,7 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
       })
     }
     if (results[1].status === 'fulfilled') setSpotify(results[1].value)
-    if (results[2].status === 'fulfilled') applyPlan(results[2].value)
-  }, [applyPlan, today])
+  }, [])
 
   const refreshCalendar = useCallback(async (anchorDate = selectedCalendarDate) => {
     try {
@@ -154,6 +154,14 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
       // Keep the last calendar snapshot visible until the next bridge sync lands.
     }
   }, [selectedCalendarDate])
+
+  const refreshPlanning = useCallback(async () => {
+    const [planResult] = await Promise.allSettled([
+      fetchDailyPlan(today),
+      refreshCalendar(selectedCalendarDate),
+    ])
+    if (planResult.status === 'fulfilled') applyPlan(planResult.value)
+  }, [applyPlan, refreshCalendar, selectedCalendarDate, today])
 
   const refreshWeather = useCallback(async () => {
     try {
@@ -199,7 +207,7 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
       })
     }
   }, [applyPlan, plan, today])
-  usePolling(refreshCalendar, CALENDAR_REFRESH_MS, !skipImmediatePoll)
+  usePolling(refreshPlanning, PLANNING_REFRESH_MS, !skipImmediatePoll)
   usePolling(refreshWeather, WEATHER_REFRESH_MS, !skipImmediatePoll)
   usePolling(refreshWalkingPad, WALKINGPAD_REFRESH_MS, true)
 
@@ -210,6 +218,22 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
   useEffect(() => {
     void refreshCalendar(selectedCalendarDate)
   }, [selectedCalendarDate, refreshCalendar])
+
+  useEffect(() => subscribeToPlanningChanges(() => void refreshPlanning()), [refreshPlanning])
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refreshPlanning()
+    }
+    window.addEventListener('focus', refreshWhenVisible)
+    window.addEventListener('online', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      window.removeEventListener('focus', refreshWhenVisible)
+      window.removeEventListener('online', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [refreshPlanning])
 
   return {
     dashboard,
@@ -227,6 +251,7 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
     setSelectedCalendarDate,
     refresh,
     refreshCalendar,
+    refreshPlanning,
     setVolume,
   }
 }

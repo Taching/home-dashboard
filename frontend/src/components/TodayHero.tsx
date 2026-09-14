@@ -1,3 +1,4 @@
+import { doneMarkLabel } from '../lib/workoutMatch'
 import type { DailyBriefing } from '../types'
 
 function splitAdvice(text: string) {
@@ -25,10 +26,11 @@ function chiliEyebrow(window: DailyBriefing['advice_window']) {
 export function ChiliAdvice({ plan }: { plan: DailyBriefing | null }) {
   const advice = plan?.advice?.trim()
   const eyebrow = chiliEyebrow(plan?.advice_window)
+  const doneLabel = doneMarkLabel(plan?.today?.training?.status ?? plan?.workout?.status)
   if (!advice) {
     return (
-      <section className="chili-advice" aria-label="Chili's advice for today">
-        <p className="eyebrow">{eyebrow}</p>
+      <section className={`chili-advice${doneLabel ? ' is-done' : ''}`} aria-label="Chili's advice for today">
+        <p className="eyebrow">{eyebrow}{doneLabel && <span className="chili-advice-done">✓ {doneLabel}</span>}</p>
         <p className="chili-advice-lead">Chili is reading the day.</p>
       </section>
     )
@@ -36,8 +38,8 @@ export function ChiliAdvice({ plan }: { plan: DailyBriefing | null }) {
 
   const { lead, points, tomorrow } = splitAdvice(advice)
   return (
-    <section className="chili-advice" aria-label="Chili's advice for today">
-      <p className="eyebrow">{eyebrow}</p>
+    <section className={`chili-advice${doneLabel ? ' is-done' : ''}`} aria-label="Chili's advice for today">
+      <p className="eyebrow">{eyebrow}{doneLabel && <span className="chili-advice-done">✓ {doneLabel}</span>}</p>
       <p className="chili-advice-lead">{lead}</p>
       {points.length > 0 && (
         <ul>

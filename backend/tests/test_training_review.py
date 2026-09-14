@@ -14,7 +14,10 @@ class TrainingReviewTests(unittest.TestCase):
         self.assertTrue(kinds_match("strength_a", "strength_a"))
         self.assertTrue(kinds_match("bjj_normal", "bjj"))
         self.assertTrue(kinds_match("zone_2", "zone2"))
+        self.assertTrue(kinds_match("competition", "bjj_hard"))
+        self.assertTrue(kinds_match("competition", "bjj"))
         self.assertFalse(kinds_match("strength_a", "strength_b"))
+        self.assertFalse(kinds_match("strength_a", "rest"))
 
     def test_exercise_names_tolerate_plan_titles(self):
         done = {

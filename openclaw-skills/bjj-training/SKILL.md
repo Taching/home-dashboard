@@ -12,7 +12,11 @@ Speak from `SOUL.md` and `IDENTITY.md`. Do not invent a coach persona or overrid
 
 Target competitions: **10–11 Oct 2026** and **7–8 Nov 2026** (Asia/Tokyo).
 
-Priority: **BJJ → Recovery → Strength maintenance → Aerobic conditioning → Grip**.
+Priority: **Confirmed BJJ → required recovery → Hard/competition BJJ →
+Strength maintenance → Zone 2 → Grip**.
+
+BJJ is more important than Strength A or Strength B. The original weekday
+layout is not the source of truth. Completed training is.
 
 The dashboard API is the authority. Never invent a makeup workout. Never chase
 `Strength 1/2` or `Grip 2/2`. After a skip, calendar change, fatigue state, or
@@ -22,18 +26,24 @@ next free day.
 ## Hard rules
 
 - Schedule BJJ first from real opportunities (calendar + confirmed candidates).
+- After missed or already-ended BJJ, search the next usual class window before
+  assigning strength, Zone 2, or grip. Tuesday Strength B must not block a
+  realistic Tuesday BJJ replacement.
+- A confirmed BJJ class displaces a conflicting future lower-priority session;
+  move it only if the rebuilt week is safe, otherwise drop it. A tentative BJJ
+  window reserves the day and surfaces for confirmation. Never rewrite a
+  completed session.
 - Protect at least one complete rest day. Empty time is not unused capacity.
 - Weekly targets guide planning. They are not completion requirements.
 - Do not automatically make up a skipped session. Replan, then move, modify,
   replace, or abandon.
 - Avoid three consecutive hard days (Hard BJJ, Strength A + intervals).
-- Do not place Strength A immediately before Hard BJJ.
-- Do not put hard grip work immediately before Gi.
-- If the week is crowded, sacrifice grip, then accessories, then Strength B,
-  then Strength A. Protect important BJJ, Hard BJJ, and recovery.
+- Do not place Strength A on the same day as Hard BJJ, or immediately before it
+  when another option exists.
+- Grip is the first target sacrificed. Never keep Grip 2/2 at the cost of Gi.
 - 4× BJJ changes the week: one strength, Zone 2 optional, grip only if recovery
   allows, still one rest day.
-- 2× BJJ is not replaced by more lifting.
+- 2× BJJ is not replaced by more lifting or HIIT.
 - Toshi's explicit override always wins. Recalculate forward. Do not restore
   the old calendar.
 
@@ -49,7 +59,8 @@ No morning questionnaire.
 ## BJJ candidates
 
 Chili may propose BJJ days. Those are not timed sessions until Toshi confirms
-them or they appear on the calendar.
+them or they appear on the calendar. A candidate may reserve planning space but
+must not be presented as a confirmed class.
 
 ## Commands
 

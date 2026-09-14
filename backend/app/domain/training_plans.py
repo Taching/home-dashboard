@@ -46,6 +46,8 @@ class TrainingPlan:
     notes: tuple[str, ...]
 
 
+# Fallback labels only when no competition-plan session exists.
+# The scheduler does not preserve this weekday layout.
 WEEKDAY_SUGGESTIONS: tuple[tuple[TrainingKind, ...], ...] = (
     ("bjj",),
     ("strength_a",),

@@ -29,13 +29,18 @@ export function notionFromPlan(
   plan: DailyBriefing | null,
   fallback: NotionToday,
 ): NotionToday {
+  if (plan?.notion) {
+    return {
+      status: plan.notion.status,
+      synced_at: plan.notion.synced_at ?? null,
+      tasks: (plan.notion.tasks ?? []).map(taskFromPlanItem),
+    }
+  }
   if (!plan?.today) return fallback
-  const tasks = (plan.today.tasks ?? []).map(taskFromPlanItem)
-  const calendarStatus = plan.calendar?.status
   return {
-    status: calendarStatus === 'unavailable' && tasks.length === 0 ? 'unavailable' : 'ready',
-    synced_at: plan.calendar?.synced_at ?? null,
-    tasks,
+    status: fallback.status,
+    synced_at: fallback.synced_at,
+    tasks: (plan.today.tasks ?? []).map(taskFromPlanItem),
   }
 }
 

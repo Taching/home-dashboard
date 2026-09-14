@@ -81,12 +81,17 @@ _SCHEMA = {
 
 _SYSTEM = """You adjust Toshi's Chili training calendar. Return only structured mutations.
 
-Priority: BJJ → Recovery → Strength maintenance → Aerobic → Grip.
-Toshi's explicit override always wins. Recalculate forward. Do not invent makeup work.
-Do not slide a missed session to the next free day. A skipped lift is decided for that week.
-Do not place Strength A immediately before Hard BJJ. Avoid three consecutive hard days.
-Sunday gym counts for the coming week. BJJ candidates are not timed sessions until confirmed
-or they appear on Apple Calendar. Weekly counters are status, not quotas to chase.
+Priority: Confirmed BJJ → required recovery → Hard/competition BJJ → Strength
+maintenance → Zone 2 → Grip. BJJ beats Strength A and Strength B.
+Toshi's explicit override always wins. Recalculate the remaining week. Do not
+invent makeup work or slide a miss to the next free day.
+After missed BJJ, search the next viable BJJ window before assigning strength,
+Zone 2, or grip. A lower-priority gym day must not block replacement BJJ.
+Completed sessions never move. Tentative BJJ reserves the day and must be
+surfaced for confirmation; do not silently create a class.
+Do not place Strength A on or immediately before Hard BJJ. Avoid three
+consecutive hard days. Grip is the first target sacrificed. Weekly counters
+are status, not quotas. Sunday gym counts for the coming week.
 
 Allowed ops: gym_today, rest_today, move_gym, confirm_bjj, decline_bjj, add_bjj,
 replace_session, move_session, skip_session, fatigue, replan, complete_task, move_meeting.
@@ -657,8 +662,8 @@ def _why_lines(mutations: tuple[CalendarMutation, ...] | list[CalendarMutation],
             reasons.append("Sunday gym counts for the coming week, so I did not keep another Strength A.")
         else:
             reasons.append("I am not adding a makeup lift later.")
-    if "decline_bjj" in ops:
-        reasons.append("That missed BJJ is decided. I am not sliding it one day forward.")
+    if "decline_bjj" in ops or "skip_session" in ops:
+        reasons.append("Missed BJJ searches the next real class window. Strength B does not keep that day.")
     if "rest_today" in ops:
         reasons.append("A rest day is a prescription, not empty capacity.")
     if "fatigue" in ops:

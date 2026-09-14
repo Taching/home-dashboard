@@ -10,7 +10,7 @@ import { useDashboardData, type DashboardInitialData } from './hooks/useDashboar
 import { useStartupBoot } from './hooks/useStartupBoot'
 import { useToday } from './hooks/useClock'
 import { getMotionMode } from './lib/motionMode'
-import { TrainingInsights } from './components/TrainingPlanner'
+import { EventsPanel, TrainingInsights } from './components/TrainingPlanner'
 import { DailyBriefingPage } from './components/DailyBriefingPage'
 import { WorkoutApp } from './pages/WorkoutApp'
 import './styles.css'
@@ -96,8 +96,9 @@ function DashboardApp({
         />
       )}
       <div className="dashboard-workspace">
-        <aside className="environment-region" aria-label="Chili's advice, assistant activity, and music">
+        <aside className="environment-region" aria-label="Chili's advice, events, and music">
           <ChiliAdvice plan={plan} />
+          <EventsPanel training={training} />
           <MediaRegion spotify={spotify} />
         </aside>
         <PlanningRegion

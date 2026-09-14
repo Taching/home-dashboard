@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react'
 import chiliLogo from '../assets/chili-logo.svg'
 import { fetchDailyBriefing, fetchTrainingPlan, fetchTrainingPlans, logDailyWorkout } from '../lib/api'
 import { formatDate } from '../lib/format'
+import { canLogWorkout, doneMarkLabel, kindsMatch, slugForType, workoutAlreadyLogged } from '../lib/workoutMatch'
 import type { DailyBriefing, PlannedWorkout, TrainingKind, TrainingPlan } from '../types'
 import '../workout.css'
 
@@ -18,25 +19,6 @@ function todayStamp() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' })
 }
 
-function normalizeKind(kind: string | undefined) {
-  const value = (kind || '').toLowerCase()
-  if (value === 'zone_2') return 'zone2'
-  return value
-}
-
-function kindsMatch(planned: string | undefined, logged: string | undefined) {
-  const plannedKind = normalizeKind(planned)
-  const loggedKind = normalizeKind(logged)
-  if (!loggedKind) return true
-  if (loggedKind === 'bjj') return plannedKind.startsWith('bjj') || plannedKind === 'competition'
-  if (loggedKind === 'rest') return plannedKind === 'rest' || plannedKind === 'recovery'
-  return plannedKind === loggedKind
-}
-
-function workoutAlreadyLogged(status: string) {
-  return ['completed', 'partial', 'skipped'].includes(status)
-}
-
 function exerciseDone(name: string, doneByName: Map<string, boolean>) {
   if (doneByName.has(name)) return Boolean(doneByName.get(name))
   const needle = name.toLowerCase()
@@ -45,13 +27,6 @@ function exerciseDone(name: string, doneByName: Map<string, boolean>) {
     if (hay === needle || hay.includes(needle) || needle.includes(hay)) return Boolean(value)
   }
   return false
-}
-
-function slugForType(type: string) {
-  if (type === 'zone_2') return 'zone2'
-  if (type === 'bjj_hard') return 'bjj_hard'
-  if (type.startsWith('bjj_')) return 'bjj'
-  return type
 }
 
 export function WorkoutApp() {
@@ -114,6 +89,7 @@ function TodayPage() {
         <p>Today</p>
         <h1>{headingDate}</h1>
         <span>{workout ? workout.title : 'No prescribed session'}</span>
+        {logged && workout && <p className="workout-done-badge">✓ {doneMarkLabel(workout.status) ?? 'Done'}</p>}
       </section>
       {error && <p className="workout-status">{error}</p>}
       <section className="workout-section">
@@ -167,6 +143,7 @@ function PlanPage({ slug }: { slug: string }) {
   const [session, setSession] = useState<PlannedWorkout | null>(null)
   const [advice, setAdvice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [canLog, setCanLog] = useState(false)
   const day = todayStamp()
 
   useEffect(() => {
@@ -174,7 +151,9 @@ function PlanPage({ slug }: { slug: string }) {
       .then(([next, briefing]) => {
         setPlan(next)
         const workout = briefing.workout
-        setSession(workout && kindsMatch(workout.planned_type, next.kind) ? workout : null)
+        const matches = Boolean(workout && kindsMatch(workout.planned_type, next.kind))
+        setSession(matches ? workout : null)
+        setCanLog(Boolean(workout && canLogWorkout(workout.planned_type, next.kind) && workout.status !== 'preview'))
         setAdvice(briefing.advice ?? null)
         setError(null)
         document.title = `${next.name} · Chili`
@@ -205,6 +184,7 @@ function PlanPage({ slug }: { slug: string }) {
           <WorkoutCheckForm
             kind={plan.kind}
             day={day}
+            canLog={canLog}
             items={plan.blocks.length > 0
               ? plan.blocks.map((block) => ({
                   name: block.title,
@@ -240,6 +220,7 @@ export function WorkoutCheckForm({
   kind,
   items,
   day,
+  canLog = true,
   onLogged,
   initialNote = '',
   initialSaved = false,
@@ -248,6 +229,7 @@ export function WorkoutCheckForm({
   kind: TrainingKind
   items: { name: string; prescription: string | null; details: string[]; done: boolean }[]
   day: string
+  canLog?: boolean
   onLogged?: () => void
   initialNote?: string
   initialSaved?: boolean
@@ -275,7 +257,7 @@ export function WorkoutCheckForm({
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (pending || saved) return
+    if (pending || saved || !canLog) return
     const payload = {
       kind,
       exercises: items.map((item) => ({ name: item.name, done: Boolean(done[item.name]) })),
@@ -293,6 +275,32 @@ export function WorkoutCheckForm({
       })
       .catch(() => setStatus('Could not save workout.'))
       .finally(() => setPending(false))
+  }
+
+  if (!canLog && !saved) {
+    return (
+      <section className="workout-section">
+        <h2>Program</h2>
+        <div className="workout-checks">
+          {items.map((item) => (
+            <div key={item.name} className="workout-check">
+              <span>
+                <strong>{item.name}</strong>
+                {item.prescription && <em>{item.prescription}</em>}
+                {item.details.map((detail) => (
+                  <small key={detail}>{detail}</small>
+                ))}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="workout-status">
+          {kind === 'rest'
+            ? 'Rest days are not logged here.'
+            : "This is not today's session. Ask Chili to change the plan first."}
+        </p>
+      </section>
+    )
   }
 
   if (saved) {

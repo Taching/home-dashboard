@@ -26,6 +26,8 @@ def kinds_match(planned: str | None, logged: str | None) -> bool:
     logged_kind = normalize_kind(logged)
     if not logged_kind:
         return True
+    if planned_kind == "competition":
+        return logged_kind in {"competition", "bjj", "bjj_hard", "bjj_normal"}
     if logged_kind == "bjj":
         return planned_kind.startswith("bjj_") or planned_kind == "competition"
     if logged_kind == "rest":

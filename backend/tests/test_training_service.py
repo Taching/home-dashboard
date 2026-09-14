@@ -129,6 +129,75 @@ class TrainingServiceTests(unittest.TestCase):
         ]
         self.assertEqual(planned_a, [])
 
+    def test_legacy_completed_sunday_strength_counts_for_the_new_week(self) -> None:
+        tokyo = ZoneInfo("Asia/Tokyo")
+        sunday_start = datetime(2026, 9, 13, 14, 0, tzinfo=tokyo)
+        with self.factory() as session:
+            session.add(TrainingSession(
+                id="legacy-sunday-strength",
+                planned_type="strength_a",
+                status="completed",
+                phase="build_october",
+                planned_week_start=date(2026, 9, 7),
+                start_at=sunday_start.astimezone(UTC),
+                end_at=(sunday_start + timedelta(minutes=60)).astimezone(UTC),
+                estimated_minutes=60,
+                intensity="hard",
+                reason="Completed before Sunday carry-over was normalized.",
+                source="scheduler",
+                pinned=True,
+                original_planned_type="rest",
+                created_at=self.now,
+                updated_at=self.now,
+            ))
+            session.commit()
+
+        self.service.reconcile(self.now)
+        overview = self.service.overview(self.now)
+
+        self.assertFalse(any(
+            item["planned_type"] == "strength_a" and item["status"] == "planned"
+            for item in overview["week"]
+        ))
+        self.assertEqual(overview["compliance"]["strength"]["completed"], 1)
+
+    def test_retained_zone2_day_is_not_stacked_with_strength(self) -> None:
+        wednesday = date(2026, 9, 16)
+        self.service.place_session(wednesday, "zone_2", now=self.now, pinned=True)
+
+        wednesday_sessions = self.service.sessions_on(wednesday)
+
+        self.assertEqual([item["planned_type"] for item in wednesday_sessions], ["zone_2"])
+
+    def test_skipped_history_does_not_replace_active_today_session(self) -> None:
+        today = date(2026, 9, 14)
+        zone2 = self.service.place_session(today, "zone_2", now=self.now)
+        start = datetime(2026, 9, 14, 7, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+        with self.factory() as session:
+            session.add(TrainingSession(
+                id="skipped-grip-history",
+                planned_type="grip",
+                status="skipped",
+                phase="build_october",
+                planned_week_start=today,
+                start_at=start.astimezone(UTC),
+                end_at=(start + timedelta(minutes=10)).astimezone(UTC),
+                estimated_minutes=10,
+                intensity="easy",
+                reason="Historical replacement",
+                source="manual",
+                pinned=True,
+                created_at=self.now,
+                updated_at=self.now,
+            ))
+            session.commit()
+
+        overview = self.service.overview(self.now)
+
+        self.assertEqual(overview["today"]["id"], zone2["id"])
+        self.assertEqual(self.service.for_date(today)["id"], zone2["id"])
+        self.assertFalse(any(item["id"] == "skipped-grip-history" for item in overview["upcoming"]))
+
     def test_recovery_replacement_suppresses_original_workout(self) -> None:
         overview = self.service.overview(self.now)
         strength_a = next(item for item in overview["week"] if item["planned_type"] == "strength_a")
@@ -137,6 +206,35 @@ class TrainingServiceTests(unittest.TestCase):
         overview = self.service.overview(self.now)
 
         self.assertFalse(any(item["planned_type"] == "strength_a" for item in overview["week"]))
+
+    def test_past_due_monday_bjj_replans_tuesday_as_bjj_not_strength(self) -> None:
+        tokyo = ZoneInfo("Asia/Tokyo")
+        sunday = datetime(2026, 9, 13, 12, tzinfo=tokyo)
+        strength = self.service.schedule_gym(date(2026, 9, 13), "strength_a", now=sunday)
+        self.service.update_session(strength["id"], status="completed", now=sunday)
+        morning = datetime(2026, 9, 14, 0, 30, tzinfo=tokyo)
+        monday_bjj = self.service.add_bjj(datetime(2026, 9, 14, 7, 30, tzinfo=tokyo), now=morning)
+        later = datetime(2026, 9, 14, 9, 32, tzinfo=tokyo)
+        self.service.reconcile(later)
+        overview = self.service.overview(later)
+        tuesday = date(2026, 9, 15)
+        tuesday_types = [
+            item["planned_type"] for item in overview["week"]
+            if self.service._local_date(item["start_at"]) == tuesday
+            and item["status"] not in {"skipped", "cancelled"}
+        ]
+
+        self.assertEqual(self.service.session(monday_bjj["id"])["status"], "skipped")
+        self.assertEqual(tuesday_types, [])
+        self.assertTrue(any(item["date"] == tuesday.isoformat() for item in overview["bjj_candidates"]))
+        self.assertEqual(overview["tomorrow_prescription"]["session"], "bjj_normal")
+        self.assertTrue(overview["tomorrow_prescription"].get("candidate"))
+        self.assertFalse(any(
+            item["planned_type"] == "strength_b"
+            and item["status"] == "planned"
+            and self.service._local_date(item["start_at"]) == tuesday
+            for item in overview["week"]
+        ))
 
     def test_skipped_monday_bjj_does_not_stack_tuesday_gym(self) -> None:
         tokyo = ZoneInfo("Asia/Tokyo")
@@ -150,6 +248,64 @@ class TrainingServiceTests(unittest.TestCase):
             if self.service._local_date(item["start_at"]) == date(2026, 9, 15)
         ]
         self.assertEqual([item["planned_type"] for item in tuesday], ["bjj_normal"])
+
+    def test_confirmed_hard_bjj_cancels_strength_a_collision(self) -> None:
+        tokyo = ZoneInfo("Asia/Tokyo")
+        saturday = date(2026, 9, 19)
+        strength = self.service.schedule_gym(saturday, "strength_a", now=self.now)
+
+        hard_bjj = self.service.add_bjj(
+            datetime(2026, 9, 19, 10, 0, tzinfo=tokyo), hard=True, now=self.now,
+        )
+
+        self.assertEqual(self.service.session(hard_bjj["id"])["status"], "planned")
+        self.assertEqual(self.service.session(strength["id"])["status"], "cancelled")
+
+    def test_confirmed_normal_bjj_displaces_and_replans_strength_b(self) -> None:
+        tokyo = ZoneInfo("Asia/Tokyo")
+        tuesday = date(2026, 9, 15)
+        strength = self.service.schedule_gym(tuesday, "strength_b", now=self.now)
+
+        bjj = self.service.add_bjj(
+            datetime(2026, 9, 15, 7, 30, tzinfo=tokyo), now=self.now,
+        )
+        overview = self.service.overview(self.now)
+        tuesday_types = [
+            item["planned_type"] for item in overview["week"]
+            if self.service._local_date(item["start_at"]) == tuesday
+        ]
+
+        self.assertEqual(self.service.session(bjj["id"])["status"], "planned")
+        self.assertEqual(self.service.session(strength["id"])["status"], "cancelled")
+        self.assertEqual(tuesday_types, ["bjj_normal"])
+        self.assertTrue(any(
+            item["planned_type"] == "strength_b"
+            and item["status"] == "planned"
+            and self.service._local_date(item["start_at"]) != tuesday
+            for item in overview["week"]
+        ))
+
+    def test_confirmed_bjj_never_rewrites_completed_strength(self) -> None:
+        tokyo = ZoneInfo("Asia/Tokyo")
+        tuesday = date(2026, 9, 15)
+        strength = self.service.schedule_gym(tuesday, "strength_b", now=self.now)
+        self.service.update_session(strength["id"], status="completed", now=self.now)
+
+        self.service.add_bjj(
+            datetime(2026, 9, 15, 7, 30, tzinfo=tokyo), now=self.now,
+        )
+
+        self.assertEqual(self.service.session(strength["id"])["status"], "completed")
+
+    def test_strength_a_is_rejected_when_hard_bjj_is_already_confirmed(self) -> None:
+        tokyo = ZoneInfo("Asia/Tokyo")
+        saturday = date(2026, 9, 19)
+        self.service.add_bjj(
+            datetime(2026, 9, 19, 10, 0, tzinfo=tokyo), hard=True, now=self.now,
+        )
+
+        with self.assertRaisesRegex(ValueError, "Hard BJJ"):
+            self.service.schedule_gym(saturday, "strength_a", now=self.now)
 
     def test_log_matching_workout_marks_strength_complete(self) -> None:
         tokyo = ZoneInfo("Asia/Tokyo")

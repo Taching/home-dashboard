@@ -62,6 +62,30 @@ class EveningCoachRuleTests(unittest.TestCase):
         self.assertEqual(mutations[0].date, date(2026, 9, 15))
         self.assertFalse(any(item.date == date(2026, 9, 16) for item in mutations))
 
+    def test_does_not_place_strength_on_replacement_bjj_tuesday(self) -> None:
+        today = date(2026, 9, 14)
+        overview = {
+            "week_quality": "acceptable",
+            "bjj_candidates": [
+                {"date": "2026-09-15", "suggested_type": "bjj_normal"},
+                {"date": "2026-09-17", "suggested_type": "bjj_normal"},
+                {"date": "2026-09-19", "suggested_type": "bjj_hard"},
+            ],
+            "week": [
+                session("2026-09-13", "strength_a", "completed"),
+                session("2026-09-14", "bjj_normal", "skipped"),
+            ],
+            "upcoming": [],
+        }
+        mutations = propose_evening_mutations(today, overview, [])
+        self.assertFalse(any(
+            item.op == "place_session" and item.date == date(2026, 9, 15)
+            for item in mutations
+        ))
+        strength = next((item for item in mutations if item.op == "place_session" and item.workout_type == "strength_b"), None)
+        if strength is not None:
+            self.assertNotEqual(strength.date, date(2026, 9, 15))
+
     def test_moves_tomorrow_gym_off_a_heavy_workday(self) -> None:
         today = date(2026, 9, 14)
         overview = {

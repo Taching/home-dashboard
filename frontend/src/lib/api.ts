@@ -22,14 +22,19 @@ import type {
   WorkoutLogPayload,
   DailyBriefing,
 } from '../types'
+import { announcePlanningChange } from './planningRefresh'
 
 async function requireJson<T>(response: Response): Promise<T> {
   if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
   return response.json() as Promise<T>
 }
 
+function freshGet(path: string) {
+  return fetch(path, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })
+}
+
 export async function fetchDashboard() {
-  return requireJson<Dashboard>(await fetch('/api/v1/dashboard'))
+  return requireJson<Dashboard>(await freshGet('/api/v1/dashboard'))
 }
 
 export async function fetchReadings() {
@@ -41,7 +46,7 @@ export async function fetchReadings() {
 
 export async function fetchCalendarEvents(start: string, days = 30) {
   const query = new URLSearchParams({ start, days: String(days) })
-  return requireJson<CalendarToday>(await fetch(`/api/v1/calendar/events?${query}`))
+  return requireJson<CalendarToday>(await freshGet(`/api/v1/calendar/events?${query}`))
 }
 
 export async function fetchNotionToday() {
@@ -94,7 +99,7 @@ export async function fetchWalkingPadReminder() {
 }
 
 export async function fetchTrainingOverview() {
-  return requireJson<TrainingOverview>(await fetch('/api/v1/training/overview'))
+  return requireJson<TrainingOverview>(await freshGet('/api/v1/training/overview'))
 }
 
 export async function fetchTrainingPlans() {
@@ -120,27 +125,31 @@ export async function logTraining(payload: TrainingLogPayload) {
 
 export async function fetchDailyBriefing(day: string, preview?: string) {
   const query = preview ? `?preview=${encodeURIComponent(preview)}` : ''
-  return requireJson<DailyBriefing>(await fetch(`/api/v1/daily/${day}${query}`))
+  return requireJson<DailyBriefing>(await freshGet(`/api/v1/daily/${day}${query}`))
 }
 
 export async function fetchDailyPlan(day: string) {
-  return requireJson<DailyBriefing>(await fetch(`/api/v1/plan/${day}`))
+  return requireJson<DailyBriefing>(await freshGet(`/api/v1/plan/${day}`))
 }
 
 export async function logDailyWorkout(day: string, payload: WorkoutLogPayload) {
-  return requireJson<TrainingLogResult>(await fetch(`/api/v1/daily/${day}/workout`, {
+  const result = await requireJson<TrainingLogResult>(await fetch(`/api/v1/daily/${day}/workout`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   }))
+  announcePlanningChange()
+  return result
 }
 
 export async function logWorkout(payload: WorkoutLogPayload) {
-  return requireJson<TrainingLogResult>(await fetch('/api/v1/training/workout', {
+  const result = await requireJson<TrainingLogResult>(await fetch('/api/v1/training/workout', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   }))
+  announcePlanningChange()
+  return result
 }
 
 export async function logSober(day: string, payload: { sober: boolean; note?: string }) {

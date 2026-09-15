@@ -4,6 +4,7 @@ import unittest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.api.router import _calendar_response
 from app.database.session import Base
 from app.domain.calendar_bridge import CalendarBridgeService, CalendarEvent
 
@@ -41,6 +42,21 @@ class CalendarBridgeServiceTests(unittest.TestCase):
         self.assertEqual([event.external_id for event in events], ["all-day", "meeting"])
         self.assertTrue(events[0].is_all_day)
 
+    def test_snapshot_keeps_calendar_title(self) -> None:
+        self.service.replace_snapshot(
+            [
+                CalendarEvent(
+                    "work", "Standup", self.now, self.now + timedelta(hours=1),
+                    calendar_title="wada.takatoshi@asuene.com",
+                ),
+            ],
+            self.now,
+        )
+
+        _, _, events = self.service.events_for_range(self.now.date(), 1)
+
+        self.assertEqual(events[0].calendar_title, "wada.takatoshi@asuene.com")
+
     def test_snapshot_replaces_previous_events(self) -> None:
         self.service.replace_snapshot(
             [CalendarEvent("old", "Old", self.now, self.now + timedelta(hours=1))], self.now
@@ -73,3 +89,13 @@ class CalendarBridgeServiceTests(unittest.TestCase):
         self.assertFalse(self.service.should_log_sync(events))
         self.assertTrue(self.service.should_log_fetch("2026-06-22:30", events))
         self.assertFalse(self.service.should_log_fetch("2026-06-22:30", events))
+
+    def test_api_response_includes_calendar_title(self) -> None:
+        event = CalendarEvent(
+            "work", "Standup", self.now, self.now + timedelta(hours=1),
+            calendar_title="wada.takatoshi@asuene.com",
+        )
+
+        payload = _calendar_response("ready", self.now, [event])
+
+        self.assertEqual(payload.events[0].calendar_title, "wada.takatoshi@asuene.com")

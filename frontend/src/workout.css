@@ -15,8 +15,8 @@ html.is-workout * {
 .workout-page {
   min-height: 100dvh;
   padding: 1.1rem 1.15rem 2.4rem;
-  background: radial-gradient(ellipse 80% 55% at 100% 0%, #14264a 0%, #0b1020 58%);
-  color: #e8eef8;
+  background: radial-gradient(ellipse 80% 55% at 100% 0%, var(--bg-wash) 0%, var(--bg) 58%);
+  color: var(--ink);
 }
 
 .workout-page a {
@@ -40,7 +40,7 @@ html.is-workout * {
   font-weight: 760;
   letter-spacing: .08em;
   text-transform: uppercase;
-  color: #9eb0cb;
+  color: var(--ink-muted);
 }
 
 .workout-brand img {
@@ -49,7 +49,7 @@ html.is-workout * {
 }
 
 .workout-back {
-  color: #9eb0cb;
+  color: var(--ink-muted);
   font-size: .86rem;
   font-weight: 650;
 }
@@ -63,7 +63,7 @@ html.is-workout * {
 .workout-hero p,
 .workout-kicker {
   margin: 0;
-  color: #8ea0bb;
+  color: var(--ink-muted);
   font-size: .78rem;
   letter-spacing: .04em;
   text-transform: uppercase;
@@ -97,9 +97,9 @@ html.is-workout * {
   display: grid;
   gap: .28rem;
   padding: .9rem .95rem;
-  border: 1px solid #263554;
+  border: 1px solid var(--line);
   border-radius: .45rem;
-  background: rgba(17, 26, 48, .72);
+  background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
 }
 
 .workout-plan-link strong,
@@ -112,7 +112,7 @@ html.is-workout * {
 .workout-plan-link span,
 .workout-log span,
 .workout-note {
-  color: #9eb0cb;
+  color: var(--ink-muted);
   font-size: .86rem;
   line-height: 1.45;
 }
@@ -125,7 +125,7 @@ html.is-workout * {
 }
 
 .workout-card li {
-  color: #d5deec;
+  color: var(--ink);
 }
 
 .workout-form {
@@ -139,7 +139,7 @@ html.is-workout * {
 }
 
 .workout-field span {
-  color: #9eb0cb;
+  color: var(--ink-muted);
   font-size: .78rem;
   letter-spacing: .04em;
   text-transform: uppercase;
@@ -156,10 +156,10 @@ html.is-workout * {
 .workout-form textarea,
 .workout-form button[type='submit'] {
   min-height: 2.4rem;
-  border: 1px solid #40526f;
+  border: 1px solid var(--line-strong);
   border-radius: .3rem;
-  color: #dbe8fa;
-  background: #111a30;
+  color: var(--ink);
+  background: var(--bg-elevated);
   font: inherit;
 }
 
@@ -169,8 +169,8 @@ html.is-workout * {
 
 .workout-choices button.is-selected,
 .workout-form button[type='submit'] {
-  border-color: #7ea2e0;
-  background: #1b2c52;
+  border-color: var(--accent);
+  background: var(--bg-wash);
 }
 
 .workout-form input,
@@ -196,32 +196,32 @@ html.is-workout * {
 
 .workout-done-badge {
   margin: 0;
-  color: #8af0cf;
+  color: var(--positive);
   font-weight: 780;
 }
 
 .workout-status {
   margin: 0;
-  color: #b8c7de;
+  color: var(--ink-muted);
   font-size: .88rem;
 }
 
 .workout-empty {
-  color: #8ea0bb;
+  color: var(--ink-muted);
 }
 
 .workout-chili {
   display: grid;
   gap: .45rem;
   padding: .95rem 1rem;
-  border: 1px solid rgba(121, 230, 189, .32);
+  border: 1px solid color-mix(in srgb, var(--positive) 32%, transparent);
   border-radius: .45rem;
-  background: linear-gradient(150deg, rgba(17, 53, 52, .95), rgba(13, 29, 43, .96));
+  background: linear-gradient(150deg, color-mix(in srgb, var(--bg-wash) 95%, transparent), color-mix(in srgb, var(--bg-elevated) 96%, transparent));
 }
 
 .workout-chili h2 {
   margin: 0;
-  color: #8af0cf;
+  color: var(--positive);
   font-size: .78rem;
   letter-spacing: .04em;
   text-transform: uppercase;
@@ -229,7 +229,7 @@ html.is-workout * {
 
 .workout-advice {
   margin: 0;
-  color: #d9f5eb;
+  color: var(--ink);
   font-size: 1rem;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -246,21 +246,21 @@ html.is-workout * {
   gap: .7rem;
   align-items: start;
   padding: .85rem .9rem;
-  border: 1px solid #263554;
+  border: 1px solid var(--line);
   border-radius: .45rem;
-  background: rgba(17, 26, 48, .72);
+  background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
 }
 
 .workout-check.is-checked {
-  border-color: #7ea2e0;
-  background: #1b2c52;
+  border-color: var(--accent);
+  background: var(--bg-wash);
 }
 
 .workout-check input {
   width: 1.2rem;
   height: 1.2rem;
   margin-top: .15rem;
-  accent-color: #7ea2e0;
+  accent-color: var(--accent);
 }
 
 .workout-check span {
@@ -274,7 +274,7 @@ html.is-workout * {
 
 .workout-check em,
 .workout-check small {
-  color: #9eb0cb;
+  color: var(--ink-muted);
   font-style: normal;
   font-size: .86rem;
   line-height: 1.4;

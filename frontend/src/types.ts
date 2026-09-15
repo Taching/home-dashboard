@@ -100,6 +100,7 @@ export type CalendarEvent = {
   is_current: boolean
   source?: string
   training_session_id?: string | null
+  calendar_title?: string | null
 }
 
 export type CalendarToday = {

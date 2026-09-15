@@ -96,6 +96,7 @@ class CalendarEventResponse(BaseModel):
     is_current: bool = False
     source: str = "apple_calendar"
     training_session_id: str | None = None
+    calendar_title: str | None = None
 
 
 class CalendarTodayResponse(BaseModel):
@@ -691,6 +692,7 @@ def _calendar_response(
                 is_current=event.start_at <= now < event.end_at,
                 source=getattr(event, "source", "apple_calendar"),
                 training_session_id=getattr(event, "managed_session_id", None),
+                calendar_title=getattr(event, "calendar_title", None),
             )
             for event in events
         ],

@@ -1,5 +1,6 @@
 import { useClock } from '../hooks/useClock'
 import type { CalendarEvent, CalendarToday, NotionTask, NotionToday, TrainingOverview } from '../types'
+import { calendarEventKind } from '../lib/calendarKind'
 import { doneMarkLabel } from '../lib/workoutMatch'
 import { sessionOnDate, TodayTrainingCard, TrainingWeekStrip } from './TrainingPlanner'
 import { priorityLevel } from './TaskPriorityBars'
@@ -268,7 +269,7 @@ function CalendarSchedule({
       <div className="all-day-strip" aria-label="All-day events">
         <span>All day</span>
         {allDayEvents.length === 0 ? <small>—</small> : allDayEvents.map((event) => (
-          <span className="all-day-event" key={event.id}>{event.title}</span>
+          <span className={`all-day-event is-${calendarEventKind(event)}`} key={event.id}>{event.title}</span>
         ))}
       </div>
 
@@ -297,7 +298,9 @@ function CalendarSchedule({
                 const top = ((event.startMinute - START_HOUR * 60) / TOTAL_MINUTES) * 100
                 const height = ((event.endMinute - event.startMinute) / TOTAL_MINUTES) * 100
                 const compact = event.endMinute - event.startMinute < 45
-                const isTraining = event.source === 'training' || Boolean(event.training_session_id)
+                const kind = calendarEventKind(event)
+                const isTraining = kind === 'training'
+                const tone = kind === 'work' ? 'work' : 'personal'
                 const isDone = Boolean(selectedDoneLabel && isTraining && (
                   !event.training_session_id
                   || !selectedSession
@@ -305,14 +308,14 @@ function CalendarSchedule({
                 ))
                 return (
                   <article
-                    className={`calendar-event${compact ? ' is-compact' : ''}${event.is_current ? ' is-current' : ''}${isTraining ? ' is-training' : ''}${isDone ? ' is-done' : ''}`}
+                    className={`calendar-event is-${tone}${isTraining ? ' is-training' : ''}${compact ? ' is-compact' : ''}${event.is_current ? ' is-current' : ''}${isDone ? ' is-done' : ''}`}
                     key={event.id}
                     style={{
                       top: `${top}%`, height: `${height}%`,
                       left: `calc(${(event.column / event.columns) * 100}% + 3px)`,
                       width: `calc(${100 / event.columns}% - 6px)`,
                     }}
-                    aria-label={`${event.title}, ${eventTime(event)}${event.is_current ? ', now' : ''}${isDone ? `, ${selectedDoneLabel}` : ''}`}
+                    aria-label={`${event.title}, ${tone}, ${eventTime(event)}${event.is_current ? ', now' : ''}${isDone ? `, ${selectedDoneLabel}` : ''}`}
                   >
                     <strong>{isDone ? '✓ ' : ''}{compact ? `${eventTime(event)} ${event.title}` : event.title}</strong>
                     {!compact && (

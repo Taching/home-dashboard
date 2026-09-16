@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { canLogWorkout, doneMarkLabel, kindsMatch, slugForType, workoutAlreadyLogged } from './workoutMatch.ts'
+import { canLogWorkout, doneMarkLabel, kindsMatch, slugForType, workoutAlreadyLogged, workoutFormLocked } from './workoutMatch.ts'
 
 test('kindsMatch accepts aliases and rejects a different program', () => {
   assert.equal(kindsMatch('strength_a', 'strength_a'), true)
@@ -16,6 +16,7 @@ test('canLogWorkout blocks rest and mismatched other sessions', () => {
   assert.equal(canLogWorkout('strength_a', 'strength_a'), true)
   assert.equal(canLogWorkout('strength_a', 'strength_b'), false)
   assert.equal(canLogWorkout('rest', 'rest'), false)
+  assert.equal(canLogWorkout('recovery', 'recovery'), true)
   assert.equal(canLogWorkout('recovery', 'strength_a'), false)
 })
 
@@ -26,7 +27,11 @@ test('doneMarkLabel is only for a logged session', () => {
   assert.equal(doneMarkLabel('planned'), null)
   assert.equal(doneMarkLabel(null), null)
   assert.equal(workoutAlreadyLogged('completed'), true)
+  assert.equal(workoutAlreadyLogged('skipped'), true)
   assert.equal(workoutAlreadyLogged('planned'), false)
+  assert.equal(workoutFormLocked('completed'), true)
+  assert.equal(workoutFormLocked('skipped'), false)
+  assert.equal(workoutFormLocked('planned'), false)
 })
 
 test('slugForType maps competition to the hard BJJ program', () => {

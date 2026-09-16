@@ -485,6 +485,7 @@ class DailyPlanService:
             "bjj_candidates": overview.get("bjj_candidates") if isinstance(overview, dict) else [],
             "trends": overview.get("trends") if isinstance(overview, dict) else None,
             "readiness": overview.get("readiness") if isinstance(overview, dict) else None,
+            "day_flags": overview.get("day_flags") if isinstance(overview, dict) else {},
             "walk_reminder": walk_reminder,
         }
 
@@ -552,8 +553,7 @@ class DailyPlanService:
 
 
 def _daily_url(day: date) -> str:
-    base = (settings.chili_public_url or settings.daily_briefing_base_url).rstrip("/")
-    return f"{base}/daily/{day.isoformat()}"
+    return f"{settings.public_base_url()}/daily/{day.isoformat()}"
 
 
 def preview_workout_dict(day: date, workout_type: str) -> dict:

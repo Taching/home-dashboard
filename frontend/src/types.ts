@@ -296,6 +296,38 @@ export type PlannedWorkout = {
   intensity: string
   is_all_day?: boolean
   notes?: string | null
+  start_at?: string
+  target_rounds?: number | null
+  session_rpe?: number | null
+  miss_reason?: string | null
+  result?: TrainingSessionResult | null
+  exercise_results?: TrainingExerciseResult[]
+}
+
+export type TrainingSessionResult = {
+  status: string
+  miss_reason?: string | null
+  session_rpe?: number | null
+  difficulty?: number | null
+  fatigue?: string | null
+  pain?: boolean | null
+  soreness?: string | null
+  notes?: string | null
+  bjj_rounds?: number | null
+  perceived_intensity?: string | null
+  cardio?: string | null
+  grip_fatigue?: string | null
+  technical_performance?: string | null
+  recovery_activity?: string | null
+}
+
+export type TrainingExerciseResult = {
+  exercise_id: number
+  actual_load?: number | null
+  actual_sets?: number | null
+  actual_reps?: string | null
+  actual_duration_seconds?: number | null
+  completed: boolean
 }
 
 export type TrainingSession = PlannedWorkout & {
@@ -379,6 +411,28 @@ export type TrainingOverview = {
     motivation: number | null
     weight_kg: number | null
   } | null
+  day_flags?: Record<string, string[]>
+}
+
+export type WeeklyReview = {
+  week_start: string
+  sessions: TrainingSession[]
+  planned: Record<string, number>
+  completed: Record<string, number>
+  average_rpe: number | null
+  adaptation: Record<string, number | boolean>
+  what_changes: string
+  trends?: {
+    rpe?: string
+    average_rpe?: number | null
+    strength_load_delta?: number
+    strength_volume_delta?: number
+  }
+  recovery?: {
+    fatigue?: string | null
+    soreness?: string | null
+    notes?: string
+  }
 }
 
 export type DailyWeekSession = {
@@ -472,6 +526,7 @@ export type DailyBriefing = {
   bjj_candidates?: BjjCandidate[]
   trends?: TrainingOverview['trends'] | null
   readiness?: TrainingOverview['readiness']
+  day_flags?: Record<string, string[]>
   walk_reminder?: WalkReminder
 }
 

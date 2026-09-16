@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.router import api_router
+from app.core.settings import settings
 from app.database.session import Base
 from app.database import models  # noqa: F401
 from app.domain.activity_feed import ActivityFeedService
@@ -226,7 +227,7 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(self.app.state.openclaw_service.sent, [])
         self.assertEqual(len(self.app.state.openclaw_service.notified), 1)
         notify = self.app.state.openclaw_service.notified[0]
-        self.assertTrue(notify.startswith("http://127.0.0.1:8080/daily/2026-09-15\n\n"))
+        self.assertTrue(notify.startswith(f"{settings.public_base_url()}/daily/2026-09-15\n\n"))
         self.assertIn(advice, notify)
         sober = self.client.post(
             "/api/v1/daily/2026-09-15/sober",
@@ -256,7 +257,7 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(body["sunday"]["delta_kg"], -0.4)
         self.assertIn("down 0.4 kg", body["message"])
         self.assertEqual(self.app.state.openclaw_service.sent, [])
-        self.assertTrue(any(item.startswith("http://127.0.0.1:8080/daily/2026-09-13") for item in self.app.state.openclaw_service.notified))
+        self.assertTrue(any(item.startswith(f"{settings.public_base_url()}/daily/2026-09-13") for item in self.app.state.openclaw_service.notified))
         self.assertNotEqual(body["advice"], body["message"])
         self.assertNotIn("/daily/", body["advice"] or "")
 

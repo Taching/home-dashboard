@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 import hmac
+import logging
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -15,6 +16,7 @@ from app.domain.training.templates import WORKOUT_TEMPLATES
 from app.domain.training.types import WorkoutType
 
 training_router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class ReadinessRequest(BaseModel):
@@ -44,7 +46,46 @@ class SessionUpdateRequest(BaseModel):
     notes: str | None = Field(default=None, max_length=3000)
     session_rpe: float | None = Field(default=None, ge=1, le=10)
     final_round_quality: int | None = Field(default=None, ge=1, le=5)
+    miss_reason: str | None = Field(default=None, max_length=32)
     metrics: list[TrainingMetricRequest] | None = None
+
+
+class SessionResultRequest(BaseModel):
+    status: Literal["planned", "in_progress", "completed", "partial", "skipped"] | None = None
+    miss_reason: str | None = Field(default=None, max_length=32)
+    session_rpe: float | None = Field(default=None, ge=1, le=10)
+    difficulty: int | None = Field(default=None, ge=1, le=10)
+    fatigue: str | None = None
+    pain: bool | None = None
+    soreness: str | None = None
+    notes: str | None = Field(default=None, max_length=3000)
+    bjj_rounds: int | None = Field(default=None, ge=0, le=20)
+    perceived_intensity: str | None = None
+    cardio: str | None = None
+    grip_fatigue: str | None = None
+    technical_performance: str | None = None
+    recovery_activity: str | None = None
+    exercises: list[dict] | None = None
+
+
+class GymClosureRequest(BaseModel):
+    date: date
+    gym_id: str = "mita"
+    closure_type: Literal["HOLIDAY", "NO_CLASS", "CLOSED"] = "HOLIDAY"
+    note: str | None = Field(default=None, max_length=500)
+
+
+class UnavailabilityRequest(BaseModel):
+    date: date
+    reason: str = "USER_CANCELLED"
+    note: str | None = Field(default=None, max_length=500)
+
+
+class ClassExceptionRequest(BaseModel):
+    day: date | None = None
+    unavailable: bool = True
+    template: list[dict] | None = None
+    note: str | None = Field(default=None, max_length=500)
 
 
 class ReplaceSessionRequest(BaseModel):
@@ -93,13 +134,32 @@ def _require_auth(authorization: str | None) -> None:
 
 
 def _daily_briefing_url(day: date) -> str:
-    base = (settings.chili_public_url or settings.daily_briefing_base_url).rstrip("/")
-    return f"{base}/daily/{day.isoformat()}"
+    return f"{settings.public_base_url()}/daily/{day.isoformat()}"
 
 
 @training_router.get("/training/overview")
 async def training_overview(request: Request) -> dict:
     return request.app.state.training_service.overview()
+
+
+@training_router.get("/training/weeks/{week_start}/review")
+async def training_week_review(request: Request, week_start: date) -> dict:
+    return request.app.state.training_service.week_review(week_start)
+
+
+@training_router.post("/training/weeks/{week_start}/review")
+async def run_training_week_review(request: Request, week_start: date) -> dict:
+    return request.app.state.training_service.run_weekly_analysis(week_start)
+
+
+@training_router.post("/training/sessions/{session_id}/result")
+async def log_training_session_result(request: Request, session_id: str, body: SessionResultRequest) -> dict:
+    try:
+        return request.app.state.training_service.log_session_result(session_id, **body.model_dump(exclude_none=True))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Training session not found.") from None
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
 
 
 @training_router.get("/training/templates/{workout_type}")
@@ -162,6 +222,7 @@ async def update_training_session(
             notes=body.notes,
             session_rpe=body.session_rpe,
             final_round_quality=body.final_round_quality,
+            miss_reason=body.miss_reason,
             metrics=[item.model_dump() for item in body.metrics] if body.metrics is not None else None,
         )
     except KeyError:
@@ -203,6 +264,38 @@ async def record_training_fatigue(
         return request.app.state.training_service.record_fatigue(body.date, body.state)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@training_router.post("/automation/training/gym-closures")
+async def add_gym_closure(
+    request: Request, body: GymClosureRequest, authorization: str | None = Header(default=None),
+) -> dict:
+    _require_auth(authorization)
+    return request.app.state.training_service.add_gym_closure(
+        body.date, gym_id=body.gym_id, closure_type=body.closure_type, note=body.note,
+    )
+
+
+@training_router.post("/automation/training/unavailability")
+async def add_unavailability(
+    request: Request, body: UnavailabilityRequest, authorization: str | None = Header(default=None),
+) -> dict:
+    _require_auth(authorization)
+    return request.app.state.training_service.add_unavailability(body.date, reason=body.reason, note=body.note)
+
+
+@training_router.post("/automation/training/classes")
+async def update_training_classes(
+    request: Request, body: ClassExceptionRequest, authorization: str | None = Header(default=None),
+) -> dict:
+    _require_auth(authorization)
+    if body.template is not None:
+        return request.app.state.training_service.update_class_template(body.template)
+    if body.day is None:
+        raise HTTPException(status_code=400, detail="Provide a date or a class template.")
+    if body.unavailable:
+        return request.app.state.training_service.mark_no_class(body.day, note=body.note)
+    raise HTTPException(status_code=400, detail="Class updates need unavailable=true or a template.")
 
 
 @training_router.post("/automation/training/bjj/confirm")
@@ -329,6 +422,7 @@ def _send_once(request: Request, message: str, dedupe_key: str) -> dict:
         return {"status": "sent"}
     except Exception as error:
         notify.release(dedupe_key)
+        logger.exception("Training notify failed for %s", dedupe_key)
         return {"status": "failed", "message": str(error)}
 
 

@@ -100,8 +100,8 @@ class OpenClawService:
                 {
                     "channel": channel,
                     "to": target,
-                    "target": target,
                     "message": message,
+                    "idempotencyKey": str(uuid4()),
                 },
             )
             delivery = self._find_channel_delivery_status(payload)

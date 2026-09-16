@@ -157,8 +157,7 @@ class WeeklyService:
             return WeightRecord(logged_at=row.logged_at, weight_kg=row.weight_kg)
 
     def daily_url(self, day: date) -> str:
-        base = (settings.chili_public_url or settings.daily_briefing_base_url).rstrip("/")
-        return f"{base}/daily/{day.isoformat()}"
+        return f"{settings.public_base_url()}/daily/{day.isoformat()}"
 
     def week_sessions(self, sunday: date, training) -> tuple[WeekSession, ...]:
         if not hasattr(training, "logs_between"):

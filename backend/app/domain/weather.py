@@ -25,6 +25,26 @@ class WeatherDay:
 
 
 @dataclass(frozen=True)
+class TravelDay:
+    date: date
+    weather_code: int = 0
+    precipitation_mm: float = 0
+    precipitation_probability: float = 0
+    wind_kph: float | None = None
+    severe_weather: bool = False
+
+    @property
+    def blocks_travel(self) -> bool:
+        if self.severe_weather or self.weather_code in {95, 96, 99}:
+            return True
+        if self.precipitation_mm >= 10:
+            return True
+        if self.wind_kph is not None and self.wind_kph >= 50:
+            return True
+        return False
+
+
+@dataclass(frozen=True)
 class WeatherForecast:
     status: WeatherStatus
     location: str
@@ -64,35 +84,42 @@ class WeatherService:
 
     def __init__(self) -> None:
         self._cached: WeatherForecast | None = None
+        self._cached_travel: tuple[TravelDay, ...] = ()
         self._cached_at: datetime | None = None
 
     def configured(self) -> bool:
         return settings.weather_latitude is not None and settings.weather_longitude is not None
 
     def forecast(self) -> WeatherForecast:
+        self._refresh()
+        if self._cached is not None:
+            return self._cached
         if not self.configured():
             return WeatherForecast("not_configured", settings.weather_location_name, None, None, None)
+        return WeatherForecast("unavailable", settings.weather_location_name, None, None, None)
 
+    def travel_conditions(self) -> tuple[TravelDay, ...]:
+        self._refresh()
+        return self._cached_travel
+
+    def _refresh(self) -> None:
+        if not self.configured():
+            self._cached = WeatherForecast("not_configured", settings.weather_location_name, None, None, None)
+            self._cached_travel = ()
+            return
         now = datetime.now(UTC)
         if self._cached and self._cached_at and now - self._cached_at < self._cache_ttl:
-            return self._cached
-
+            return
         try:
             payload = self._fetch()
-            parsed = self._parse(payload)
-            self._cached = parsed
+            self._cached = self._parse(payload)
+            self._cached_travel = self._parse_travel(payload)
             self._cached_at = now
-            return parsed
         except httpx.HTTPError:
-            if self._cached:
-                return self._cached
-            return WeatherForecast(
-                "unavailable",
-                settings.weather_location_name,
-                None,
-                None,
-                None,
-            )
+            if self._cached is None:
+                self._cached = WeatherForecast(
+                    "unavailable", settings.weather_location_name, None, None, None,
+                )
 
     def _fetch(self) -> dict:
         assert settings.weather_latitude is not None
@@ -101,9 +128,9 @@ class WeatherService:
             "latitude": settings.weather_latitude,
             "longitude": settings.weather_longitude,
             "current": "temperature_2m,weather_code,is_day",
-            "daily": "weather_code,temperature_2m_max,temperature_2m_min",
+            "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max",
             "timezone": settings.timezone,
-            "forecast_days": 2,
+            "forecast_days": 8,
         }
         with httpx.Client(timeout=12) as client:
             response = client.get("https://api.open-meteo.com/v1/forecast", params=params)
@@ -157,3 +184,26 @@ class WeatherService:
             today=today,
             tomorrow=by_date.get(tomorrow_local),
         )
+
+    def _parse_travel(self, payload: dict) -> tuple[TravelDay, ...]:
+        daily = payload.get("daily", {})
+        dates = [date.fromisoformat(value) for value in daily.get("time", [])]
+        codes = daily.get("weather_code", [])
+        rain = daily.get("precipitation_sum", [])
+        chance = daily.get("precipitation_probability_max", [])
+        wind = daily.get("wind_speed_10m_max", [])
+        days: list[TravelDay] = []
+        for index, day in enumerate(dates):
+            code = int(codes[index]) if index < len(codes) else 0
+            mm = float(rain[index]) if index < len(rain) and rain[index] is not None else 0.0
+            probability = float(chance[index]) if index < len(chance) and chance[index] is not None else 0.0
+            wind_kph = float(wind[index]) if index < len(wind) and wind[index] is not None else None
+            days.append(TravelDay(
+                date=day,
+                weather_code=code,
+                precipitation_mm=mm,
+                precipitation_probability=probability,
+                wind_kph=wind_kph,
+                severe_weather=code in {95, 96, 99},
+            ))
+        return tuple(days)

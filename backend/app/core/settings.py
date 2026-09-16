@@ -64,6 +64,13 @@ class Settings(BaseSettings):
     walkingpad_min_session_minutes: int = 15
     chili_public_url: str = "http://127.0.0.1:8080"
     daily_briefing_base_url: str = "https://chili-dashboard.tail95606b.ts.net"
+
+    def public_base_url(self) -> str:
+        for url in (self.chili_public_url, self.daily_briefing_base_url):
+            value = (url or "").rstrip("/")
+            if value and "127.0.0.1" not in value and "localhost" not in value:
+                return value
+        return (self.chili_public_url or self.daily_briefing_base_url or "http://127.0.0.1:8080").rstrip("/")
     notion_progress_data_source_id: str | None = None
     notion_training_data_source_id: str | None = None
     sober_baseline_date: str = "2026-08-22"

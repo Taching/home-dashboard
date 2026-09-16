@@ -1,4 +1,5 @@
 import unittest
+from datetime import date
 
 from app.domain.weather import wmo_to_icon
 
@@ -16,6 +17,15 @@ class WeatherIconTests(unittest.TestCase):
 
     def test_thunderstorm(self):
         self.assertEqual(wmo_to_icon(95, is_day=True)[0], "storm")
+
+    def test_travel_blocks_storms_and_heavy_rain_not_probability(self):
+        from app.domain.weather import TravelDay
+        light = TravelDay(date=date(2026, 9, 16), weather_code=61, precipitation_mm=2, precipitation_probability=80)
+        heavy = TravelDay(date=date(2026, 9, 16), weather_code=63, precipitation_mm=12, precipitation_probability=40)
+        storm = TravelDay(date=date(2026, 9, 16), weather_code=95, precipitation_mm=1, severe_weather=True)
+        self.assertFalse(light.blocks_travel)
+        self.assertTrue(heavy.blocks_travel)
+        self.assertTrue(storm.blocks_travel)
 
 
 if __name__ == "__main__":

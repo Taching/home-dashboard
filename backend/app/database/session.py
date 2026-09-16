@@ -46,6 +46,9 @@ def initialise_database() -> None:
         _ensure_column("daily_wellbeing_checkins", name, sql_type)
     _ensure_column("training_planner_settings", "declined_bjj_dates", "JSON")
     _ensure_column("training_planner_settings", "last_adjustment", "JSON")
+    _ensure_column("training_planner_settings", "class_template", "JSON")
+    _ensure_column("training_planner_settings", "gym_id", "VARCHAR(40)")
+    _ensure_column("training_sessions", "miss_reason", "VARCHAR(32)")
 
 
 def _ensure_column(table: str, name: str, ddl: str) -> None:

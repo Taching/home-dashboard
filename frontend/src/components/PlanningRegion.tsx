@@ -306,6 +306,11 @@ function CalendarSchedule({
                   || !selectedSession
                   || event.training_session_id === selectedSession.id
                 ))
+                const href = event.training_session_id
+                  ? `/workout/${event.training_session_id}`
+                  : (isTraining && selectedSession && selectedSession.planned_type !== 'rest'
+                    ? `/workout/${selectedSession.id}`
+                    : null)
                 return (
                   <article
                     className={`calendar-event is-${tone}${isTraining ? ' is-training' : ''}${compact ? ' is-compact' : ''}${event.is_current ? ' is-current' : ''}${isDone ? ' is-done' : ''}`}
@@ -317,6 +322,19 @@ function CalendarSchedule({
                     }}
                     aria-label={`${event.title}, ${tone}, ${eventTime(event)}${event.is_current ? ', now' : ''}${isDone ? `, ${selectedDoneLabel}` : ''}`}
                   >
+                    {href ? (
+                      <a href={href}>
+                        <strong>{isDone ? '✓ ' : ''}{compact ? `${eventTime(event)} ${event.title}` : event.title}</strong>
+                        {!compact && (
+                          <span>
+                            {eventTime(event)}
+                            {event.is_current ? ' · NOW' : ''}
+                            {isDone ? ` · ${selectedDoneLabel}` : ''}
+                          </span>
+                        )}
+                      </a>
+                    ) : (
+                      <>
                     <strong>{isDone ? '✓ ' : ''}{compact ? `${eventTime(event)} ${event.title}` : event.title}</strong>
                     {!compact && (
                       <span>
@@ -324,6 +342,8 @@ function CalendarSchedule({
                         {event.is_current ? ' · NOW' : ''}
                         {isDone ? ` · ${selectedDoneLabel}` : ''}
                       </span>
+                    )}
+                      </>
                     )}
                   </article>
                 )

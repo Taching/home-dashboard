@@ -47,7 +47,67 @@ WORKOUT_TEMPLATES: dict[WorkoutType, WorkoutTemplate] = {
         "easy",
         (E("Towel kettlebell hold", 25, "lb", 3, "30 sec/hand", notes="Progress to 45 lb only when easy"),),
     ),
+    WorkoutType.BJJ_NORMAL: WorkoutTemplate(
+        WorkoutType.BJJ_NORMAL,
+        "BJJ Normal",
+        90,
+        "normal",
+        (
+            E("Technical drilling", duration_seconds=20 * 60, notes="Class instruction"),
+            E("Positional sparring", duration_seconds=20 * 60),
+            E("Live rounds", sets=3, reps="5 min", notes="Record rounds, intensity, grip, and cardio"),
+        ),
+    ),
+    WorkoutType.BJJ_HARD: WorkoutTemplate(
+        WorkoutType.BJJ_HARD,
+        "BJJ Competition / Hard",
+        90,
+        "hard",
+        (
+            E("Specific sparring", duration_seconds=20 * 60, notes="Competition positions"),
+            E("Hard rounds", sets=5, reps="5 min", notes="Match pace; leave a round in the tank if quality drops"),
+        ),
+    ),
+    WorkoutType.BJJ_TECHNICAL: WorkoutTemplate(
+        WorkoutType.BJJ_TECHNICAL,
+        "BJJ Technical",
+        75,
+        "easy",
+        (
+            E("Technique", duration_seconds=30 * 60),
+            E("Light positional work", sets=2, reps="5 min"),
+        ),
+    ),
+    WorkoutType.RECOVERY: WorkoutTemplate(
+        WorkoutType.RECOVERY,
+        "Recovery",
+        30,
+        "easy",
+        (E("Easy mobility or walk", duration_seconds=20 * 60, notes="Stop if symptoms worsen"),),
+    ),
 }
+
+
+def apply_adaptation(template: WorkoutTemplate, adaptation) -> WorkoutTemplate:
+    if adaptation is None:
+        return template
+    exercises = []
+    for item in template.exercises:
+        load = item.load_value
+        sets = item.sets
+        duration = item.duration_seconds
+        if template.type in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B} and load is not None:
+            load = round(load * (1 + adaptation.strength_load_delta) * 2) / 2
+        if template.type in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B} and sets is not None and adaptation.strength_volume_delta:
+            sets = max(1, sets + (1 if adaptation.strength_volume_delta > 0 else -1 if adaptation.strength_volume_delta < 0 else 0))
+        if template.type == WorkoutType.ZONE_2 and duration is not None:
+            duration = max(20 * 60, duration + adaptation.zone2_minutes_delta * 60)
+        if template.type == WorkoutType.GRIP and sets is not None:
+            sets = max(1, sets + adaptation.grip_sets_delta)
+        exercises.append(E(
+            item.name, load, item.load_unit, sets, item.reps, duration, item.notes,
+        ))
+    return WorkoutTemplate(template.type, template.title, template.estimated_minutes, template.intensity, tuple(exercises), template.conditioning)
 
 
 def reduced_template(workout_type: WorkoutType) -> WorkoutTemplate:

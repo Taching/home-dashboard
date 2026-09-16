@@ -15,8 +15,7 @@ COMPLETED_TRAINING = {"completed", "partial", "competition"}
 
 
 def _daily_url(day: date) -> str:
-    base = (settings.chili_public_url or settings.daily_briefing_base_url).rstrip("/")
-    return f"{base}/daily/{day.isoformat()}"
+    return f"{settings.public_base_url()}/daily/{day.isoformat()}"
 
 
 @dataclass(frozen=True)

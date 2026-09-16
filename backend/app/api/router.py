@@ -1170,6 +1170,33 @@ async def openclaw_message_stream(request: Request) -> StreamingResponse:
     )
 
 
+@api_router.get("/planning/stream")
+async def planning_stream(request: Request) -> StreamingResponse:
+    service = request.app.state.training_service
+
+    async def events():
+        last_token: str | None = None
+        while not await request.is_disconnected():
+            stamp = await asyncio.to_thread(service.planning_stamp)
+            token = str(stamp.get("token") or "")
+            if token != last_token:
+                yield f"event: planning\ndata: {token}\n\n"
+                last_token = token
+            else:
+                yield ": keepalive\n\n"
+            await asyncio.sleep(2)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @api_router.post("/openclaw/messages", response_model=OpenClawSendResponse)
 async def send_openclaw_message(
     request: Request, body: OpenClawSendRequest

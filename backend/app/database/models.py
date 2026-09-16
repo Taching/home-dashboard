@@ -220,6 +220,8 @@ class TrainingPlannerSetting(Base):
     )
     declined_bjj_dates: Mapped[list[str]] = mapped_column(JSON, default=list)
     last_adjustment: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    class_template: Mapped[list] = mapped_column(JSON, default=list)
+    gym_id: Mapped[str] = mapped_column(String(40), default="mita")
 
 
 class TrainingSession(Base):
@@ -254,6 +256,7 @@ class TrainingSession(Base):
     session_rpe: Mapped[float | None] = mapped_column(Float, nullable=True)
     final_round_quality: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    miss_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
@@ -307,3 +310,65 @@ class TrainingSummaryPublication(Base):
     notion_page_id: Mapped[str] = mapped_column(String(64))
     content_hash: Mapped[str] = mapped_column(String(64))
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class TrainingGymClosure(Base):
+    __tablename__ = "training_gym_closures"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    local_date: Mapped[date] = mapped_column(Date, index=True)
+    gym_id: Mapped[str] = mapped_column(String(40), default="mita")
+    closure_type: Mapped[str] = mapped_column(String(32), default="HOLIDAY")
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class TrainingUnavailability(Base):
+    __tablename__ = "training_unavailability"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    local_date: Mapped[date] = mapped_column(Date, index=True, unique=True)
+    reason: Mapped[str] = mapped_column(String(32), default="USER_CANCELLED")
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class TrainingSessionResult(Base):
+    __tablename__ = "training_session_results"
+
+    session_id: Mapped[str] = mapped_column(String(36), ForeignKey("training_sessions.id"), primary_key=True)
+    status: Mapped[str] = mapped_column(String(20))
+    miss_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    session_rpe: Mapped[float | None] = mapped_column(Float, nullable=True)
+    difficulty: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fatigue: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    pain: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    soreness: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bjj_rounds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    perceived_intensity: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    cardio: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    grip_fatigue: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    technical_performance: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    recovery_activity: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class TrainingExerciseResult(Base):
+    __tablename__ = "training_exercise_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    exercise_id: Mapped[int] = mapped_column(Integer, ForeignKey("training_exercises.id"), index=True)
+    session_id: Mapped[str] = mapped_column(String(36), ForeignKey("training_sessions.id"), index=True)
+    actual_load: Mapped[float | None] = mapped_column(Float, nullable=True)
+    actual_sets: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actual_reps: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    actual_duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class TrainingWeekAdaptation(Base):
+    __tablename__ = "training_week_adaptations"
+
+    week_start: Mapped[date] = mapped_column(Date, primary_key=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

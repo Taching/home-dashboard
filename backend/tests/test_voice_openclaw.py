@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.router import api_router
+from app.database.session import initialise_database
 from app.domain.voice_commands import VoiceCommand, VoiceInterpretation
 from app.domain.activity_feed import ActivityFeedService
 from app.domain.voice_log import VoiceLogService
@@ -28,6 +29,9 @@ class FakeOpenClaw:
 
 
 class VoiceOpenClawApiTests(unittest.TestCase):
+    def setUp(self) -> None:
+        initialise_database()
+
     def test_voice_transcript_sends_message_to_openclaw(self):
         app = FastAPI()
         app.include_router(api_router, prefix="/api/v1")

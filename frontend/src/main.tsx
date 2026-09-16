@@ -13,6 +13,7 @@ import { getMotionMode } from './lib/motionMode'
 import { EventsPanel, TrainingInsights } from './components/TrainingPlanner'
 import { DailyBriefingPage } from './components/DailyBriefingPage'
 import { WorkoutApp } from './pages/WorkoutApp'
+import { WeeklyReviewPage } from './pages/WeeklyReviewPage'
 import './styles.css'
 import './workout.css'
 
@@ -128,7 +129,13 @@ function isDailyPath() {
   return path === '/daily' || path.startsWith('/daily/')
 }
 
-if (isWorkoutPath()) document.documentElement.classList.add('is-workout')
+function isWeeklyPath() {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/'
+  return path === '/weekly' || path.startsWith('/weekly/')
+}
+
+if (isWorkoutPath() || isWeeklyPath()) document.documentElement.classList.add('is-workout')
+if (isDailyPath()) document.documentElement.classList.add('is-daily')
 
 function PhoneApp() {
   if (isDailyPath()) {
@@ -136,9 +143,10 @@ function PhoneApp() {
     const day = match?.[1] ?? new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' })
     return <DailyBriefingPage day={day} />
   }
+  if (isWeeklyPath()) return <WeeklyReviewPage />
   return <WorkoutApp />
 }
 
 createRoot(document.getElementById('root')!).render(
-  isWorkoutPath() || isDailyPath() ? <PhoneApp /> : <AppShell />,
+  isWorkoutPath() || isDailyPath() || isWeeklyPath() ? <PhoneApp /> : <AppShell />,
 )

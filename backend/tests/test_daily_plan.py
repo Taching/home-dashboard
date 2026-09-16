@@ -275,6 +275,7 @@ class DailyPlanTests(unittest.TestCase):
         settings.dashboard_automation_token = "automation-token"
         settings.chili_public_url = "http://127.0.0.1:8080"
         settings.daily_briefing_base_url = "http://127.0.0.1:8080"
+        settings.public_base_url.return_value = "http://127.0.0.1:8080"
         settings.timezone = "Asia/Tokyo"
         self.app.state.calendar_adjuster = CalendarAdjuster(timezone_name="Asia/Tokyo", api_key="")
         response = self.client.post(

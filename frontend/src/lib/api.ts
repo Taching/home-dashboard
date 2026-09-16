@@ -21,6 +21,8 @@ import type {
   TrainingLogResult,
   WorkoutLogPayload,
   DailyBriefing,
+  TrainingSession,
+  WeeklyReview,
 } from '../types'
 import { announcePlanningChange } from './planningRefresh'
 
@@ -109,6 +111,42 @@ export async function fetchTrainingPlans() {
 
 export async function fetchTrainingPlan(slug: string) {
   return requireJson<TrainingPlan>(await fetch(`/api/v1/training/plans/${slug}`))
+}
+
+export async function fetchTrainingSession(sessionId: string) {
+  return requireJson<TrainingSession>(await freshGet(`/api/v1/training/sessions/${sessionId}`))
+}
+
+export async function logTrainingSessionResult(sessionId: string, payload: Record<string, unknown>) {
+  const result = await requireJson<TrainingSession>(await fetch(`/api/v1/training/sessions/${sessionId}/result`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }))
+  announcePlanningChange()
+  return result
+}
+
+export async function fetchWeeklyReview(weekStart: string) {
+  return requireJson<WeeklyReview>(await freshGet(`/api/v1/training/weeks/${weekStart}/review`))
+}
+
+export async function runWeeklyReview(weekStart: string) {
+  const result = await requireJson<WeeklyReview>(await fetch(`/api/v1/training/weeks/${weekStart}/review`, {
+    method: 'POST',
+  }))
+  announcePlanningChange()
+  return result
+}
+
+export async function postDailyConstraint(day: string, payload: { kind: 'cannot_train' | 'holiday' | 'no_class' | 'miss'; miss_reason?: string; note?: string }) {
+  const result = await requireJson<DailyBriefing>(await fetch(`/api/v1/daily/${day}/constraint`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }))
+  announcePlanningChange()
+  return result
 }
 
 export async function fetchTrainingToday() {

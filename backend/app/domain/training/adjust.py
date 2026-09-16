@@ -31,6 +31,10 @@ _OPS = (
     "complete_task",
     "move_meeting",
     "place_session",
+    "cannot_train",
+    "gym_closed",
+    "no_class",
+    "did_instead",
 )
 
 _WEEKDAYS = {
@@ -94,7 +98,8 @@ consecutive hard days. Grip is the first target sacrificed. Weekly counters
 are status, not quotas. Sunday gym counts for the coming week.
 
 Allowed ops: gym_today, rest_today, move_gym, confirm_bjj, decline_bjj, add_bjj,
-replace_session, move_session, skip_session, fatigue, replan, complete_task, move_meeting.
+replace_session, move_session, skip_session, fatigue, replan, complete_task, move_meeting,
+cannot_train, gym_closed, no_class, did_instead.
 Dates are YYYY-MM-DD in Asia/Tokyo. Use session_id or event_id from context when touching
 a specific item. If the message is not a calendar or plan change, return no mutations."""
 
@@ -271,6 +276,16 @@ class CalendarAdjuster:
             if not mutation.workout_type:
                 raise ValueError("place_session requires workout_type.")
             return {"op": op, "result": _invoke(training.place_session, day, mutation.workout_type, now=now)}
+        if op == "cannot_train":
+            return {"op": op, "result": _invoke(training.add_unavailability, day, now=now)}
+        if op == "gym_closed":
+            return {"op": op, "result": _invoke(training.add_gym_closure, day, now=now)}
+        if op == "no_class":
+            return {"op": op, "result": _invoke(training.mark_no_class, day, now=now)}
+        if op == "did_instead":
+            if not mutation.workout_type:
+                raise ValueError("did_instead requires workout_type.")
+            return {"op": op, "result": _invoke(training.log_instead, day, mutation.workout_type, now=now)}
         raise ValueError(f"Unsupported calendar mutation: {op}")
 
     def _context(self, training, calendar, notion, today: date, now: datetime) -> dict:
@@ -399,6 +414,14 @@ def match_calendar_adjust_fast_path(instruction: str, today: date) -> CalendarAn
     text = " ".join(instruction.lower().split())
     if not text:
         return None
+    instead = _instead_workout(text)
+    if instead:
+        day = _mentioned_day(text, today) or today
+        return CalendarAnalysis(
+            f"Log missed class and {instead.replace('_', ' ')} instead.",
+            "fast_path",
+            (CalendarMutation(op="did_instead", date=day, workout_type=instead),),
+        )
     mutations: list[CalendarMutation] = []
     strength = _strength_variant(text)
     if strength:
@@ -423,9 +446,35 @@ def match_calendar_adjust_fast_path(instruction: str, today: date) -> CalendarAn
         if fatigue:
             mutations.append(CalendarMutation(op="fatigue", date=today, fatigue_state=fatigue))
     if not mutations:
+        day = _mentioned_day(text, today)
+        if day and re.search(r"cannot train|can'?t train|i(?:'m| am) unavailable|unavailable", text):
+            mutations.append(CalendarMutation(op="cannot_train", date=day))
+        elif day and re.search(r"gym (?:is )?closed|holiday|closed tomorrow", text):
+            mutations.append(CalendarMutation(op="gym_closed", date=day))
+        elif day and re.search(r"no class|class (?:is )?cancelled|cancelled class", text):
+            mutations.append(CalendarMutation(op="no_class", date=day))
+    if not mutations:
         return None
     labels = ", ".join(item.op.replace("_", " ") for item in mutations)
     return CalendarAnalysis(f"Apply {labels} from the message.", "fast_path", tuple(mutations))
+
+
+def _instead_workout(text: str) -> str | None:
+    missed = re.search(
+        r"(didn'?t|did not|missed|skipped).{0,80}\b(bjj|jiu(?:-?jitsu)?|jiujitsu|class)\b",
+        text,
+    )
+    if not missed:
+        return None
+    if re.search(r"\bgrip\b", text):
+        return "grip"
+    if re.search(r"\bzone[\s_-]*2\b", text):
+        return "zone_2"
+    if re.search(r"\bstrength[\s_-]*b\b|\bgym\s*\(?\s*b\b", text):
+        return "strength_b"
+    if re.search(r"\bstrength[\s_-]*a\b|\bgym\s*\(?\s*a\b", text):
+        return "strength_a"
+    return None
 
 
 def _strength_variant(text: str) -> str | None:
@@ -718,8 +767,7 @@ def _type_title(workout_type: str) -> str:
 
 
 def _daily_url(day: date) -> str:
-    base = (settings.chili_public_url or settings.daily_briefing_base_url).rstrip("/")
-    return f"{base}/daily/{day.isoformat()}"
+    return f"{settings.public_base_url()}/daily/{day.isoformat()}"
 
 
 def _invoke(method, *args, now=None, **kwargs):

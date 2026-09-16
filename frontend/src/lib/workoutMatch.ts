@@ -20,6 +20,10 @@ export function workoutAlreadyLogged(status: string | null | undefined) {
   return ['completed', 'partial', 'skipped'].includes(status ?? '')
 }
 
+export function workoutFormLocked(status: string | null | undefined) {
+  return status === 'completed' || status === 'partial'
+}
+
 export function doneMarkLabel(status: string | null | undefined) {
   if (status === 'completed') return 'Done'
   if (status === 'partial') return 'Partial'
@@ -35,6 +39,7 @@ export function slugForType(type: string) {
 }
 
 export function canLogWorkout(plannedType: string | undefined, loggedKind: string | undefined) {
-  if (!plannedType || plannedType === 'rest' || plannedType === 'recovery') return false
+  if (!plannedType || plannedType === 'rest') return false
+  if (plannedType === 'recovery') return !loggedKind || loggedKind === 'recovery'
   return kindsMatch(plannedType, loggedKind)
 }

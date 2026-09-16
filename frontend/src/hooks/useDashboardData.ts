@@ -7,6 +7,7 @@ import {
   fetchWalkingPadToday,
   fetchWeather,
   fetchDailyPlan,
+  fetchTrainingOverview,
   setSystemVolume,
 } from '../lib/api'
 import { notionFromPlan, trainingOverviewFromPlan, walkReminderFromPlan } from '../lib/dailyPlan'
@@ -89,7 +90,7 @@ export const initialTraining: TrainingOverview = {
   generated_at: '', timezone: 'Asia/Tokyo', phase: 'build_october', today: null, tomorrow: null,
   week_start: '2026-09-07', week: [], upcoming: [], countdowns: [], compliance: {},
   week_quality: undefined, tomorrow_prescription: null, bjj_candidates: [],
-  trends: { bike_decay: [], bjj_capacity: [], weight_7d_average: null }, readiness: null,
+  trends: { bike_decay: [], bjj_capacity: [], weight_7d_average: null }, readiness: null, day_flags: {},
 }
 
 const DASHBOARD_REFRESH_MS = 60_000
@@ -156,11 +157,13 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
   }, [selectedCalendarDate])
 
   const refreshPlanning = useCallback(async () => {
-    const [planResult] = await Promise.allSettled([
+    const [planResult, trainingResult] = await Promise.allSettled([
       fetchDailyPlan(today),
+      fetchTrainingOverview(),
       refreshCalendar(selectedCalendarDate),
     ])
     if (planResult.status === 'fulfilled') applyPlan(planResult.value)
+    if (trainingResult.status === 'fulfilled') setTraining(trainingResult.value)
   }, [applyPlan, refreshCalendar, selectedCalendarDate, today])
 
   const refreshWeather = useCallback(async () => {
@@ -207,7 +210,7 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
       })
     }
   }, [applyPlan, plan, today])
-  usePolling(refreshPlanning, PLANNING_REFRESH_MS, !skipImmediatePoll)
+  usePolling(refreshPlanning, PLANNING_REFRESH_MS, true)
   usePolling(refreshWeather, WEATHER_REFRESH_MS, !skipImmediatePoll)
   usePolling(refreshWalkingPad, WALKINGPAD_REFRESH_MS, true)
 
@@ -220,20 +223,6 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
   }, [selectedCalendarDate, refreshCalendar])
 
   useEffect(() => subscribeToPlanningChanges(() => void refreshPlanning()), [refreshPlanning])
-
-  useEffect(() => {
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') void refreshPlanning()
-    }
-    window.addEventListener('focus', refreshWhenVisible)
-    window.addEventListener('online', refreshWhenVisible)
-    document.addEventListener('visibilitychange', refreshWhenVisible)
-    return () => {
-      window.removeEventListener('focus', refreshWhenVisible)
-      window.removeEventListener('online', refreshWhenVisible)
-      document.removeEventListener('visibilitychange', refreshWhenVisible)
-    }
-  }, [refreshPlanning])
 
   return {
     dashboard,

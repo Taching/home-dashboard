@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { fetchDailyBriefing, logDailyWorkout, logSober, logSundayReview } from '../lib/api'
-import { doneMarkLabel, workoutAlreadyLogged } from '../lib/workoutMatch'
+import { useLiveResource } from '../hooks/useLiveResource'
+import { doneMarkLabel, workoutFormLocked } from '../lib/workoutMatch'
 import type { DailyBriefing, PlannedExercise } from '../types'
 
 function formatTime(value: string, allDay = false) {
@@ -17,39 +18,40 @@ function exerciseDetail(item: PlannedExercise) {
   ].filter(Boolean).join(' · ')
 }
 
+function liveAdjustment(adjustment: { how?: string[]; why?: string[]; banner?: string } | null | undefined) {
+  if (!adjustment?.how?.length) return null
+  const quota = /still needs|only fill it if|one complete rest|one full rest day|Rest 0|missing tournament piece|empty time is not extra gym/i
+  const how = adjustment.how.filter((item) => !quota.test(item))
+  const why = (adjustment.why ?? []).filter((item) => !quota.test(item))
+  if (!how.length && !why.length) return null
+  return { ...adjustment, how, why }
+}
+
 function DoneBadge() {
   return <span className="daily-done-badge" aria-label="Done">✓</span>
 }
 
 export function DailyBriefingPage({ day }: { day: string }) {
   const previewWorkout = useMemo(() => new URLSearchParams(window.location.search).get('preview'), [])
-  const [briefing, setBriefing] = useState<DailyBriefing | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const load = () => {
-    fetchDailyBriefing(day, previewWorkout ?? undefined)
-      .then((data) => {
-        setBriefing(data)
-        setError(null)
-        document.title = `Daily · ${data.date}`
-      })
-      .catch(() => setError('The daily briefing could not be loaded.'))
-      .finally(() => setLoading(false))
-  }
-
-  useEffect(() => {
-    load()
-  }, [day, previewWorkout])
+  const { data: briefing, error, refresh, setData: setBriefing } = useLiveResource(
+    () => fetchDailyBriefing(day, previewWorkout ?? undefined),
+    [day, previewWorkout],
+  )
 
   const title = useMemo(() => new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Tokyo', weekday: 'long', day: 'numeric', month: 'long',
   }).format(new Date(`${day}T12:00:00+09:00`)), [day])
 
-  if (loading) return <main className="daily-briefing-shell daily-loading">Loading your day…</main>
-  if (!briefing) return <main className="daily-briefing-shell daily-loading">{error}</main>
+  useEffect(() => {
+    document.documentElement.classList.add('is-daily')
+    if (briefing) document.title = `Daily · ${briefing.date}`
+    return () => document.documentElement.classList.remove('is-daily')
+  }, [briefing])
+
+  if (!briefing) return <main className="daily-briefing-shell daily-loading">{error ?? 'Loading your day…'}</main>
   const workout = briefing.workout
-  const workoutDone = workout ? doneMarkLabel(workout.status) : null
+  const workoutDone = workout && workoutFormLocked(workout.status) ? doneMarkLabel(workout.status) : null
+  const adjustment = liveAdjustment(briefing.last_adjustment)
 
   return (
     <main className="daily-briefing-shell">
@@ -70,7 +72,11 @@ export function DailyBriefingPage({ day }: { day: string }) {
             {workout ? (
               <>
                 <div className="daily-card-title">
+                {workout.planned_type !== 'rest' ? (
+                  <h2><a className="daily-session-link" href={`/workout/${workout.id}`}>{workout.title}</a></h2>
+                ) : (
                   <h2>{workout.title}</h2>
+                )}
                   {workoutDone ? <DoneBadge /> : (
                     <span>{workout.is_all_day ? 'Recovery day' : `${workout.estimated_minutes} min · ${workout.intensity}`}</span>
                   )}
@@ -79,13 +85,16 @@ export function DailyBriefingPage({ day }: { day: string }) {
                   <span>{workoutDone}{workout.is_all_day ? '' : ` · ${workout.estimated_minutes} min · ${workout.intensity}`}</span>
                 )}
                 <p>{workout.reason}</p>
+                {workout.planned_type !== 'rest' && (
+                  <p><a className="daily-session-link" href={`/workout/${workout.id}`}>Open session page</a></p>
+                )}
                 {workout.coach_focus.length > 0 && <ul>{workout.coach_focus.map((focus) => <li key={focus}>{focus}</li>)}</ul>}
-                {briefing.last_adjustment?.how?.length ? (
+                {adjustment?.how?.length ? (
                   <div className="daily-plan-change">
                     <strong>How Chili changed it</strong>
-                    <ul>{briefing.last_adjustment.how.map((item) => <li key={item}>{item}</li>)}</ul>
+                    <ul>{adjustment.how.map((item) => <li key={item}>{item}</li>)}</ul>
                     <strong>Why</strong>
-                    <ul>{briefing.last_adjustment.why.map((item) => <li key={item}>{item}</li>)}</ul>
+                    <ul>{(adjustment.why ?? []).map((item) => <li key={item}>{item}</li>)}</ul>
                   </div>
                 ) : null}
               </>
@@ -143,8 +152,8 @@ export function DailyBriefingPage({ day }: { day: string }) {
         </div>
 
         <div className="daily-summary-stack">
-          {workout && workout.planned_type !== 'rest' && !briefing.preview && (
-            <WorkoutForm day={briefing.date} workout={workout} storedAdvice={briefing.advice} onLogged={load} />
+          {workout && workout.planned_type !== 'rest' && !briefing.preview && !workout.planned_type.startsWith('bjj_') && workout.planned_type !== 'competition' && (
+            <WorkoutForm day={briefing.date} workout={workout} storedAdvice={briefing.advice} onLogged={() => void refresh()} />
           )}
           {briefing.sunday && <SundayForm briefing={briefing} onSaved={setBriefing} />}
           <SoberForm
@@ -152,7 +161,7 @@ export function DailyBriefingPage({ day }: { day: string }) {
             answered={briefing.sobriety.answered}
             savedNote={briefing.sobriety.note}
             days={briefing.sobriety.days}
-            onLogged={load}
+            onLogged={() => void refresh()}
           />
           {error && <p className="daily-form-error" role="alert">{error}</p>}
         </div>
@@ -179,7 +188,7 @@ function WorkoutForm({
   const [pending, setPending] = useState(false)
   const [saved, setSaved] = useState(false)
   const [advice, setAdvice] = useState<string | null>(null)
-  const sent = saved || workoutAlreadyLogged(workout.status)
+  const sent = saved || workoutFormLocked(workout.status)
   const [error, setError] = useState<string | null>(null)
 
   const submit = (event: FormEvent) => {

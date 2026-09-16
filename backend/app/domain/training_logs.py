@@ -165,7 +165,7 @@ class TrainingService:
         )
 
     def public_url(self, path: str = "") -> str:
-        base = (settings.chili_public_url or "http://127.0.0.1:8080").rstrip("/")
+        base = settings.public_base_url()
         if not path:
             return base
         return f"{base}/{path.lstrip('/')}"

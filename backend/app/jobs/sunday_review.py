@@ -49,7 +49,7 @@ async def run_sunday_review_reminder(application) -> None:
     while True:
         try:
             weekly = application.state.weekly_service
-            base = (settings.chili_public_url or settings.daily_briefing_base_url).rstrip("/")
+            base = settings.public_base_url()
             maybe_send_sunday_review(
                 weekly=weekly,
                 notify_service=application.state.chili_notify_service,

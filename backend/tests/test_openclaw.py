@@ -177,7 +177,8 @@ class OpenClawServiceTests(unittest.TestCase):
         self.assertEqual(method, "send")
         self.assertEqual(params["channel"], "telegram")
         self.assertEqual(params["to"], "8188515149")
-        self.assertEqual(params["target"], "8188515149")
+        self.assertNotIn("target", params)
+        self.assertTrue(params.get("idempotencyKey"))
         self.assertIn("/daily/2026-09-13", params["message"])
 
     def test_notify_user_fails_without_channel_confirmation(self):

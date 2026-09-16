@@ -22,6 +22,7 @@ export function trainingOverviewFromPlan(
     bjj_candidates: plan.tomorrow?.bjj_candidates ?? plan.bjj_candidates ?? [],
     trends: plan.trends ?? fallback.trends,
     readiness: plan.readiness ?? null,
+    day_flags: plan.day_flags ?? fallback.day_flags,
   }
 }
 

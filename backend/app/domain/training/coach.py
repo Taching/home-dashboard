@@ -5,7 +5,6 @@ from zoneinfo import ZoneInfo
 
 from app.core.settings import settings
 from app.domain.training.adjust import CalendarAdjuster, CalendarMutation, explain_adjustment
-from app.domain.training.policy import weekly_targets
 from app.domain.training.scheduler import phase_for_date
 
 
@@ -112,43 +111,8 @@ def propose_evening_mutations(
         target = next((day for day in open_days if _day_load(day, meetings) != "heavy"), None)
         if target is not None:
             mutations.append(CalendarMutation(op="move_gym", to_date=target))
-            occupied.add(target)
-            open_days = [day for day in open_days if day != target]
         else:
             mutations.append(CalendarMutation(op="rest_today", date=tomorrow))
-            rest_days.add(tomorrow)
-
-    phase = phase_for_date(week_start)
-    bjj_count = sum(str(item.get("planned_type") or "").startswith("bjj_") for item in sessions) + len(candidate_days)
-    targets = weekly_targets(phase, bjj_count=bjj_count)
-    strength = sum(str(item.get("planned_type") or "").startswith("strength_") for item in sessions)
-    zone_2 = sum(item.get("planned_type") == "zone_2" for item in sessions)
-    hard_bjj_days = {
-        _session_date(item) for item in sessions if item.get("planned_type") == "bjj_hard"
-    } | {
-        date.fromisoformat(item["date"])
-        for item in (overview.get("bjj_candidates") or [])
-        if item.get("suggested_type") == "bjj_hard" and item.get("date")
-    }
-
-    if strength < targets["strength"]:
-        chosen = _choose_open(
-            open_days, meetings,
-            reject=lambda day: any(0 <= (hard - day).days <= 1 for hard in hard_bjj_days),
-        )
-        if chosen is not None:
-            kind = "strength_b" if any(item.get("planned_type") == "strength_a" for item in sessions) else "strength_a"
-            mutations.append(CalendarMutation(op="place_session", date=chosen, workout_type=kind))
-            open_days = [day for day in open_days if day != chosen]
-
-    if zone_2 < targets["zone_2"]:
-        chosen = _choose_open(open_days, meetings)
-        if chosen is not None:
-            mutations.append(CalendarMutation(op="place_session", date=chosen, workout_type="zone_2"))
-            open_days = [day for day in open_days if day != chosen]
-
-    if not rest_days and open_days:
-        mutations.append(CalendarMutation(op="rest_today", date=open_days[-1]))
 
     return mutations
 
@@ -171,16 +135,16 @@ def evening_readiness(today: date, overview: dict, meetings: list[dict]) -> dict
         if day not in by_date and day.isoformat() not in {item.get("date") for item in candidates}:
             open_days.append(day)
     rest_days = [day for day, item in by_date.items() if item.get("planned_type") in {"rest", "recovery"}]
-    if rest_days:
-        why.append(f"{_day_label(rest_days[0])} rest stays. One full rest day protects BJJ quality.")
+    if not rest_days:
+        why.append("Rest is only scheduled when recovery or upcoming hard BJJ needs it.")
     else:
-        why.append("The week still needs one complete rest day.")
+        why.append(f"{_day_label(rest_days[0])} rest stays because it protects quality, not because of a weekly quota.")
     if open_days:
         why.append(
-            f"{_day_label(open_days[0])} stays Open. Empty time is not extra gym — I only fill it if Strength or Zone 2 is still missing."
+            f"{_day_label(open_days[0])} stays Open. Empty time is not extra gym."
         )
     if candidates:
-        why.append("BJJ days stay candidates until you confirm or they appear on Apple Calendar.")
+        why.append("Hard BJJ and class days stay on the template; I do not hunt leftover BJJ as a weekly quota.")
     if days_out is not None:
         why.append(f"9th All Japan is in {days_out} days. This is a {phase.value.replace('_', ' ')} week.")
     banner = f"Evening check. Week looks {quality.replace('_', ' ')} for the tournament."
@@ -294,8 +258,7 @@ def _day_label(day: date) -> str:
 
 
 def _daily_url(day: date) -> str:
-    base = (settings.chili_public_url or settings.daily_briefing_base_url).rstrip("/")
-    return f"{base}/daily/{day.isoformat()}"
+    return f"{settings.public_base_url()}/daily/{day.isoformat()}"
 
 
 def _evening_notification(url: str, readiness: dict, overview: dict) -> str:

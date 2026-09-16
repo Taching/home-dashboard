@@ -41,6 +41,15 @@ class DailyWorkoutRequest(BaseModel):
     kind: str | None = None
     exercises: list[DailyExerciseDone] = Field(default_factory=list)
     note: str | None = Field(default=None, max_length=500)
+    status: Literal["completed", "partial", "skipped"] | None = None
+    miss_reason: str | None = Field(default=None, max_length=32)
+    session_rpe: float | None = Field(default=None, ge=1, le=10)
+
+
+class DailyConstraintRequest(BaseModel):
+    kind: Literal["cannot_train", "holiday", "no_class", "miss"]
+    miss_reason: str | None = Field(default=None, max_length=32)
+    note: str | None = Field(default=None, max_length=500)
 
 
 class DailySoberRequest(BaseModel):
@@ -87,8 +96,7 @@ def _authorized(authorization: str | None) -> bool:
 
 
 def _daily_url(day: date) -> str:
-    base = (settings.chili_public_url or settings.daily_briefing_base_url).rstrip("/")
-    return f"{base}/daily/{day.isoformat()}"
+    return f"{settings.public_base_url()}/daily/{day.isoformat()}"
 
 
 def _briefing(request: Request, day: date, preview_workout: str | None = None) -> dict:
@@ -176,11 +184,28 @@ def daily_workout(request: Request, day: date, body: DailyWorkoutRequest) -> dic
             detail="That is not today's session. Change the plan first, then log it.",
         )
     try:
-        updated = request.app.state.training_service.log_workout_check(
-            workout["id"],
-            exercises=[{"name": item.name, "done": item.done} for item in body.exercises],
-            note=body.note,
-        )
+        if body.status == "skipped" or body.miss_reason:
+            updated = request.app.state.training_service.log_session_result(
+                workout["id"],
+                status="skipped",
+                miss_reason=body.miss_reason,
+                notes=body.note,
+                session_rpe=body.session_rpe,
+            )
+        elif body.session_rpe is not None:
+            updated = request.app.state.training_service.log_session_result(
+                workout["id"],
+                status=body.status or "completed",
+                notes=body.note,
+                session_rpe=body.session_rpe,
+                exercises=[{"name": item.name, "done": item.done} for item in body.exercises],
+            )
+        else:
+            updated = request.app.state.training_service.log_workout_check(
+                workout["id"],
+                exercises=[{"name": item.name, "done": item.done} for item in body.exercises],
+                note=body.note,
+            )
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Training session not found.") from error
     except ValueError as error:
@@ -199,6 +224,26 @@ def daily_workout(request: Request, day: date, body: DailyWorkoutRequest) -> dic
         "advice": advice,
         "briefing": briefing,
     }
+
+
+@daily_router.post("/daily/{day}/constraint")
+def daily_constraint(request: Request, day: date, body: DailyConstraintRequest) -> dict:
+    training = request.app.state.training_service
+    if body.kind == "cannot_train":
+        training.add_unavailability(day, reason="USER_CANCELLED", note=body.note)
+    elif body.kind == "holiday":
+        training.add_gym_closure(day, closure_type="HOLIDAY", note=body.note)
+    elif body.kind == "no_class":
+        training.mark_no_class(day, note=body.note)
+    elif body.kind == "miss":
+        workout = training.for_date(day)
+        if workout is None:
+            raise HTTPException(status_code=400, detail="There is no session to mark missed.")
+        training.log_session_result(
+            workout["id"], status="skipped",
+            miss_reason=body.miss_reason or "USER_CANCELLED", notes=body.note,
+        )
+    return _briefing(request, day)
 
 
 @daily_router.post("/daily/{day}/sober")

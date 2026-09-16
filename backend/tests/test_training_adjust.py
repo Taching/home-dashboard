@@ -55,6 +55,17 @@ class CalendarAdjustFastPathTests(unittest.TestCase):
     def test_unknown_instruction_is_none(self) -> None:
         self.assertIsNone(match_calendar_adjust_fast_path("what is on the wall?", self.today))
 
+    def test_missed_bjj_did_grip_instead(self) -> None:
+        analysis = match_calendar_adjust_fast_path(
+            "I didn't do jiu-jitsu this morning, instead I did grip training",
+            date(2026, 9, 15),
+        )
+        self.assertIsNotNone(analysis)
+        assert analysis is not None
+        self.assertEqual(analysis.mutations[0].op, "did_instead")
+        self.assertEqual(analysis.mutations[0].workout_type, "grip")
+        self.assertEqual(analysis.mutations[0].date, date(2026, 9, 15))
+
 
 class CalendarAdjusterTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -83,9 +94,11 @@ class CalendarAdjusterTests(unittest.TestCase):
         ]
         self.assertEqual(len(coming_strength), 1)
         self.assertEqual(coming_strength[0]["id"], today["id"])
-        monday = next((item for item in overview["upcoming"] if item["start_at"].startswith("2026-09-14")), None)
-        if monday is not None:
-            self.assertFalse(str(monday["planned_type"]).startswith("bjj_"))
+        monday_sessions = [
+            item for item in overview["upcoming"]
+            if self.training._local_date(item["start_at"]) == date(2026, 9, 14)
+        ]
+        self.assertFalse(any(str(item["planned_type"]).startswith("bjj_") for item in monday_sessions))
         self.assertEqual(result["notion_synced"], 2)
         self.assertTrue(any(event["session_id"] == today["id"] for event in result["calendar_events"]))
         decision = result["decision"]

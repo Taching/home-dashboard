@@ -2,6 +2,7 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
+from app.database.session import initialise_database
 from app.domain.water_pump import SwitchBotPlugAdapter, WaterPumpService
 
 
@@ -17,6 +18,9 @@ class FakeAdapter:
 
 
 class WaterPumpServiceTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        initialise_database()
+
     async def test_run_pulse_turns_on_then_off(self):
         adapter = FakeAdapter()
         service = WaterPumpService(adapter=adapter)

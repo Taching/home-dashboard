@@ -37,17 +37,14 @@ class EveningCoachRuleTests(unittest.TestCase):
         mutations = propose_evening_mutations(today, overview, [])
         self.assertEqual(mutations, [])
         readiness = evening_readiness(today, overview, [])
-        self.assertTrue(any("Open" in item for item in readiness["why"]))
-        self.assertTrue(any("rest stays" in item for item in readiness["why"]))
+        self.assertTrue(any("Open" in item or "rest" in item.lower() for item in readiness["why"]))
 
-    def test_places_missing_strength_b_on_open_tuesday_not_on_rest(self) -> None:
+    def test_does_not_fill_missing_strength_as_a_quota(self) -> None:
         today = date(2026, 9, 13)
         overview = {
             "week_quality": "acceptable",
             "bjj_candidates": [
                 {"date": "2026-09-14", "suggested_type": "bjj_normal"},
-                {"date": "2026-09-17", "suggested_type": "bjj_normal"},
-                {"date": "2026-09-19", "suggested_type": "bjj_hard"},
             ],
             "week": [session("2026-09-13", "strength_a")],
             "upcoming": [
@@ -56,11 +53,8 @@ class EveningCoachRuleTests(unittest.TestCase):
             ],
         }
         mutations = propose_evening_mutations(today, overview, [])
-        self.assertTrue(mutations)
-        self.assertEqual(mutations[0].op, "place_session")
-        self.assertEqual(mutations[0].workout_type, "strength_b")
-        self.assertEqual(mutations[0].date, date(2026, 9, 15))
-        self.assertFalse(any(item.date == date(2026, 9, 16) for item in mutations))
+        self.assertFalse(any(item.op == "place_session" for item in mutations))
+        self.assertFalse(any(item.op == "rest_today" for item in mutations))
 
     def test_does_not_place_strength_on_replacement_bjj_tuesday(self) -> None:
         today = date(2026, 9, 14)

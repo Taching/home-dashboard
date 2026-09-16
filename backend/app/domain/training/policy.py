@@ -64,8 +64,7 @@ COMPLETED_STATUSES = frozenset({
     SessionStatus.IN_PROGRESS,
 })
 
-# Usual class windows. These are opportunities, not permanent weekday assignments.
-PREFERRED_BJJ_GROUPS = ((0, 1), (3, 4), (5,))
+# Usual class windows live on the explicit Mita class template, not here.
 
 
 def weekly_targets(phase: TrainingPhase, *, bjj_count: int = 0) -> dict[str, int]:
@@ -77,7 +76,7 @@ def weekly_targets(phase: TrainingPhase, *, bjj_count: int = 0) -> dict[str, int
         "zone_2": 0 if four_bjj else 1,
         "intervals": 0 if taper or four_bjj else 1,
         "grip": 1 if taper or four_bjj else 2,
-        "rest": 1,
+        "rest": 0,
     }
 
 
@@ -98,17 +97,17 @@ def assess_week_quality(
     intervals: int,
     rest: bool,
 ) -> WeekQuality:
-    if bjj <= 2 and strength >= 3 and intervals >= 2 and not rest:
+    if bjj <= 2 and strength >= 3 and intervals >= 2:
         return WeekQuality.BAD_PLANNING
-    if not rest and strength + intervals >= 4:
+    if strength + intervals >= 4 and bjj <= 1:
         return WeekQuality.BAD_PLANNING
-    if bjj >= 3 and hard_bjj and 1 <= strength <= 2 and zone_2 >= 1 and rest:
+    if bjj >= 3 and hard_bjj and 1 <= strength <= 2:
         return WeekQuality.EXCELLENT
-    if bjj >= 3 and strength >= 1 and (zone_2 >= 1 or intervals >= 1) and rest:
+    if bjj >= 3 and strength >= 1:
         return WeekQuality.GOOD
-    if bjj >= 2 and (strength >= 1 or zone_2 >= 1) and rest:
+    if bjj >= 2 and (strength >= 1 or zone_2 >= 1):
         return WeekQuality.ACCEPTABLE
-    if not rest:
+    if strength >= 3 and intervals >= 2 and bjj <= 1:
         return WeekQuality.BAD_PLANNING
     return WeekQuality.ACCEPTABLE
 

@@ -51,16 +51,23 @@ declare global {
   interface Window { Spotify?: SpotifySdk }
 }
 
+let sdkPromise: Promise<void> | null = null
+
 function loadSdk() {
   if (window.Spotify) return Promise.resolve()
-  return new Promise<void>((resolve, reject) => {
+  if (sdkPromise) return sdkPromise
+  sdkPromise = new Promise<void>((resolve, reject) => {
     const script = document.createElement('script')
     script.src = 'https://sdk.scdn.co/spotify-player.js'
     script.async = true
     script.onload = () => resolve()
-    script.onerror = () => reject(new Error('Spotify player could not load'))
+    script.onerror = () => {
+      sdkPromise = null
+      reject(new Error('Spotify player could not load'))
+    }
     document.head.append(script)
   })
+  return sdkPromise
 }
 
 export function useSpotifyPlayback(enabled: boolean) {
@@ -73,10 +80,12 @@ export function useSpotifyPlayback(enabled: boolean) {
 
   useEffect(() => {
     if (!enabled) return
+    let cancelled = false
     let localPlayer: SpotifyPlayer | undefined
     void (async () => {
       try {
         await loadSdk()
+        if (cancelled) return
         if (!window.Spotify) throw new Error('Spotify SDK is unavailable')
         localPlayer = new window.Spotify.Player({
           name: 'Chili Dashboard',
@@ -85,17 +94,20 @@ export function useSpotifyPlayback(enabled: boolean) {
           enableMediaSession: true,
         })
         localPlayer.addListener('ready', ({ device_id }: { device_id: string }) => {
+          if (cancelled) return
           setDeviceId(device_id)
           void registerSpotifyDevice(device_id)
         })
-        localPlayer.addListener('initialization_error', ({ message }: { message: string }) => setError(message))
-        localPlayer.addListener('authentication_error', ({ message }: { message: string }) => setError(message))
-        localPlayer.addListener('account_error', ({ message }: { message: string }) => setError(message))
+        localPlayer.addListener('initialization_error', ({ message }: { message: string }) => { if (!cancelled) setError(message) })
+        localPlayer.addListener('authentication_error', ({ message }: { message: string }) => { if (!cancelled) setError(message) })
+        localPlayer.addListener('account_error', ({ message }: { message: string }) => { if (!cancelled) setError(message) })
         localPlayer.addListener('not_ready', () => {
+          if (cancelled) return
           setActive(false)
           setDeviceId(null)
         })
         localPlayer.addListener('player_state_changed', (state) => {
+          if (cancelled) return
           setActive(Boolean(state))
           setPaused(state?.paused ?? true)
           const current = state?.track_window?.current_track
@@ -108,12 +120,16 @@ export function useSpotifyPlayback(enabled: boolean) {
           }
         })
         await localPlayer.connect()
-        setPlayer(localPlayer)
+        if (cancelled) localPlayer.disconnect()
+        else setPlayer(localPlayer)
       } catch {
-        setError('Spotify player could not start.')
+        if (!cancelled) setError('Spotify player could not start.')
       }
     })()
-    return () => { localPlayer?.disconnect() }
+    return () => {
+      cancelled = true
+      localPlayer?.disconnect()
+    }
   }, [enabled])
 
   async function playHere() {

@@ -1,10 +1,11 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import chiliLogo from '../assets/chili-logo.svg'
 import { fetchDailyBriefing, fetchTrainingSession, logTrainingSessionResult } from '../lib/api'
 import { useLiveResource } from '../hooks/useLiveResource'
 import { formatDate } from '../lib/format'
 import { canLogWorkout, doneMarkLabel, slugForType, workoutAlreadyLogged, workoutFormLocked } from '../lib/workoutMatch'
 import type { PlannedExercise, PlannedWorkout } from '../types'
+import { PageSkeleton } from '../components/PageSkeleton'
 import '../workout.css'
 
 const MISS_REASONS = [
@@ -81,12 +82,16 @@ function LegacySlugRedirect({ slug }: { slug: string }) {
 }
 
 function TodayPage() {
+  const today = todayStamp()
+  const briefingQueryKey = useMemo(() => ['daily-briefing', today, null] as const, [today])
   const { data: briefing, error } = useLiveResource(
-    () => fetchDailyBriefing(todayStamp()),
-    [todayStamp()],
+    (signal) => fetchDailyBriefing(today, undefined, signal),
+    { queryKey: briefingQueryKey },
   )
   const day = briefing?.date ?? todayStamp()
   const workout = briefing?.workout
+
+  if (!briefing && !error) return <PageSkeleton />
 
   const headingDate = briefing ? formatDate(new Date(`${briefing.date}T12:00:00`)) : 'Today'
   const logged = workout && workoutAlreadyLogged(workout.status)
@@ -137,9 +142,10 @@ function TodayPage() {
 }
 
 function SessionPage({ sessionId }: { sessionId: string }) {
+  const sessionQueryKey = useMemo(() => ['training-session', sessionId] as const, [sessionId])
   const { data: session, error } = useLiveResource(
-    () => fetchTrainingSession(sessionId),
-    [sessionId],
+    (signal) => fetchTrainingSession(sessionId, signal),
+    { queryKey: sessionQueryKey },
   )
 
   useEffect(() => {
@@ -152,6 +158,8 @@ function SessionPage({ sessionId }: { sessionId: string }) {
   const type = session?.planned_type ?? ''
   const saved = Boolean(session && workoutFormLocked(session.status))
   const canLog = Boolean(session && canLogWorkout(type, type))
+
+  if (!session && !error) return <PageSkeleton />
 
   return (
     <div className="workout-page">

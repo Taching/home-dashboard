@@ -5,6 +5,7 @@ import { dailyAnswersFromBriefing } from '../lib/dailyPlan'
 import { useLiveResource } from '../hooks/useLiveResource'
 import { doneMarkLabel, workoutFormLocked } from '../lib/workoutMatch'
 import type { DailyAnswerItem, DailyBriefing, PlannedExercise } from '../types'
+import { PageSkeleton } from './PageSkeleton'
 
 function formatTime(value: string, allDay = false) {
   if (allDay) return 'All day'
@@ -58,9 +59,10 @@ function AnswerProgress({ items }: { items: DailyAnswerItem[] }) {
 
 export function DailyBriefingPage({ day }: { day: string }) {
   const previewWorkout = useMemo(() => new URLSearchParams(window.location.search).get('preview'), [])
+  const briefingQueryKey = useMemo(() => ['daily-briefing', day, previewWorkout] as const, [day, previewWorkout])
   const { data: briefing, error, refresh, setData: setBriefing } = useLiveResource(
-    () => fetchDailyBriefing(day, previewWorkout ?? undefined),
-    [day, previewWorkout],
+    (signal) => fetchDailyBriefing(day, previewWorkout ?? undefined, signal),
+    { queryKey: briefingQueryKey },
   )
   const [closing, setClosing] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
@@ -72,14 +74,20 @@ export function DailyBriefingPage({ day }: { day: string }) {
 
   useEffect(() => {
     document.documentElement.classList.add('is-daily')
-    if (briefing) document.title = `Daily · ${briefing.date}`
     return () => document.documentElement.classList.remove('is-daily')
-  }, [briefing])
+  }, [])
+
+  const briefingDate = briefing?.date
+  useEffect(() => {
+    document.title = briefingDate ? `Daily · ${briefingDate}` : 'Chili daily'
+  }, [briefingDate])
 
   const answers = briefing ? dailyAnswersFromBriefing(briefing) : null
 
+  const shouldClose = Boolean(briefing && !briefing.preview && answers?.all_answered && !answers.chili_reply)
+
   useEffect(() => {
-    if (!briefing || briefing.preview || !answers?.all_answered || answers.chili_reply || closeAsked.current) return
+    if (!briefing || !shouldClose || closeAsked.current) return
     closeAsked.current = true
     setClosing(true)
     void closeDailyDay(briefing.date)
@@ -92,14 +100,16 @@ export function DailyBriefingPage({ day }: { day: string }) {
         setCloseError('Chili did not confirm. Try again.')
       })
       .finally(() => setClosing(false))
-  }, [answers, briefing, setBriefing])
+  }, [briefing, setBriefing, shouldClose])
 
   const applyBriefing = (next?: DailyBriefing) => {
     if (next) setBriefing(next)
     else void refresh()
   }
 
-  if (!briefing || !answers) return <main className="daily-briefing-shell daily-loading">{error ?? 'Loading your day…'}</main>
+  if (!briefing || !answers) return error
+    ? <main className="daily-briefing-shell daily-loading" role="alert">{error}</main>
+    : <PageSkeleton />
   const workout = briefing.workout
   const workoutDone = workout && workoutFormLocked(workout.status) ? doneMarkLabel(workout.status) : null
   const adjustment = liveAdjustment(briefing.last_adjustment)
@@ -537,8 +547,7 @@ function SundayForm({
   closesDay?: boolean
   onSaved: (next?: DailyBriefing) => void
 }) {
-  const sunday = briefing.sunday
-  if (!sunday) return null
+  const sunday = briefing.sunday!
   const [weight, setWeight] = useState(sunday.weight_kg?.toString() ?? '')
   const [sameAsLast, setSameAsLast] = useState(false)
   const [note, setNote] = useState(sunday.review_note ?? '')

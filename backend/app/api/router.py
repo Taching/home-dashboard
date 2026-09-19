@@ -518,6 +518,7 @@ class WeatherForecastResponse(BaseModel):
     synced_at: datetime | None = None
     today: WeatherDayResponse | None = None
     tomorrow: WeatherDayResponse | None = None
+    days: list[WeatherDayResponse] = Field(default_factory=list)
 
 
 def _water_pump_response(snapshot) -> WaterPumpResponse:
@@ -581,6 +582,7 @@ def _weather_response(forecast) -> WeatherForecastResponse:
         synced_at=forecast.synced_at,
         today=day(forecast.today),
         tomorrow=day(forecast.tomorrow),
+        days=[response for item in forecast.days if (response := day(item)) is not None],
     )
 
 

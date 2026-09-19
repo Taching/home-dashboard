@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type SetStateAction } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays } from '../components/PlanningRegion'
 import {
   fetchCalendarEvents,
@@ -70,7 +71,7 @@ export const initialDashboard: Dashboard = {
 export const initialCalendar: CalendarToday = { status: 'not_configured', synced_at: null, events: [] }
 export const initialNotion: NotionToday = { status: 'not_configured', synced_at: null, tasks: [] }
 export const initialSpotify: SpotifyNowPlaying = { status: 'not_configured', synced_at: null, track: null, artist: null, artwork_url: null, device_name: null, is_playing: false }
-export const initialWeather: WeatherForecast = { status: 'not_configured', location: '', synced_at: null, today: null, tomorrow: null }
+export const initialWeather: WeatherForecast = { status: 'not_configured', location: '', synced_at: null, today: null, tomorrow: null, days: [] }
 export const initialWalkingPad: WalkingPadToday = {
   status: 'not_configured',
   synced_at: null,
@@ -96,8 +97,21 @@ export const initialTraining: TrainingOverview = {
 const DASHBOARD_REFRESH_MS = 60_000
 const DASHBOARD_FAST_REFRESH_MS = 2_000
 const WALKINGPAD_REFRESH_MS = 30_000
-const PLANNING_REFRESH_MS = 15_000
+const PLANNING_SAFETY_REFRESH_MS = 60_000
 const WEATHER_REFRESH_MS = 30 * 60_000
+const FRONTEND_VERSION_REFRESH_MS = 60_000
+
+function bundlePathFromHtml(html: string) {
+  const match = html.match(/<script[^>]+type=["']module["'][^>]+src=["']([^"']+)["']/i)
+    ?? html.match(/<script[^>]+src=["']([^"']+)["'][^>]+type=["']module["']/i)
+  if (!match?.[1]) return null
+  return new URL(match[1], window.location.href).pathname
+}
+
+function activeBundlePath() {
+  const source = document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.src
+  return source ? new URL(source, window.location.href).pathname : null
+}
 
 export type DashboardInitialData = {
   dashboard: Dashboard
@@ -113,72 +127,117 @@ export type DashboardInitialData = {
 }
 
 export function useDashboardData(today: string, initialData?: DashboardInitialData) {
-  const [dashboard, setDashboard] = useState(initialData?.dashboard ?? initialDashboard)
-  const [calendar, setCalendar] = useState(initialData?.calendar ?? initialCalendar)
-  const [notion, setNotion] = useState(initialData?.notion ?? initialNotion)
-  const [spotify, setSpotify] = useState(initialData?.spotify ?? initialSpotify)
-  const [weather, setWeather] = useState(initialData?.weather ?? initialWeather)
-  const [walkingPad, setWalkingPad] = useState(initialData?.walkingPad ?? initialWalkingPad)
-  const [walkReminder, setWalkReminder] = useState(initialData?.walkReminder ?? initialWalkReminder)
-  const [training, setTraining] = useState(initialData?.training ?? initialTraining)
-  const [plan, setPlan] = useState<DailyBriefing | null>(initialData?.plan ?? null)
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState(today)
+  const [calendarSelection, setCalendarSelection] = useState({ today, value: today })
+  const selectedCalendarDate = calendarSelection.today === today ? calendarSelection.value : today
+  const setSelectedCalendarDate = useCallback((next: SetStateAction<string>) => {
+    setCalendarSelection((current) => {
+      const currentValue = current.today === today ? current.value : today
+      return {
+        today,
+        value: typeof next === 'function' ? next(currentValue) : next,
+      }
+    })
+  }, [today])
   const [volumePending, setVolumePending] = useState(false)
-  const skipImmediatePoll = Boolean(initialData)
+  const queryClient = useQueryClient()
+  const calendarStart = addDays(selectedCalendarDate, -CALENDAR_LOOKBACK_DAYS)
 
-  const applyPlan = useCallback((next: DailyBriefing) => {
-    setPlan(next)
-    setTraining(trainingOverviewFromPlan(next, initialTraining))
-    setNotion(notionFromPlan(next, initialNotion))
-    setWalkReminder(walkReminderFromPlan(next, initialWalkReminder))
-  }, [])
+  const dashboardQuery = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: ({ signal }) => fetchDashboard(signal),
+    initialData: initialData?.dashboard,
+    staleTime: 30_000,
+    refetchInterval: (query) => query.state.data?.water_pump.state === 'running'
+      ? DASHBOARD_FAST_REFRESH_MS
+      : DASHBOARD_REFRESH_MS,
+  })
+  const spotifyQuery = useQuery({
+    queryKey: ['spotify-now-playing'],
+    queryFn: ({ signal }) => fetchSpotifyNowPlaying(signal),
+    initialData: initialData?.spotify,
+    staleTime: 30_000,
+    refetchInterval: DASHBOARD_REFRESH_MS,
+  })
+  const weatherQuery = useQuery({
+    queryKey: ['weather'],
+    queryFn: ({ signal }) => fetchWeather(signal),
+    initialData: initialData?.weather,
+    staleTime: 20 * 60_000,
+    refetchInterval: WEATHER_REFRESH_MS,
+  })
+  const walkingPadQuery = useQuery({
+    queryKey: ['walking-pad-today', today],
+    queryFn: ({ signal }) => fetchWalkingPadToday(signal),
+    initialData: initialData?.walkingPad,
+    staleTime: 15_000,
+    refetchInterval: WALKINGPAD_REFRESH_MS,
+  })
+  const planQuery = useQuery({
+    queryKey: ['daily-plan', today],
+    queryFn: ({ signal }) => fetchDailyPlan(today, signal),
+    initialData: initialData?.plan ?? undefined,
+    staleTime: 30_000,
+    refetchInterval: PLANNING_SAFETY_REFRESH_MS,
+  })
+  const trainingQuery = useQuery({
+    queryKey: ['training-overview'],
+    queryFn: ({ signal }) => fetchTrainingOverview(signal),
+    initialData: initialData?.training,
+    staleTime: 30_000,
+    refetchInterval: PLANNING_SAFETY_REFRESH_MS,
+  })
+  const calendarQuery = useQuery({
+    queryKey: ['calendar-events', calendarStart, CALENDAR_WINDOW_DAYS],
+    queryFn: ({ signal }) => fetchCalendarEvents(calendarStart, CALENDAR_WINDOW_DAYS, signal),
+    initialData: selectedCalendarDate === today ? initialData?.calendar : undefined,
+    placeholderData: (previous) => previous,
+    staleTime: 30_000,
+    refetchInterval: PLANNING_SAFETY_REFRESH_MS,
+  })
+
+  const dashboardValue = dashboardQuery.data ?? initialDashboard
+  const dashboard = {
+    ...dashboardValue,
+    wellbeing: dashboardValue.wellbeing ?? initialDashboard.wellbeing,
+  }
+  const calendar = calendarQuery.data ?? initialCalendar
+  const spotify = spotifyQuery.data ?? initialSpotify
+  const weather = weatherQuery.data ?? initialWeather
+  const walkingPad = walkingPadQuery.data ?? initialWalkingPad
+  const plan = planQuery.data ?? null
+  const notion = plan ? notionFromPlan(plan, initialNotion) : (initialData?.notion ?? initialNotion)
+  const walkReminder = plan ? walkReminderFromPlan(plan, initialWalkReminder) : (initialData?.walkReminder ?? initialWalkReminder)
+  const training = trainingQuery.data
+    ?? (plan ? trainingOverviewFromPlan(plan, initialTraining) : (initialData?.training ?? initialTraining))
 
   const refresh = useCallback(async () => {
-    const results = await Promise.allSettled([
-      fetchDashboard(), fetchSpotifyNowPlaying(),
-    ])
-    if (results[0].status === 'fulfilled') {
-      const value = results[0].value
-      setDashboard({
-        ...value,
-        wellbeing: value.wellbeing ?? initialDashboard.wellbeing,
-      })
-    }
-    if (results[1].status === 'fulfilled') setSpotify(results[1].value)
-  }, [])
-
-  const refreshCalendar = useCallback(async (anchorDate = selectedCalendarDate) => {
-    try {
-      const start = addDays(anchorDate, -CALENDAR_LOOKBACK_DAYS)
-      setCalendar(await fetchCalendarEvents(start, CALENDAR_WINDOW_DAYS))
-    } catch {
-      // Keep the last calendar snapshot visible until the next bridge sync lands.
-    }
-  }, [selectedCalendarDate])
-
+    await Promise.all([dashboardQuery.refetch(), spotifyQuery.refetch()])
+  }, [dashboardQuery, spotifyQuery])
+  const refreshCalendar = useCallback(async () => {
+    await calendarQuery.refetch({ cancelRefetch: true })
+  }, [calendarQuery])
   const refreshPlanning = useCallback(async () => {
-    const [planResult, trainingResult] = await Promise.allSettled([
-      fetchDailyPlan(today),
-      fetchTrainingOverview(),
-      refreshCalendar(selectedCalendarDate),
+    await Promise.all([
+      planQuery.refetch({ cancelRefetch: true }),
+      trainingQuery.refetch({ cancelRefetch: true }),
+      calendarQuery.refetch({ cancelRefetch: true }),
     ])
-    if (planResult.status === 'fulfilled') applyPlan(planResult.value)
-    if (trainingResult.status === 'fulfilled') setTraining(trainingResult.value)
-  }, [applyPlan, refreshCalendar, selectedCalendarDate, today])
+  }, [calendarQuery, planQuery, trainingQuery])
 
-  const refreshWeather = useCallback(async () => {
+  const refreshFrontendVersion = useCallback(async () => {
     try {
-      setWeather(await fetchWeather())
+      const response = await fetch('/index.html', {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      })
+      if (!response.ok) return
+      const availableBundle = bundlePathFromHtml(await response.text())
+      const activeBundle = activeBundlePath()
+      if (availableBundle && activeBundle && availableBundle !== activeBundle) {
+        window.location.reload()
+      }
     } catch {
-      // Retry on the next scheduled weather refresh.
-    }
-  }, [])
-
-  const refreshWalkingPad = useCallback(async () => {
-    try {
-      setWalkingPad(await fetchWalkingPadToday())
-    } catch {
-      // Keep the last walking snapshot until the next refresh succeeds.
+      // Keep the current kiosk bundle running and retry after the next deploy check.
     }
   }, [])
 
@@ -187,7 +246,7 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
     void setSystemVolume(volumePercent)
       .then((result) => {
         if (result.volume_percent === null) return
-        setDashboard((current) => ({
+        queryClient.setQueryData<Dashboard>(['dashboard'], (current = initialDashboard) => ({
           ...current,
           system: {
             ...current.system,
@@ -198,31 +257,15 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
         }))
       })
       .finally(() => setVolumePending(false))
-  }, [])
+  }, [queryClient])
 
-  const dashboardRefreshMs = dashboard.water_pump.state === 'running' ? DASHBOARD_FAST_REFRESH_MS : DASHBOARD_REFRESH_MS
-  usePolling(refresh, dashboardRefreshMs, !skipImmediatePoll)
+  usePolling(refreshFrontendVersion, FRONTEND_VERSION_REFRESH_MS, false)
 
-  useEffect(() => {
-    if (!plan) {
-      void fetchDailyPlan(today).then(applyPlan).catch(() => {
-        // Keep the wall up; the next dashboard poll retries the Daily Plan.
-      })
-    }
-  }, [applyPlan, plan, today])
-  usePolling(refreshPlanning, PLANNING_REFRESH_MS, true)
-  usePolling(refreshWeather, WEATHER_REFRESH_MS, !skipImmediatePoll)
-  usePolling(refreshWalkingPad, WALKINGPAD_REFRESH_MS, true)
-
-  useEffect(() => {
-    setSelectedCalendarDate(today)
-  }, [today])
-
-  useEffect(() => {
-    void refreshCalendar(selectedCalendarDate)
-  }, [selectedCalendarDate, refreshCalendar])
-
-  useEffect(() => subscribeToPlanningChanges(() => void refreshPlanning()), [refreshPlanning])
+  useEffect(() => subscribeToPlanningChanges(() => {
+    void queryClient.invalidateQueries({ queryKey: ['daily-plan', today] })
+    void queryClient.invalidateQueries({ queryKey: ['training-overview'] })
+    void queryClient.invalidateQueries({ queryKey: ['calendar-events'] })
+  }), [queryClient, today])
 
   return {
     dashboard,
@@ -236,7 +279,7 @@ export function useDashboardData(today: string, initialData?: DashboardInitialDa
     plan,
     selectedCalendarDate,
     volumePending,
-    setDashboard,
+    setDashboard: (next: Dashboard) => queryClient.setQueryData(['dashboard'], next),
     setSelectedCalendarDate,
     refresh,
     refreshCalendar,

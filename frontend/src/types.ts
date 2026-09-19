@@ -614,4 +614,5 @@ export type WeatherForecast = {
   synced_at: string | null
   today: WeatherDay | null
   tomorrow: WeatherDay | null
+  days: WeatherDay[]
 }

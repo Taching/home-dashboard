@@ -1,5 +1,6 @@
 import { doneMarkLabel } from '../lib/workoutMatch'
-import type { TrainingOverview, TrainingSession } from '../types'
+import { WeatherIconArt } from './WeatherWidget'
+import type { TrainingOverview, TrainingSession, WeatherForecast } from '../types'
 
 const TIME_ZONE = 'Asia/Tokyo'
 
@@ -127,12 +128,13 @@ export function TodayTrainingCard({ training }: { training: TrainingOverview }) 
   )
 }
 
-export function TrainingWeekStrip({ training }: { training: TrainingOverview }) {
+export function TrainingWeekStrip({ training, weather }: { training: TrainingOverview; weather: WeatherForecast }) {
   const todayKey = localDateKey(training.generated_at ? new Date(training.generated_at) : new Date())
   const start = new Date(`${todayKey}T00:00:00+09:00`)
   const sessions = training.upcoming ?? training.week
   const candidates = training.bjj_candidates ?? []
   const flags = training.day_flags ?? {}
+  const weatherByDate = new Map(weather.days.map((item) => [item.date, item]))
   const days = Array.from({ length: 6 }, (_, index) => {
     const day = new Date(start)
     day.setDate(day.getDate() + index + 1)
@@ -161,9 +163,17 @@ export function TrainingWeekStrip({ training }: { training: TrainingOverview }) 
       <section className="training-week is-upcoming" aria-label="Next six training days">
       {days.map(({ day, key, session, candidate, closed, noClass, unavailable }) => {
         const href = session && session.planned_type !== 'rest' ? `/workout/${session.id}` : undefined
-        const mark = closed ? 'Closed' : unavailable ? 'Away' : noClass ? 'No class' : session ? sessionTitle(session.title) : candidate ? typeTitle(candidate.suggested_type) : 'Open'
+        const workoutLabel = session ? sessionTitle(session.title) : candidate ? typeTitle(candidate.suggested_type) : undefined
+        const mark = unavailable ? 'Away' : workoutLabel ?? (closed ? 'BJJ closed' : noClass ? 'No BJJ class' : 'Open')
+        const closureOnly = (closed || noClass) && !workoutLabel
+        const dayWeather = weatherByDate.get(key)
         const inner = (
           <>
+            {dayWeather && (
+              <span className="training-day-weather" title={dayWeather.condition}>
+                <WeatherIconArt icon={dayWeather.icon} size={20} />
+              </span>
+            )}
             <span>{new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: TIME_ZONE }).format(day)}</span>
             <strong>
               {Number(key.slice(-2))}
@@ -173,7 +183,7 @@ export function TrainingWeekStrip({ training }: { training: TrainingOverview }) 
             {session && !session.is_all_day ? <i>{timeLabel(session.start_at)}</i> : candidate?.preferred_clock ? <i className="is-quiet">{candidate.preferred_clock}</i> : <i className="is-quiet">—</i>}
           </>
         )
-        const className = `training-day${session ? ` is-${session.planned_type}` : candidate ? ` is-${candidate.suggested_type}` : ''}${closed || unavailable || noClass ? ' is-blocked' : ''}`
+        const className = `training-day${session ? ` is-${session.planned_type}` : candidate ? ` is-${candidate.suggested_type}` : ''}${unavailable || closureOnly ? ' is-blocked' : ''}`
         return href ? (
           <a key={key} className={className} href={href}>{inner}</a>
         ) : (
@@ -183,7 +193,7 @@ export function TrainingWeekStrip({ training }: { training: TrainingOverview }) 
       </section>
       {laterClosures.length > 0 && (
         <p className="training-week-note">
-          Also closed: {laterClosures.map((key) => {
+          BJJ gym also closed: {laterClosures.map((key) => {
             const day = new Date(`${key}T00:00:00+09:00`)
             const weekday = new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: TIME_ZONE }).format(day)
             const month = new Intl.DateTimeFormat('en-GB', { month: 'short', timeZone: TIME_ZONE }).format(day)

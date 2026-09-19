@@ -124,6 +124,34 @@ def test_never_schedules_bjj_when_gym_is_manually_marked_closed() -> None:
     assert session is None or not session.value.startswith("bjj")
 
 
+def test_bjj_gym_holiday_still_allows_fitness_gym_and_home_work() -> None:
+    closed_days = tuple(
+        GymAvailability(date(2026, 9, day), False, reason="BJJ gym holiday")
+        for day in (21, 22, 23)
+    )
+    result = rebuild_schedule(SchedulerInput(
+        today=date(2026, 9, 21),
+        history=(
+            TrainingRecord(date(2026, 9, 20), WorkoutType.STRENGTH_A, RecordStatus.COMPLETED),
+        ),
+        gym_availability=closed_days,
+        athlete_state=_athlete(fatigue=FatigueLevel.LOW),
+        class_availability=tuple(_class(date(2026, 9, day)) for day in (21, 22, 23)),
+    ))
+
+    holiday_sessions = {
+        result[f"2026-09-{day}"].session
+        for day in (21, 22, 23)
+        if result[f"2026-09-{day}"].session is not None
+    }
+    assert not any(session in {WorkoutType.BJJ_NORMAL, WorkoutType.BJJ_HARD, WorkoutType.BJJ_TECHNICAL} for session in holiday_sessions)
+    assert holiday_sessions == {
+        WorkoutType.STRENGTH_B,
+        WorkoutType.ZONE_2,
+        WorkoutType.GRIP,
+    }
+
+
 def test_moves_bjj_to_nearest_available_day_when_gym_is_closed() -> None:
     result = rebuild_schedule(SchedulerInput(
         today=date(2026, 9, 16),

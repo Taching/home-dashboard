@@ -51,6 +51,7 @@ class WeatherForecast:
     synced_at: datetime | None
     today: WeatherDay | None
     tomorrow: WeatherDay | None
+    days: tuple[WeatherDay, ...] = ()
 
 
 def wmo_to_icon(code: int, *, is_day: bool | None) -> tuple[WeatherIcon, str]:
@@ -177,12 +178,17 @@ class WeatherService:
                 current_c=float(current["temperature_2m"]) if current.get("temperature_2m") is not None else None,
             )
 
+        if today:
+            by_date[today_local] = today
+        days = tuple(by_date[day] for day in sorted(by_date) if day >= today_local)
+
         return WeatherForecast(
             status="ready",
             location=settings.weather_location_name,
             synced_at=datetime.now(UTC),
             today=today,
             tomorrow=by_date.get(tomorrow_local),
+            days=days,
         )
 
     def _parse_travel(self, payload: dict) -> tuple[TravelDay, ...]:

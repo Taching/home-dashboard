@@ -31,12 +31,27 @@ async function requireJson<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>
 }
 
-function freshGet(path: string) {
-  return fetch(path, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })
+const GET_TIMEOUT_MS = 8_000
+
+async function freshGet(path: string, signal?: AbortSignal) {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), GET_TIMEOUT_MS)
+  const abort = () => controller.abort()
+  signal?.addEventListener('abort', abort, { once: true })
+  try {
+    return await fetch(path, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+      signal: controller.signal,
+    })
+  } finally {
+    window.clearTimeout(timeout)
+    signal?.removeEventListener('abort', abort)
+  }
 }
 
-export async function fetchDashboard() {
-  return requireJson<Dashboard>(await freshGet('/api/v1/dashboard'))
+export async function fetchDashboard(signal?: AbortSignal) {
+  return requireJson<Dashboard>(await freshGet('/api/v1/dashboard', signal))
 }
 
 export async function fetchReadings() {
@@ -46,17 +61,17 @@ export async function fetchReadings() {
   return result.readings
 }
 
-export async function fetchCalendarEvents(start: string, days = 30) {
+export async function fetchCalendarEvents(start: string, days = 30, signal?: AbortSignal) {
   const query = new URLSearchParams({ start, days: String(days) })
-  return requireJson<CalendarToday>(await freshGet(`/api/v1/calendar/events?${query}`))
+  return requireJson<CalendarToday>(await freshGet(`/api/v1/calendar/events?${query}`, signal))
 }
 
 export async function fetchNotionToday() {
   return requireJson<NotionToday>(await fetch('/api/v1/notion/today'))
 }
 
-export async function fetchSpotifyNowPlaying() {
-  return requireJson<SpotifyNowPlaying>(await fetch('/api/v1/spotify/now-playing'))
+export async function fetchSpotifyNowPlaying(signal?: AbortSignal) {
+  return requireJson<SpotifyNowPlaying>(await freshGet('/api/v1/spotify/now-playing', signal))
 }
 
 export async function fetchOpenClawMessages() {
@@ -88,20 +103,20 @@ export async function fetchVoiceEvents(limit = 40) {
   return fetchActivityEvents(limit)
 }
 
-export async function fetchWeather() {
-  return requireJson<WeatherForecast>(await fetch('/api/v1/weather'))
+export async function fetchWeather(signal?: AbortSignal) {
+  return requireJson<WeatherForecast>(await freshGet('/api/v1/weather', signal))
 }
 
-export async function fetchWalkingPadToday() {
-  return requireJson<WalkingPadToday>(await fetch('/api/v1/walkingpad/today'))
+export async function fetchWalkingPadToday(signal?: AbortSignal) {
+  return requireJson<WalkingPadToday>(await freshGet('/api/v1/walkingpad/today', signal))
 }
 
 export async function fetchWalkingPadReminder() {
   return requireJson<WalkReminder>(await fetch('/api/v1/walkingpad/reminder'))
 }
 
-export async function fetchTrainingOverview() {
-  return requireJson<TrainingOverview>(await freshGet('/api/v1/training/overview'))
+export async function fetchTrainingOverview(signal?: AbortSignal) {
+  return requireJson<TrainingOverview>(await freshGet('/api/v1/training/overview', signal))
 }
 
 export async function fetchTrainingPlans() {
@@ -113,8 +128,8 @@ export async function fetchTrainingPlan(slug: string) {
   return requireJson<TrainingPlan>(await fetch(`/api/v1/training/plans/${slug}`))
 }
 
-export async function fetchTrainingSession(sessionId: string) {
-  return requireJson<TrainingSession>(await freshGet(`/api/v1/training/sessions/${sessionId}`))
+export async function fetchTrainingSession(sessionId: string, signal?: AbortSignal) {
+  return requireJson<TrainingSession>(await freshGet(`/api/v1/training/sessions/${sessionId}`, signal))
 }
 
 export async function logTrainingSessionResult(sessionId: string, payload: Record<string, unknown>) {
@@ -127,8 +142,8 @@ export async function logTrainingSessionResult(sessionId: string, payload: Recor
   return result
 }
 
-export async function fetchWeeklyReview(weekStart: string) {
-  return requireJson<WeeklyReview>(await freshGet(`/api/v1/training/weeks/${weekStart}/review`))
+export async function fetchWeeklyReview(weekStart: string, signal?: AbortSignal) {
+  return requireJson<WeeklyReview>(await freshGet(`/api/v1/training/weeks/${weekStart}/review`, signal))
 }
 
 export async function runWeeklyReview(weekStart: string) {
@@ -161,13 +176,13 @@ export async function logTraining(payload: TrainingLogPayload) {
   }))
 }
 
-export async function fetchDailyBriefing(day: string, preview?: string) {
+export async function fetchDailyBriefing(day: string, preview?: string, signal?: AbortSignal) {
   const query = preview ? `?preview=${encodeURIComponent(preview)}` : ''
-  return requireJson<DailyBriefing>(await freshGet(`/api/v1/daily/${day}${query}`))
+  return requireJson<DailyBriefing>(await freshGet(`/api/v1/daily/${day}${query}`, signal))
 }
 
-export async function fetchDailyPlan(day: string) {
-  return requireJson<DailyBriefing>(await freshGet(`/api/v1/plan/${day}`))
+export async function fetchDailyPlan(day: string, signal?: AbortSignal) {
+  return requireJson<DailyBriefing>(await freshGet(`/api/v1/plan/${day}`, signal))
 }
 
 export async function logDailyWorkout(day: string, payload: WorkoutLogPayload) {

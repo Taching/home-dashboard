@@ -335,3 +335,32 @@ html.is-workout * {
   gap: .35rem;
   font-size: .85rem;
 }
+.page-skeleton { pointer-events: none; }
+.skeleton-block {
+  display: block;
+  border-radius: .45rem;
+  background: linear-gradient(100deg, color-mix(in srgb, var(--ink) 7%, transparent) 25%, color-mix(in srgb, var(--ink) 13%, transparent) 45%, color-mix(in srgb, var(--ink) 7%, transparent) 65%);
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+.skeleton-block.is-brand { width: 5rem; height: 1.4rem; }
+.skeleton-block.is-action { width: 3.5rem; height: 1.4rem; }
+.skeleton-block.is-kicker { width: 5rem; height: .8rem; }
+.skeleton-block.is-title { width: min(18rem, 75%); height: 2.2rem; margin-top: .8rem; }
+.skeleton-block.is-copy { width: min(24rem, 90%); height: 1rem; margin-top: .8rem; }
+.skeleton-block.is-heading { width: 7rem; height: 1.2rem; }
+.skeleton-block.is-row { width: 100%; height: 3.4rem; margin-top: .8rem; }
+.skeleton-block.is-row.short { width: 72%; }
+@keyframes skeleton-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton-block { animation: none; } }
+
+.app-error {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  gap: 1rem;
+  padding: 2rem;
+  color: var(--ink);
+  background: var(--bg);
+  text-align: center;
+}

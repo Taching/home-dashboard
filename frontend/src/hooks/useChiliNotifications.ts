@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ChiliNotificationController,
   type DisplayState,
@@ -38,19 +38,11 @@ export function useChiliNotifications({
   lastAdjustment,
 }: Inputs) {
   const now = useClock()
-  const controllerRef = useRef<ChiliNotificationController | null>(null)
-  const stateRef = useRef<DisplayState | null>(null)
   const [, rerender] = useState(0)
+  const [controller] = useState(() => ChiliNotificationController.create())
+  const [state] = useState<DisplayState>(() => controller.createState())
 
-  if (!controllerRef.current) {
-    const controller = ChiliNotificationController.create()
-    controller.subscribe(() => rerender((value) => value + 1))
-    controllerRef.current = controller
-    stateRef.current = controller.createState()
-  }
-
-  const controller = controllerRef.current
-  const state = stateRef.current!
+  useEffect(() => controller.subscribe(() => rerender((value) => value + 1)), [controller])
 
   useEffect(() => {
     controller.sync(state, {

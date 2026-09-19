@@ -91,6 +91,10 @@ def rebuild_schedule(inp: SchedulerInput, *, use_llm: bool = False) -> RebuildRe
             hard_bjj_day=hard_bjj_day,
             protect_hard=protect,
         )
+        if not zone2_remaining:
+            candidates = [option for option in candidates if option != WorkoutType.ZONE_2]
+        if not grip_remaining:
+            candidates = [option for option in candidates if option != WorkoutType.GRIP]
         if hard_bjj_day == day and WorkoutType.BJJ_HARD in candidates:
             if _slot_already_ended(day, WorkoutType.BJJ_HARD, inp):
                 assigned[day] = None
@@ -106,6 +110,9 @@ def rebuild_schedule(inp: SchedulerInput, *, use_llm: bool = False) -> RebuildRe
             if WorkoutType.BJJ_HARD not in candidates and WorkoutType.BJJ_NORMAL not in candidates:
                 assigned[day] = WorkoutType.REST
                 continue
+        if candidates == [WorkoutType.REST]:
+            assigned[day] = None
+            continue
         scores = {session: score_session(session, day, inp, hard_bjj_day=hard_bjj_day, missed_bjj=missed_bjj) for session in candidates}
         chosen = pick_default(candidates, scores)
         if _slot_already_ended(day, chosen, inp):
@@ -127,8 +134,10 @@ def rebuild_schedule(inp: SchedulerInput, *, use_llm: bool = False) -> RebuildRe
                 strength_remaining = False
                 break
 
-    # Drop extra accessories: at most one low-priority session after BJJ/strength/rest are placed.
-    _drop_extra_accessories(assigned, future_days)
+    # Keep distinct fallback work on BJJ-gym closure days. On ordinary days,
+    # avoid filling open calendar space with extra low-priority sessions.
+    closure_days = {day for day, item in avail.items() if not item.gym_open}
+    _drop_extra_accessories(assigned, future_days, closure_days)
 
     for day in future_days:
         item = avail[day]
@@ -185,11 +194,16 @@ def _horizon_end(inp: SchedulerInput) -> date:
     return end
 
 
-def _drop_extra_accessories(assigned: dict[date, WorkoutType | None], days: list[date]) -> None:
+def _drop_extra_accessories(
+    assigned: dict[date, WorkoutType | None],
+    days: list[date],
+    closure_days: set[date],
+) -> None:
     accessories = [day for day in days if assigned.get(day) in {WorkoutType.GRIP, WorkoutType.ZONE_2}]
-    if len(accessories) <= 1:
+    ordinary_accessories = [day for day in accessories if day not in closure_days]
+    if len(ordinary_accessories) <= 1:
         return
-    for day in accessories[1:]:
+    for day in ordinary_accessories[1:]:
         assigned[day] = None
 
 

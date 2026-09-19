@@ -1,54 +1,60 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent } from 'react'
+import { keepPreviousData, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { subscribeToPlanningChanges } from '../lib/planningRefresh'
-import { usePolling } from './usePolling'
 
 type LiveResourceOptions<T> = {
+  queryKey: QueryKey
   enabled?: boolean
   intervalMs?: number | null
-  immediate?: boolean
   initialData?: T
   subscribe?: (refresh: () => void) => () => void
 }
 
 export function useLiveResource<T>(
-  load: () => Promise<T>,
-  deps: readonly unknown[] = [],
-  options: LiveResourceOptions<T> = {},
+  load: (signal: AbortSignal) => Promise<T>,
+  options: LiveResourceOptions<T>,
 ) {
   const {
+    queryKey,
     enabled = true,
-    intervalMs = 15_000,
-    immediate = true,
+    intervalMs = 60_000,
     initialData,
     subscribe = subscribeToPlanningChanges,
   } = options
-  const [data, setData] = useState<T | null>(initialData ?? null)
-  const [error, setError] = useState<string | null>(null)
-  const loadRef = useRef(load)
-  loadRef.current = load
+  const queryClient = useQueryClient()
 
-  const refresh = useCallback(async () => {
-    if (!enabled) return
-    try {
-      const next = await loadRef.current()
-      setData(next)
-      setError(null)
-    } catch {
-      setError('Could not refresh.')
-    }
-  }, [enabled])
-
-  const depKey = JSON.stringify(deps)
-  useEffect(() => {
-    if (immediate) void refresh()
-  }, [depKey, immediate, refresh])
-
-  usePolling(refresh, enabled ? intervalMs : null, false)
+  const query = useQuery({
+    queryKey,
+    queryFn: ({ signal }) => load(signal),
+    enabled,
+    initialData,
+    placeholderData: keepPreviousData,
+    staleTime: 15_000,
+    refetchInterval: intervalMs ?? false,
+  })
+  const refetch = query.refetch
+  const invalidate = useEffectEvent(() => {
+    void queryClient.invalidateQueries({ queryKey })
+  })
 
   useEffect(() => {
     if (!enabled) return undefined
-    return subscribe(() => void refresh())
-  }, [enabled, refresh, subscribe])
+    return subscribe(invalidate)
+  }, [enabled, subscribe])
 
-  return { data, error, refresh, setData }
+  const refresh = useCallback(async () => {
+    await refetch({ cancelRefetch: true })
+  }, [refetch])
+  const setData = useCallback((next: T) => {
+    queryClient.setQueryData<T>(queryKey, next)
+  }, [queryClient, queryKey])
+
+  return {
+    data: query.data ?? null,
+    error: query.isError ? 'Could not refresh.' : null,
+    isLoading: query.isPending,
+    isRefreshing: query.isFetching && !query.isPending,
+    refresh,
+    setData,
+  }
 }

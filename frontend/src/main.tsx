@@ -1,5 +1,7 @@
-import { useMemo } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { Header } from './components/Header'
 import { MediaRegion } from './components/MediaRegion'
 import { addDays, PlanningRegion, TaskRegion } from './components/PlanningRegion'
@@ -11,11 +13,14 @@ import { useStartupBoot } from './hooks/useStartupBoot'
 import { useToday } from './hooks/useClock'
 import { getMotionMode } from './lib/motionMode'
 import { EventsPanel, TrainingInsights } from './components/TrainingPlanner'
-import { DailyBriefingPage } from './components/DailyBriefingPage'
-import { WorkoutApp } from './pages/WorkoutApp'
-import { WeeklyReviewPage } from './pages/WeeklyReviewPage'
+import { PageSkeleton } from './components/PageSkeleton'
+import { queryClient } from './lib/queryClient'
 import './styles.css'
 import './workout.css'
+
+const DailyBriefingPage = lazy(() => import('./components/DailyBriefingPage').then((module) => ({ default: module.DailyBriefingPage })))
+const WorkoutApp = lazy(() => import('./pages/WorkoutApp').then((module) => ({ default: module.WorkoutApp })))
+const WeeklyReviewPage = lazy(() => import('./pages/WeeklyReviewPage').then((module) => ({ default: module.WeeklyReviewPage })))
 
 function isPresentationMode() {
   const params = new URLSearchParams(window.location.search)
@@ -25,7 +30,7 @@ function isPresentationMode() {
 }
 
 function AppShell() {
-  const motionMode = useMemo(getMotionMode, [])
+  const [motionMode] = useState(getMotionMode)
   const boot = useStartupBoot()
 
   if (!boot.isReady || !boot.data) {
@@ -49,7 +54,7 @@ function DashboardApp({
   initialData: DashboardInitialData
 }) {
   const today = useToday()
-  const chromeless = useMemo(isPresentationMode, [])
+  const [chromeless] = useState(isPresentationMode)
   const {
     dashboard,
     calendar,
@@ -105,6 +110,7 @@ function DashboardApp({
         <PlanningRegion
           calendar={calendar}
           training={training}
+          weather={weather}
           selectedDate={selectedCalendarDate ?? today}
           onPrevious={() => setSelectedCalendarDate((current) => addDays(current ?? today, -1))}
           onToday={() => setSelectedCalendarDate(today)}
@@ -148,5 +154,11 @@ function PhoneApp() {
 }
 
 createRoot(document.getElementById('root')!).render(
-  isWorkoutPath() || isDailyPath() || isWeeklyPath() ? <PhoneApp /> : <AppShell />,
+  <AppErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      {isWorkoutPath() || isDailyPath() || isWeeklyPath() ? (
+        <Suspense fallback={<PageSkeleton />}><PhoneApp /></Suspense>
+      ) : <AppShell />}
+    </QueryClientProvider>
+  </AppErrorBoundary>,
 )

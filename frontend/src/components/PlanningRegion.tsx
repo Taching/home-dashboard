@@ -1,5 +1,5 @@
 import { useClock } from '../hooks/useClock'
-import type { CalendarEvent, CalendarToday, NotionTask, NotionToday, TrainingOverview } from '../types'
+import type { CalendarEvent, CalendarToday, NotionTask, NotionToday, TrainingOverview, WeatherForecast } from '../types'
 import { calendarEventKind } from '../lib/calendarKind'
 import { doneMarkLabel } from '../lib/workoutMatch'
 import { sessionOnDate, TodayTrainingCard, TrainingWeekStrip } from './TrainingPlanner'
@@ -213,7 +213,7 @@ function syncAge(value: string | null) {
 }
 
 function CalendarSchedule({
-  calendar, training, selectedDate, onPrevious, onToday, onNext,
+  calendar, training, selectedDate,
 }: {
   calendar: CalendarToday
   training: TrainingOverview
@@ -437,10 +437,11 @@ function TaskSection({ notion }: { notion: NotionToday }) {
 }
 
 export function PlanningRegion({
-  calendar, training, selectedDate, onPrevious, onToday, onNext,
+  calendar, training, weather, selectedDate, onPrevious, onToday, onNext,
 }: {
   calendar: CalendarToday
   training: TrainingOverview
+  weather: WeatherForecast
   selectedDate: string
   onPrevious: () => void
   onToday: () => void
@@ -449,7 +450,7 @@ export function PlanningRegion({
   return (
     <section className="planning-region" aria-label="Today’s plan">
       <TodayTrainingCard training={training} />
-      <TrainingWeekStrip training={training} />
+      <TrainingWeekStrip training={training} weather={weather} />
       <div className="compact-calendar">
         <CalendarSchedule
           calendar={calendar}

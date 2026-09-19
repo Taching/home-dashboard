@@ -17,14 +17,14 @@ const WEATHER_ICONS: Record<WeatherIcon, string> = {
   storm,
 }
 
-function WeatherIconArt({ icon }: { icon: WeatherIcon }) {
+export function WeatherIconArt({ icon, size = 42 }: { icon: WeatherIcon; size?: number }) {
   return (
     <img
       className="weather-icon"
       src={WEATHER_ICONS[icon]}
       alt=""
-      width={42}
-      height={42}
+      width={size}
+      height={size}
     />
   )
 }

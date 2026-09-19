@@ -3,6 +3,7 @@ import chiliLogo from '../assets/chili-logo.svg'
 import { fetchWeeklyReview, runWeeklyReview } from '../lib/api'
 import { useLiveResource } from '../hooks/useLiveResource'
 import { doneMarkLabel } from '../lib/workoutMatch'
+import { PageSkeleton } from '../components/PageSkeleton'
 import '../workout.css'
 
 function mondayOf(day = new Date()) {
@@ -20,9 +21,10 @@ function weekFromPath() {
 
 export function WeeklyReviewPage() {
   const [weekStart, setWeekStart] = useState(weekFromPath)
+  const reviewQueryKey = useMemo(() => ['weekly-review', weekStart] as const, [weekStart])
   const { data: review, error, setData: setReview } = useLiveResource(
-    () => fetchWeeklyReview(weekStart),
-    [weekStart],
+    (signal) => fetchWeeklyReview(weekStart, signal),
+    { queryKey: reviewQueryKey },
   )
   const [pending, setPending] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -31,7 +33,7 @@ export function WeeklyReviewPage() {
     document.documentElement.classList.add('is-workout')
     document.title = 'Weekly review · Chili'
     return () => document.documentElement.classList.remove('is-workout')
-  }, [weekStart])
+  }, [])
 
   const heading = useMemo(() => {
     const date = new Date(`${weekStart}T12:00:00+09:00`)
@@ -53,6 +55,8 @@ export function WeeklyReviewPage() {
     setWeekStart(next)
     window.history.replaceState(null, '', `/weekly/${next}`)
   }
+
+  if (!review && !error) return <PageSkeleton />
 
   return (
     <div className="workout-page">

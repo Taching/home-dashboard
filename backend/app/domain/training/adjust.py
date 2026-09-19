@@ -101,7 +101,9 @@ Allowed ops: gym_today, rest_today, move_gym, confirm_bjj, decline_bjj, add_bjj,
 replace_session, move_session, skip_session, fatigue, replan, complete_task, move_meeting,
 cannot_train, gym_closed, no_class, did_instead.
 Dates are YYYY-MM-DD in Asia/Tokyo. Use session_id or event_id from context when touching
-a specific item. If the message is not a calendar or plan change, return no mutations."""
+a specific item. When the user names a date range (e.g. "closed Dec 24 to Jan 2"), emit one
+gym_closed/no_class/cannot_train mutation per date in the range, not a single mutation.
+If the message is not a calendar or plan change, return no mutations."""
 
 
 @dataclass(frozen=True)
@@ -446,13 +448,13 @@ def match_calendar_adjust_fast_path(instruction: str, today: date) -> CalendarAn
         if fatigue:
             mutations.append(CalendarMutation(op="fatigue", date=today, fatigue_state=fatigue))
     if not mutations:
-        day = _mentioned_day(text, today)
-        if day and re.search(r"cannot train|can'?t train|i(?:'m| am) unavailable|unavailable", text):
-            mutations.append(CalendarMutation(op="cannot_train", date=day))
-        elif day and re.search(r"gym (?:is )?closed|holiday|closed tomorrow", text):
-            mutations.append(CalendarMutation(op="gym_closed", date=day))
-        elif day and re.search(r"no class|class (?:is )?cancelled|cancelled class", text):
-            mutations.append(CalendarMutation(op="no_class", date=day))
+        days = _mentioned_days(text, today)
+        if days and re.search(r"cannot train|can'?t train|i(?:'m| am) unavailable|unavailable", text):
+            mutations.extend(CalendarMutation(op="cannot_train", date=day) for day in days)
+        elif days and re.search(r"gym (?:is )?closed|holiday|closed tomorrow", text):
+            mutations.extend(CalendarMutation(op="gym_closed", date=day) for day in days)
+        elif days and re.search(r"no class|class (?:is )?cancelled|cancelled class", text):
+            mutations.extend(CalendarMutation(op="no_class", date=day) for day in days)
     if not mutations:
         return None
     labels = ", ".join(item.op.replace("_", " ") for item in mutations)
@@ -513,6 +515,26 @@ def _fatigue_state(text: str) -> str | None:
     if re.search(r"\bfatigue(?:\s+is)?\s+normal\b|\bback to normal\b", text):
         return "normal"
     return None
+
+
+def _mentioned_days(text: str, today: date) -> list[date]:
+    seen_idx: set[int] = set()
+    days: list[date] = []
+    for name, index in _WEEKDAYS.items():
+        if index in seen_idx:
+            continue
+        if re.search(rf"\b{name}\b", text):
+            seen_idx.add(index)
+            days.append(_next_weekday(today, index))
+    for match in re.finditer(r"\b(20\d{2}-\d{2}-\d{2})\b", text):
+        parsed = date.fromisoformat(match.group(1))
+        if parsed not in days:
+            days.append(parsed)
+    if not days:
+        single = _mentioned_day(text, today)
+        if single is not None:
+            days.append(single)
+    return sorted(set(days))
 
 
 def _mentioned_day(text: str, today: date) -> date | None:

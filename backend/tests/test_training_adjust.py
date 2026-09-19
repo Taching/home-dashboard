@@ -55,6 +55,26 @@ class CalendarAdjustFastPathTests(unittest.TestCase):
     def test_unknown_instruction_is_none(self) -> None:
         self.assertIsNone(match_calendar_adjust_fast_path("what is on the wall?", self.today))
 
+    def test_gym_closed_multiple_weekdays(self) -> None:
+        analysis = match_calendar_adjust_fast_path("gym closed mon, tues, wed", self.today)
+        self.assertIsNotNone(analysis)
+        assert analysis is not None
+        self.assertEqual([item.op for item in analysis.mutations], ["gym_closed", "gym_closed", "gym_closed"])
+        self.assertEqual(
+            [item.date for item in analysis.mutations],
+            [date(2026, 9, 14), date(2026, 9, 15), date(2026, 9, 16)],
+        )
+
+    def test_no_class_multiple_weekdays(self) -> None:
+        analysis = match_calendar_adjust_fast_path("no class monday and tuesday", self.today)
+        self.assertIsNotNone(analysis)
+        assert analysis is not None
+        self.assertEqual([item.op for item in analysis.mutations], ["no_class", "no_class"])
+        self.assertEqual(
+            [item.date for item in analysis.mutations],
+            [date(2026, 9, 14), date(2026, 9, 15)],
+        )
+
     def test_missed_bjj_did_grip_instead(self) -> None:
         analysis = match_calendar_adjust_fast_path(
             "I didn't do jiu-jitsu this morning, instead I did grip training",

@@ -151,8 +151,14 @@ export function TrainingWeekStrip({ training }: { training: TrainingOverview }) 
       unavailable: dayFlags.includes('UNAVAILABLE'),
     }
   })
+  const visibleKeys = new Set(days.map((item) => item.key))
+  const laterClosures = Object.entries(flags)
+    .filter(([key, dayFlags]) => !visibleKeys.has(key) && key > todayKey && (dayFlags.includes('HOLIDAY') || dayFlags.includes('CLOSED')))
+    .map(([key]) => key)
+    .sort()
   return (
-    <section className="training-week is-upcoming" aria-label="Next six training days">
+    <section className="training-week-group">
+      <section className="training-week is-upcoming" aria-label="Next six training days">
       {days.map(({ day, key, session, candidate, closed, noClass, unavailable }) => {
         const href = session && session.planned_type !== 'rest' ? `/workout/${session.id}` : undefined
         const mark = closed ? 'Closed' : unavailable ? 'Away' : noClass ? 'No class' : session ? sessionTitle(session.title) : candidate ? typeTitle(candidate.suggested_type) : 'Open'
@@ -174,6 +180,17 @@ export function TrainingWeekStrip({ training }: { training: TrainingOverview }) 
           <article key={key} className={className}>{inner}</article>
         )
       })}
+      </section>
+      {laterClosures.length > 0 && (
+        <p className="training-week-note">
+          Also closed: {laterClosures.map((key) => {
+            const day = new Date(`${key}T00:00:00+09:00`)
+            const weekday = new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: TIME_ZONE }).format(day)
+            const month = new Intl.DateTimeFormat('en-GB', { month: 'short', timeZone: TIME_ZONE }).format(day)
+            return `${weekday} ${Number(key.slice(-2))} ${month}`
+          }).join(', ')}
+        </p>
+      )}
     </section>
   )
 }

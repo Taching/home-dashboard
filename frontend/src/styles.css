@@ -2098,6 +2098,8 @@ button { font: inherit; }
 .training-why { color: var(--ink-muted); }
 .training-preparation { color: var(--ink-muted); }
 .training-command { color: var(--ink-faint); }
+.training-week-group { display: grid; gap: .3rem; }
+.training-week-note { margin: 0; color: var(--ink-faint); font-size: .72rem; font-weight: 560; }
 .training-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .3rem; }
 .training-week.is-upcoming { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .42rem; }
 .training-day { display: grid; grid-template-rows: auto auto minmax(1.55rem, auto) auto; gap: .08rem; min-width: 0; padding: .4rem .34rem; border: 1px solid color-mix(in srgb, var(--line-strong) 50%, transparent); border-radius: .38rem; color: var(--ink-faint); background: color-mix(in srgb, var(--bg) 70%, transparent); text-align: center; }

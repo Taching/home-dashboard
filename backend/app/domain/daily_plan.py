@@ -430,6 +430,9 @@ class DailyPlanService:
                 }
         answered = check_in.get("sober") if check_in else None
         stored_advice = check_in.get("advice") if check_in else None
+        answers = daily_answers(
+            workout=workout, sunday=sunday, check_in=check_in, preview=bool(preview_workout),
+        )
         advice = compose_today_advice(
             stored=stored_advice,
             training=workout,
@@ -466,9 +469,12 @@ class DailyPlanService:
             "advice": advice,
             "preview": bool(preview_workout),
             "daily_url": _daily_url(day),
+            "answers": answers,
+            "chili_reply": answers.get("chili_reply"),
+            "chili_delivery": answers.get("chili_delivery"),
             "check_in_status": {
                 "morning_complete": False,
-                "end_of_day_complete": bool(check_in) and check_in.get("sober") is not None,
+                "end_of_day_complete": answers["all_answered"],
                 "last_saved_at": check_in.get("updated_at") if check_in else None,
             },
             "today": today_block,
@@ -554,6 +560,56 @@ class DailyPlanService:
 
 def _daily_url(day: date) -> str:
     return f"{settings.public_base_url()}/daily/{day.isoformat()}"
+
+
+WORKOUT_DONE = {"completed", "partial", "skipped"}
+
+
+def daily_workout_required(workout: dict | None, preview: bool = False) -> bool:
+    if preview or not workout:
+        return False
+    kind = str(workout.get("planned_type") or "")
+    if kind in {"rest"} or kind.startswith("bjj_") or kind == "competition":
+        return False
+    return workout.get("status") != "preview"
+
+
+def daily_answers(
+    *,
+    workout: dict | None,
+    sunday: dict | None,
+    check_in: dict | None,
+    preview: bool = False,
+) -> dict:
+    workout_needed = daily_workout_required(workout, preview)
+    sunday_needed = sunday is not None and not preview
+    sober_needed = not preview
+    items = [
+        {
+            "id": "workout",
+            "label": "Workout",
+            "required": workout_needed,
+            "done": (not workout_needed) or str((workout or {}).get("status") or "") in WORKOUT_DONE,
+        },
+        {
+            "id": "sunday",
+            "label": "Sunday review",
+            "required": sunday_needed,
+            "done": (not sunday_needed) or bool((sunday or {}).get("submitted")),
+        },
+        {
+            "id": "sober",
+            "label": "Sober",
+            "required": sober_needed,
+            "done": (not sober_needed) or ((check_in or {}).get("sober") is not None),
+        },
+    ]
+    return {
+        "items": items,
+        "all_answered": all((not item["required"]) or item["done"] for item in items),
+        "chili_reply": (check_in or {}).get("chili_reply"),
+        "chili_delivery": (check_in or {}).get("chili_delivery"),
+    }
 
 
 def preview_workout_dict(day: date, workout_type: str) -> dict:

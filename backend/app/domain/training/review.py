@@ -127,6 +127,69 @@ def local_workout_review(
     return "\n".join(lines)
 
 
+def close_day_prompt(*, briefing: dict) -> str:
+    answers = briefing.get("answers") or {}
+    workout = briefing.get("workout") or {}
+    sunday = briefing.get("sunday") or {}
+    sober = briefing.get("sobriety") or {}
+    tomorrow = (briefing.get("tomorrow") or {}).get("prescription") or {}
+    workout_line = "No gym form today."
+    if answers.get("items"):
+        workout_item = next((item for item in answers["items"] if item.get("id") == "workout"), None)
+        if workout_item and workout_item.get("required"):
+            title = workout.get("title") or "session"
+            status = workout.get("status") or "logged"
+            note = (workout.get("notes") or "").strip() or "No extra note."
+            workout_line = f"{title} — {status}. Note: {note}"
+    sunday_line = "Not a Sunday weigh-in."
+    if sunday:
+        weight = sunday.get("weight_kg")
+        delta = sunday.get("delta_kg")
+        weight_text = f"{weight} kg" if weight is not None else "weight not entered"
+        if delta is not None:
+            weight_text += f", {delta:+.1f} kg vs last week"
+        note = (sunday.get("review_note") or "").strip() or "No extra note."
+        sunday_line = f"{weight_text}. Note: {note}"
+    sober_line = f"{sober.get('answered') or 'unanswered'}"
+    if sober.get("note"):
+        sober_line += f". Note: {sober['note']}"
+    tomorrow_line = _tomorrow_line(tomorrow) if tomorrow else "unspecified"
+    return (
+        "Takatoshi just finished every answer on today's Chili daily page.\n"
+        f"Date: {briefing.get('date')}\n"
+        f"Workout: {workout_line}\n"
+        f"Sober: {sober_line}\n"
+        f"Sunday: {sunday_line}\n"
+        f"Tomorrow: {tomorrow_line}\n\n"
+        "Reply in 3–5 short lines in Chili's voice from SOUL.md / IDENTITY.md:\n"
+        "1. The day is closed. Say good job if he stayed honest.\n"
+        "2. Confirm what he logged, including sober.\n"
+        "3. What matters tomorrow. Do not invent extra training.\n"
+        "Do not ask more questions."
+    )
+
+
+def local_close_day_review(*, briefing: dict) -> str:
+    sober = briefing.get("sobriety") or {}
+    tomorrow = (briefing.get("tomorrow") or {}).get("prescription") or {}
+    tomorrow_line = _tomorrow_line(tomorrow) if tomorrow else "protect recovery"
+    sober_answer = sober.get("answered")
+    if sober_answer == "yes":
+        sober_line = f"Sober is in. {sober.get('days', 0)} day streak."
+    elif sober_answer == "no":
+        sober_line = "Sober is logged as no. Reset clean tonight."
+    else:
+        sober_line = "Sober is in."
+    if "bjj" in tomorrow_line.lower():
+        next_line = f"Tomorrow is {tomorrow_line}. Rest tonight and show up ready."
+    elif tomorrow_line.lower().startswith("rest") or tomorrow_line.lower().startswith("recovery"):
+        next_line = f"Tomorrow is {tomorrow_line}. Leave it empty."
+    else:
+        next_line = f"Tomorrow is {tomorrow_line}."
+    opening = "Day is closed." if sober_answer == "no" else "Day is closed. Good job."
+    return "\n".join([opening, sober_line, next_line])
+
+
 def _tomorrow_line(prescription: dict[str, Any]) -> str:
     session = str(prescription.get("session") or "rest").replace("_", " ")
     when = prescription.get("time")

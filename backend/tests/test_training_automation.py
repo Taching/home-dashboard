@@ -34,6 +34,7 @@ def test_session_factory():
 class FakePlanner:
     def __init__(self) -> None:
         self.planned_type = "strength_a"
+        self.status = "planned"
         self.logged: list[tuple[str, list | None, str | None]] = []
 
     def for_date(self, day):
@@ -47,12 +48,13 @@ class FakePlanner:
             "estimated_minutes": 60,
             "intensity": "normal",
             "planned_type": self.planned_type,
-            "status": "planned",
+            "status": "planned" if rest else self.status,
             "notes": None,
         }
 
     def log_workout_check(self, session_id, *, exercises=None, note=None):
         self.logged.append((session_id, exercises, note))
+        self.status = "completed"
         return {
             "id": session_id,
             "title": "Strength A + Intervals",
@@ -236,6 +238,14 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(sober.status_code, 200)
         self.assertEqual(sober.json()["status"], "logged")
         self.assertEqual(sober.json()["briefing"]["sobriety"]["answered"], "yes")
+        self.assertTrue(sober.json()["briefing"]["answers"]["all_answered"])
+        self.assertEqual(len(self.app.state.openclaw_service.sent), 1)
+        self.assertIn("finished every answer", self.app.state.openclaw_service.sent[0])
+        self.assertEqual(len(self.app.state.openclaw_service.notified), 2)
+        self.assertTrue(sober.json()["briefing"]["chili_reply"])
+        again = self.client.post("/api/v1/daily/2026-09-15/close")
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(len(self.app.state.openclaw_service.sent), 1)
         daily = self.client.get("/api/v1/daily/2026-09-13").json()
         self.assertIsNone(daily["sleep"])
         self.assertIsNotNone(daily["sunday"])
@@ -281,6 +291,25 @@ class TrainingAutomationApiTests(unittest.TestCase):
         today = self.client.get("/api/v1/training/today").json()
         self.assertEqual(today["logs"][0]["kind"], "strength_a")
         self.assertTrue(today["advice"])
+
+    def test_rest_day_close_asks_chili_after_sober(self) -> None:
+        self.app.state.training_service.planned_type = "rest"
+        too_soon = self.client.post("/api/v1/daily/2026-09-15/close")
+        self.assertEqual(too_soon.status_code, 200)
+        self.assertFalse(too_soon.json()["answers"]["all_answered"])
+        self.assertEqual(self.app.state.openclaw_service.sent, [])
+        sober = self.client.post(
+            "/api/v1/daily/2026-09-15/sober",
+            json={"sober": True},
+        )
+        self.assertEqual(sober.status_code, 200)
+        self.assertTrue(sober.json()["briefing"]["answers"]["all_answered"])
+        self.assertTrue(sober.json()["briefing"]["chili_reply"])
+        self.assertEqual(len(self.app.state.openclaw_service.sent), 1)
+        self.assertTrue(any("Day is closed" in item or "finished every answer" in item or "forwarded:" in item for item in [
+            sober.json()["briefing"]["chili_reply"],
+            *self.app.state.openclaw_service.sent,
+        ]))
 
     def test_daily_workout_rejects_mismatched_kind(self) -> None:
         response = self.client.post(

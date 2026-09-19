@@ -42,6 +42,8 @@ def initialise_database() -> None:
         "fatigue_state": "VARCHAR(32)",
         "daily_notes": "TEXT",
         "advice": "TEXT",
+        "chili_reply": "TEXT",
+        "chili_delivery": "VARCHAR(32)",
     }.items():
         _ensure_column("daily_wellbeing_checkins", name, sql_type)
     _ensure_column("training_planner_settings", "declined_bjj_dates", "JSON")

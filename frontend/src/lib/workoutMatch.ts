@@ -21,7 +21,7 @@ export function workoutAlreadyLogged(status: string | null | undefined) {
 }
 
 export function workoutFormLocked(status: string | null | undefined) {
-  return status === 'completed' || status === 'partial'
+  return workoutAlreadyLogged(status)
 }
 
 export function doneMarkLabel(status: string | null | undefined) {

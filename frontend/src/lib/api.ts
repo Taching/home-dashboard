@@ -198,6 +198,14 @@ export async function logSober(day: string, payload: { sober: boolean; note?: st
   }))
 }
 
+export async function closeDailyDay(day: string, force = false) {
+  return requireJson<DailyBriefing>(await fetch(`/api/v1/daily/${day}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ force }),
+  }))
+}
+
 export async function logSundayReview(
   day: string,
   payload: { weight_kg?: number; same_as_last?: boolean; note?: string },

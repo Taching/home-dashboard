@@ -56,6 +56,15 @@ class ChiliNotifyServiceTests(unittest.TestCase):
         service.release("meeting:abc:2026-07-05")
         self.assertTrue(service.should_send("meeting:abc:2026-07-05"))
 
+    def test_forget_clears_a_sent_key(self):
+        service = ChiliNotifyService(test_session_factory(), ttl_seconds=3600)
+
+        self.assertTrue(service.should_send("day-close:2026-09-15"))
+        service.mark_sent("day-close:2026-09-15")
+        self.assertFalse(service.should_send("day-close:2026-09-15"))
+        service.forget("day-close:2026-09-15")
+        self.assertTrue(service.should_send("day-close:2026-09-15"))
+
 
 class ChiliNotifyApiTests(unittest.TestCase):
     def setUp(self) -> None:

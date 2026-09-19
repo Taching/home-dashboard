@@ -10,7 +10,12 @@ from pydantic import BaseModel, Field
 from app.core.settings import settings
 from app.domain.daily_plan import DailyPlanService, preview_workout_dict
 from app.domain.training.adjust import CalendarAdjuster
-from app.domain.training.review import kinds_match, local_workout_review
+from app.domain.training.review import (
+    close_day_prompt,
+    kinds_match,
+    local_close_day_review,
+    local_workout_review,
+)
 
 
 daily_router = APIRouter()
@@ -61,6 +66,10 @@ class DailySundayRequest(BaseModel):
     weight_kg: float | None = Field(default=None, ge=30, le=250)
     same_as_last: bool = False
     note: str | None = Field(default=None, max_length=500)
+
+
+class DailyCloseRequest(BaseModel):
+    force: bool = False
 
 
 class PlanCommandRequest(BaseModel):
@@ -137,6 +146,69 @@ def review_logged_workout(
     session_id = (session or {}).get("id") or day.isoformat()
     _notify_chili(request, f"{_daily_url(day)}\n\n{advice}", f"workout-review:{session_id}")
     return advice
+
+
+def _ask_chili(request: Request, message: str) -> tuple[str | None, str | None]:
+    openclaw = getattr(request.app.state, "openclaw_service", None)
+    if openclaw is None or not getattr(openclaw, "configured", lambda: False)():
+        return None, "not_configured"
+    try:
+        result = openclaw.send(message)
+        if not isinstance(result, dict):
+            return None, "failed"
+        reply = result.get("reply")
+        delivery = result.get("delivery_status")
+        text = str(reply).strip() if reply else None
+        return text, str(delivery) if delivery else "completed"
+    except Exception:
+        return None, "failed"
+
+
+def _close_day(request: Request, day: date, *, force: bool = False, briefing: dict | None = None) -> dict:
+    if briefing is None:
+        briefing = _briefing(request, day)
+    answers = briefing.get("answers") or {}
+    if briefing.get("preview") or not answers.get("all_answered"):
+        briefing["chili_delivery"] = answers.get("chili_delivery")
+        return briefing
+    existing = (answers.get("chili_reply") or briefing.get("chili_reply") or "").strip()
+    if existing and not force:
+        return briefing
+    notify_key = f"day-close:{day.isoformat()}"
+    ask_key = f"day-close-ask:{day.isoformat()}"
+    notify_service = getattr(request.app.state, "chili_notify_service", None)
+    if force and notify_service is not None and hasattr(notify_service, "forget"):
+        notify_service.forget(ask_key)
+        notify_service.forget(notify_key)
+    if notify_service is not None and hasattr(notify_service, "should_send"):
+        if not notify_service.should_send(ask_key):
+            # Another concurrent request is already asking Chili (or just did); don't double-fire.
+            return briefing
+    reply, asked = _ask_chili(request, close_day_prompt(briefing=briefing))
+    if notify_service is not None and hasattr(notify_service, "mark_sent"):
+        notify_service.mark_sent(ask_key)
+    text = reply or local_close_day_review(briefing=briefing)
+    _notify_chili(request, f"{_daily_url(day)}\n\n{text}", notify_key)
+    delivery = asked or "failed"
+    wellbeing = getattr(request.app.state, "wellbeing_service", None)
+    if wellbeing is not None and hasattr(wellbeing, "store_chili_close"):
+        wellbeing.store_chili_close(day, text, delivery)
+    briefing["chili_reply"] = text
+    briefing["chili_delivery"] = delivery
+    briefing["advice"] = text
+    answers["chili_reply"] = text
+    answers["chili_delivery"] = delivery
+    briefing["answers"] = answers
+    return briefing
+
+
+def _maybe_close_day(request: Request, day: date, briefing: dict) -> dict:
+    answers = briefing.get("answers") or {}
+    if briefing.get("preview") or not answers.get("all_answered"):
+        return briefing
+    if (answers.get("chili_reply") or briefing.get("chili_reply") or "").strip():
+        return briefing
+    return _close_day(request, day, briefing=briefing)
 
 
 def _notify_chili(request: Request, message: str, dedupe_key: str) -> None:
@@ -217,11 +289,12 @@ def daily_workout(request: Request, day: date, body: DailyWorkoutRequest) -> dic
     )
     briefing = _briefing(request, day)
     briefing["advice"] = advice
+    briefing = _maybe_close_day(request, day, briefing)
     return {
         "status": "logged",
         "message": f"Logged {updated['title']}: {updated['status']}.",
         "workout": updated,
-        "advice": advice,
+        "advice": briefing.get("chili_reply") or advice,
         "briefing": briefing,
     }
 
@@ -254,7 +327,7 @@ def daily_sober(request: Request, day: date, body: DailySoberRequest) -> dict:
         daily_notes=body.note,
         source="daily-page",
     )
-    briefing = _briefing(request, day)
+    briefing = _maybe_close_day(request, day, _briefing(request, day))
     return {
         "status": "logged",
         "message": f"Logged sober: {'yes' if body.sober else 'no'}.",
@@ -283,9 +356,14 @@ def daily_sunday(request: Request, day: date, body: DailySundayRequest) -> dict:
         source="daily-page",
     )
     _notify_chili(request, saved.notify_message, f"sunday-saved-{day.isoformat()}")
-    payload = _briefing(request, day)
+    payload = _maybe_close_day(request, day, _briefing(request, day))
     payload["message"] = saved.notify_message
     return payload
+
+
+@daily_router.post("/daily/{day}/close")
+def daily_close(request: Request, day: date, body: DailyCloseRequest = DailyCloseRequest()) -> dict:
+    return _close_day(request, day, force=body.force)
 
 
 @daily_router.post("/daily/{day}/check-in")

@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.router import api_router
 from app.database.session import Base
-from app.domain.daily_plan import DailyPlanService, advice_window_name, compose_today_advice
+from app.domain.daily_plan import DailyPlanService, advice_window_name, compose_today_advice, daily_answers
 from app.domain.wellbeing import WellbeingService
 
 
@@ -261,6 +261,27 @@ class DailyPlanTests(unittest.TestCase):
         )
         self.assertEqual(result["id"], "meeting-1")
         self.assertEqual(self.app.state.training_service.reconciled, 1)
+
+    def test_daily_answers_require_the_forms_on_the_phone_page(self):
+        gym = daily_answers(
+            workout={"planned_type": "strength_a", "status": "planned"},
+            sunday=None, check_in=None,
+        )
+        self.assertEqual([item["id"] for item in gym["items"] if item["required"]], ["workout", "sober"])
+        self.assertFalse(gym["all_answered"])
+
+        rest = daily_answers(
+            workout={"planned_type": "rest", "status": "planned"},
+            sunday=None, check_in={"sober": True},
+        )
+        self.assertTrue(rest["all_answered"])
+        self.assertFalse(next(item for item in rest["items"] if item["id"] == "workout")["required"])
+
+        bjj = daily_answers(
+            workout={"planned_type": "bjj_normal", "status": "planned"},
+            sunday={"submitted": True}, check_in={"sober": True},
+        )
+        self.assertTrue(bjj["all_answered"])
 
     def test_fatigue_and_bjj_candidate_verbs(self):
         self.assertEqual(self.service.set_fatigue(self.app.state.training_service, self.day, "tired")["fatigue_state"], "tired")

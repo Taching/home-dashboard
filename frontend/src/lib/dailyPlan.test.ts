@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { notionFromPlan, trainingOverviewFromPlan, walkReminderFromPlan } from './dailyPlan.ts'
+import { dailyAnswersFromBriefing, notionFromPlan, trainingOverviewFromPlan, walkReminderFromPlan } from './dailyPlan.ts'
 import type { DailyBriefing, TrainingOverview } from '../types.ts'
 
 const fallback: TrainingOverview = {
@@ -51,6 +51,38 @@ function dayBlock(training: typeof session | null) {
     reminders: [],
   }
 }
+
+test('dailyAnswersFromBriefing treats rest plus sober as closed', () => {
+  const answers = dailyAnswersFromBriefing({
+    date: '2026-09-15',
+    timezone: 'Asia/Tokyo',
+    workout: { ...session, planned_type: 'rest', title: 'Rest', status: 'planned' },
+    calendar: { status: 'ready', meetings: [] },
+    sobriety: { days: 8, answered: 'yes', note: null },
+    sleep: null,
+    sunday: null,
+    preview: false,
+    daily_url: '/daily/2026-09-15',
+  })
+  assert.equal(answers.all_answered, true)
+  assert.equal(answers.items.find((item) => item.id === 'workout')?.required, false)
+})
+
+test('dailyAnswersFromBriefing keeps gym open until the workout is logged', () => {
+  const answers = dailyAnswersFromBriefing({
+    date: '2026-09-15',
+    timezone: 'Asia/Tokyo',
+    workout: session,
+    calendar: { status: 'ready', meetings: [] },
+    sobriety: { days: 8, answered: 'yes', note: null },
+    sleep: null,
+    sunday: null,
+    preview: false,
+    daily_url: '/daily/2026-09-15',
+  })
+  assert.equal(answers.all_answered, false)
+  assert.equal(answers.items.find((item) => item.id === 'workout')?.done, false)
+})
 
 test('trainingOverviewFromPlan uses tomorrow.training, not the day block', () => {
   const plan = {

@@ -444,6 +444,20 @@ export type DailyWeekSession = {
   exercises: TrainingExerciseDone[]
 }
 
+export type DailyAnswerItem = {
+  id: 'workout' | 'sunday' | 'sober'
+  label: string
+  required: boolean
+  done: boolean
+}
+
+export type DailyAnswers = {
+  items: DailyAnswerItem[]
+  all_answered: boolean
+  chili_reply?: string | null
+  chili_delivery?: string | null
+}
+
 export type DailySunday = {
   week_start: string
   week_ending: string
@@ -509,6 +523,9 @@ export type DailyBriefing = {
   sunday: DailySunday | null
   preview: boolean
   daily_url: string
+  answers?: DailyAnswers
+  chili_reply?: string | null
+  chili_delivery?: string | null
   advice?: string | null
   advice_window?: 'morning' | 'lunch' | 'evening'
   message?: string | null
@@ -533,8 +550,9 @@ export type DailyBriefing = {
 export type TrainingLogResult = {
   status: 'logged' | 'failed'
   message: string
-  log: TrainingLog | null
+  log?: TrainingLog | null
   advice?: string | null
+  briefing?: DailyBriefing
 }
 
 export type OpenClawMessage = {

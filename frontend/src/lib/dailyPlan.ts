@@ -1,4 +1,53 @@
-import type { DailyBriefing, DailyPlanItem, NotionToday, TrainingOverview, WalkReminder } from '../types'
+import type { DailyAnswers, DailyBriefing, DailyPlanItem, NotionToday, TrainingOverview, WalkReminder } from '../types'
+import { workoutAlreadyLogged } from './workoutMatch'
+
+export function dailyAnswersFromBriefing(briefing: DailyBriefing): DailyAnswers {
+  const chiliReply = briefing.chili_reply ?? briefing.answers?.chili_reply ?? null
+  const chiliDelivery = briefing.chili_delivery ?? briefing.answers?.chili_delivery ?? null
+  if (briefing.answers?.items?.length) {
+    return {
+      ...briefing.answers,
+      chili_reply: chiliReply,
+      chili_delivery: chiliDelivery,
+    }
+  }
+  const kind = briefing.workout?.planned_type ?? ''
+  const workoutRequired = Boolean(
+    briefing.workout
+    && !briefing.preview
+    && kind !== 'rest'
+    && !kind.startsWith('bjj_')
+    && kind !== 'competition'
+    && briefing.workout.status !== 'preview',
+  )
+  const sundayRequired = Boolean(briefing.sunday) && !briefing.preview
+  const items = [
+    {
+      id: 'workout' as const,
+      label: 'Workout',
+      required: workoutRequired,
+      done: !workoutRequired || workoutAlreadyLogged(briefing.workout?.status),
+    },
+    {
+      id: 'sunday' as const,
+      label: 'Sunday review',
+      required: sundayRequired,
+      done: !sundayRequired || Boolean(briefing.sunday?.submitted),
+    },
+    {
+      id: 'sober' as const,
+      label: 'Sober',
+      required: !briefing.preview,
+      done: briefing.preview || briefing.sobriety.answered != null,
+    },
+  ]
+  return {
+    items,
+    all_answered: items.every((item) => !item.required || item.done),
+    chili_reply: chiliReply,
+    chili_delivery: chiliDelivery,
+  }
+}
 
 export function trainingOverviewFromPlan(
   plan: DailyBriefing | null,

@@ -133,6 +133,7 @@ class WellbeingService:
                     "trained", "gym", "jiujitsu", "sober", "weight_kg", "sleep_hours",
                     "sleep_quality", "fatigue", "soreness", "grip_fatigue", "pain",
                     "pain_notes", "readiness", "fatigue_state", "daily_notes", "advice",
+                    "chili_reply", "chili_delivery",
                 )
             }
             result["updated_at"] = self._as_utc(row.updated_at).isoformat()
@@ -148,6 +149,28 @@ class WellbeingService:
                 )
                 session.add(row)
             row.advice = advice
+            row.updated_at = updated_at
+            session.commit()
+
+    def store_chili_close(
+        self,
+        local_date: date,
+        reply: str,
+        delivery: str | None,
+        *,
+        now: datetime | None = None,
+    ) -> None:
+        updated_at = self._as_utc(now or datetime.now(UTC))
+        with self._session_factory() as session:
+            row = session.get(DailyWellbeingCheckIn, local_date)
+            if row is None:
+                row = DailyWellbeingCheckIn(
+                    local_date=local_date, updated_at=updated_at, source="daily-page",
+                )
+                session.add(row)
+            row.chili_reply = reply
+            row.chili_delivery = delivery
+            row.advice = reply
             row.updated_at = updated_at
             session.commit()
 

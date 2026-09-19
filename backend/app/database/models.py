@@ -176,6 +176,8 @@ class DailyWellbeingCheckIn(Base):
     fatigue_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
     daily_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     advice: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chili_reply: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chili_delivery: Mapped[str | None] = mapped_column(String(32), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     source: Mapped[str] = mapped_column(String(32), default="openclaw")
 

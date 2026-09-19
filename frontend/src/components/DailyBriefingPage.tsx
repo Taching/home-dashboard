@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { fetchDailyBriefing, logDailyWorkout, logSober, logSundayReview } from '../lib/api'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import chiliLogo from '../assets/chili-logo.svg'
+import { closeDailyDay, fetchDailyBriefing, logDailyWorkout, logSober, logSundayReview } from '../lib/api'
+import { dailyAnswersFromBriefing } from '../lib/dailyPlan'
 import { useLiveResource } from '../hooks/useLiveResource'
 import { doneMarkLabel, workoutFormLocked } from '../lib/workoutMatch'
-import type { DailyBriefing, PlannedExercise } from '../types'
+import type { DailyAnswerItem, DailyBriefing, PlannedExercise } from '../types'
 
 function formatTime(value: string, allDay = false) {
   if (allDay) return 'All day'
@@ -31,12 +33,38 @@ function DoneBadge() {
   return <span className="daily-done-badge" aria-label="Done">✓</span>
 }
 
+function verifyLabel(delivery: string | null | undefined, reply: string | null | undefined, waiting: boolean) {
+  if (waiting && !reply) return { kind: 'wait', text: 'Asking Chili…' }
+  if (delivery === 'not_configured') return { kind: 'fail', text: 'OpenClaw is not configured' }
+  if (delivery === 'completed') return { kind: 'ok', text: 'Verified · Chili replied' }
+  if (reply) return { kind: 'fail', text: 'Chili did not confirm' }
+  return { kind: 'wait', text: 'Waiting for Chili…' }
+}
+
+function AnswerProgress({ items }: { items: DailyAnswerItem[] }) {
+  const visible = items.filter((item) => item.required)
+  if (!visible.length) return null
+  const done = visible.filter((item) => item.done).length
+  return (
+    <div className="daily-progress" aria-label={`${done} of ${visible.length} answers in`}>
+      {visible.map((item) => (
+        <span key={item.id} className={`daily-progress-item${item.done ? ' is-done' : ''}`}>
+          {item.done ? '✓' : '○'} {item.label}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export function DailyBriefingPage({ day }: { day: string }) {
   const previewWorkout = useMemo(() => new URLSearchParams(window.location.search).get('preview'), [])
   const { data: briefing, error, refresh, setData: setBriefing } = useLiveResource(
     () => fetchDailyBriefing(day, previewWorkout ?? undefined),
     [day, previewWorkout],
   )
+  const [closing, setClosing] = useState(false)
+  const [closeError, setCloseError] = useState<string | null>(null)
+  const closeAsked = useRef(false)
 
   const title = useMemo(() => new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Tokyo', weekday: 'long', day: 'numeric', month: 'long',
@@ -48,18 +76,82 @@ export function DailyBriefingPage({ day }: { day: string }) {
     return () => document.documentElement.classList.remove('is-daily')
   }, [briefing])
 
-  if (!briefing) return <main className="daily-briefing-shell daily-loading">{error ?? 'Loading your day…'}</main>
+  const answers = briefing ? dailyAnswersFromBriefing(briefing) : null
+
+  useEffect(() => {
+    if (!briefing || briefing.preview || !answers?.all_answered || answers.chili_reply || closeAsked.current) return
+    closeAsked.current = true
+    setClosing(true)
+    void closeDailyDay(briefing.date)
+      .then((next) => {
+        setBriefing(next)
+        setCloseError(null)
+      })
+      .catch(() => {
+        closeAsked.current = false
+        setCloseError('Chili did not confirm. Try again.')
+      })
+      .finally(() => setClosing(false))
+  }, [answers, briefing, setBriefing])
+
+  const applyBriefing = (next?: DailyBriefing) => {
+    if (next) setBriefing(next)
+    else void refresh()
+  }
+
+  if (!briefing || !answers) return <main className="daily-briefing-shell daily-loading">{error ?? 'Loading your day…'}</main>
   const workout = briefing.workout
   const workoutDone = workout && workoutFormLocked(workout.status) ? doneMarkLabel(workout.status) : null
   const adjustment = liveAdjustment(briefing.last_adjustment)
+  const remaining = answers.items.filter((item) => item.required && !item.done)
+  const showWorkoutForm = Boolean(
+    workout
+    && workout.planned_type !== 'rest'
+    && !briefing.preview
+    && !workout.planned_type.startsWith('bjj_')
+    && workout.planned_type !== 'competition',
+  )
+  const closed = answers.all_answered && !briefing.preview
+
+  if (closed) {
+    return (
+      <CompleteDayPage
+        briefing={briefing}
+        title={title}
+        answers={answers.items}
+        reply={answers.chili_reply ?? null}
+        delivery={answers.chili_delivery ?? null}
+        waiting={closing}
+        error={closeError ?? error}
+        onRetry={() => {
+          closeAsked.current = true
+          setClosing(true)
+          void closeDailyDay(briefing.date, true)
+            .then((next) => {
+              setBriefing(next)
+              setCloseError(null)
+            })
+            .catch(() => {
+              closeAsked.current = false
+              setCloseError('Chili did not confirm. Try again.')
+            })
+            .finally(() => setClosing(false))
+        }}
+      />
+    )
+  }
 
   return (
     <main className="daily-briefing-shell">
       <header className="daily-hero">
         <div>
-          <span className="daily-kicker">Chili daily plan</span>
+          <span className="daily-kicker">
+            <img src={chiliLogo} alt="" className="daily-kicker-mark" />
+            Chili daily plan
+          </span>
           <h1>{title}</h1>
           {briefing.today?.headline && <p className="daily-plan-headline">{briefing.today.headline}</p>}
+          <AnswerProgress items={answers.items} />
           {briefing.preview && <span className="daily-preview-badge">Dry run · saved plan unchanged</span>}
         </div>
         <div className="daily-streak"><strong>{briefing.sobriety.days}</strong><span>sober days</span></div>
@@ -147,21 +239,34 @@ export function DailyBriefingPage({ day }: { day: string }) {
                     ? 'Chili’s evening advice'
                     : 'Chili’s advice'}
             </span>
-            <p>{briefing.advice ?? 'Chili answers after a workout or Sunday review.'}</p>
+            <p>{briefing.advice ?? 'Chili answers after the last check-in.'}</p>
           </section>
         </div>
 
         <div className="daily-summary-stack">
-          {workout && workout.planned_type !== 'rest' && !briefing.preview && !workout.planned_type.startsWith('bjj_') && workout.planned_type !== 'competition' && (
-            <WorkoutForm day={briefing.date} workout={workout} storedAdvice={briefing.advice} onLogged={() => void refresh()} />
+          {showWorkoutForm && (
+            <WorkoutForm
+              day={briefing.date}
+              workout={workout!}
+              storedAdvice={briefing.advice}
+              closesDay={remaining.length === 1 && remaining[0].id === 'workout'}
+              onLogged={applyBriefing}
+            />
           )}
-          {briefing.sunday && <SundayForm briefing={briefing} onSaved={setBriefing} />}
+          {briefing.sunday && (
+            <SundayForm
+              briefing={briefing}
+              closesDay={remaining.length === 1 && remaining[0].id === 'sunday'}
+              onSaved={applyBriefing}
+            />
+          )}
           <SoberForm
             day={briefing.date}
             answered={briefing.sobriety.answered}
             savedNote={briefing.sobriety.note}
             days={briefing.sobriety.days}
-            onLogged={() => void refresh()}
+            closesDay={remaining.length === 1 && remaining[0].id === 'sober'}
+            onLogged={applyBriefing}
           />
           {error && <p className="daily-form-error" role="alert">{error}</p>}
         </div>
@@ -170,16 +275,94 @@ export function DailyBriefingPage({ day }: { day: string }) {
   )
 }
 
+function CompleteDayPage({
+  briefing,
+  title,
+  answers,
+  reply,
+  delivery,
+  waiting,
+  error,
+  onRetry,
+}: {
+  briefing: DailyBriefing
+  title: string
+  answers: DailyAnswerItem[]
+  reply: string | null
+  delivery: string | null
+  waiting: boolean
+  error: string | null
+  onRetry: () => void
+}) {
+  const verify = verifyLabel(delivery, reply, waiting)
+  const workout = briefing.workout
+  return (
+    <main className="daily-briefing-shell daily-complete-shell">
+      <header className="daily-complete-hero">
+        <img src={chiliLogo} alt="" className="daily-complete-mark" />
+        <span className="daily-kicker">All answered</span>
+        <h1>Good job</h1>
+        <p>{title} is closed. Chili has the day.</p>
+        <AnswerProgress items={answers} />
+      </header>
+
+      <section className="daily-card daily-complete-recap">
+        <span className="daily-card-label">Logged</span>
+        <ul className="daily-complete-list">
+          {workout && workout.planned_type !== 'rest' && (
+            <li>
+              <strong>{workout.title}</strong>
+              <span>{doneMarkLabel(workout.status) ?? workout.status}</span>
+            </li>
+          )}
+          {briefing.sunday?.submitted && (
+            <li>
+              <strong>Sunday weigh-in</strong>
+              <span>
+                {briefing.sunday.weight_kg != null ? `${briefing.sunday.weight_kg.toFixed(1)} kg` : 'Saved'}
+                {briefing.sunday.delta_kg != null ? ` · ${briefing.sunday.delta_kg > 0 ? '+' : ''}${briefing.sunday.delta_kg.toFixed(1)} kg` : ''}
+              </span>
+            </li>
+          )}
+          <li>
+            <strong>Sober</strong>
+            <span>{briefing.sobriety.answered === 'yes' ? 'Yes' : briefing.sobriety.answered === 'no' ? 'No' : 'Saved'}</span>
+          </li>
+        </ul>
+        {briefing.tomorrow && (
+          <p className="daily-complete-tomorrow">{briefing.tomorrow.preparation ?? briefing.tomorrow.headline}</p>
+        )}
+      </section>
+
+      <section className={`daily-card daily-advice has-advice daily-verify-card is-${verify.kind}`}>
+        <div className="daily-card-title">
+          <span className="daily-card-label">Chili</span>
+          <span className={`daily-verify is-${verify.kind}`}>{verify.text}</span>
+        </div>
+        <p className="daily-chili-reply">{reply ?? (waiting ? 'Sending the day to OpenClaw…' : 'No reply yet.')}</p>
+        {(verify.kind === 'fail' || error) && (
+          <button className="daily-submit" type="button" onClick={onRetry} disabled={waiting}>
+            {waiting ? 'Asking Chili…' : 'Ask Chili again'}
+          </button>
+        )}
+        {error && <p className="daily-form-error" role="alert">{error}</p>}
+      </section>
+    </main>
+  )
+}
+
 function WorkoutForm({
   day,
   workout,
   storedAdvice,
+  closesDay,
   onLogged,
 }: {
   day: string
   workout: NonNullable<DailyBriefing['workout']>
   storedAdvice?: string | null
-  onLogged: () => void
+  closesDay?: boolean
+  onLogged: (next?: DailyBriefing) => void
 }) {
   const [done, setDone] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(workout.exercises.map((item) => [item.name, Boolean(item.done)])),
@@ -205,7 +388,7 @@ function WorkoutForm({
           setSaved(true)
           setAdvice(result.advice ?? null)
           setError(null)
-          onLogged()
+          onLogged(result.briefing)
         } else {
           setError(result.message)
         }
@@ -259,7 +442,9 @@ function WorkoutForm({
         <span>Easy or hard?</span>
         <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} placeholder="Easy / hard, or what to change next time" />
       </label>
-      <button className="daily-submit" type="submit" disabled={pending}>{pending ? 'Asking Chili…' : 'Submit workout'}</button>
+      <button className="daily-submit" type="submit" disabled={pending}>
+        {pending ? (closesDay ? 'Asking Chili…' : 'Saving…') : closesDay ? 'Submit and close the day' : 'Submit workout'}
+      </button>
       {error && <p className="daily-form-error">{error}</p>}
     </form>
   )
@@ -270,13 +455,15 @@ function SoberForm({
   answered,
   savedNote,
   days,
+  closesDay,
   onLogged,
 }: {
   day: string
   answered: 'yes' | 'no' | null
   savedNote: string | null
   days: number
-  onLogged: () => void
+  closesDay?: boolean
+  onLogged: (next?: DailyBriefing) => void
 }) {
   const [sober, setSober] = useState(answered !== 'no')
   const [note, setNote] = useState(savedNote ?? '')
@@ -294,7 +481,7 @@ function SoberForm({
         if (result.status === 'logged') {
           setSaved(true)
           setError(null)
-          onLogged()
+          onLogged(result.briefing)
         } else {
           setError(result.message)
         }
@@ -333,7 +520,9 @@ function SoberForm({
         <span>Note</span>
         <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} />
       </label>
-      <button className="daily-submit" type="submit" disabled={pending}>{pending ? 'Saving…' : 'Submit sober'}</button>
+      <button className="daily-submit" type="submit" disabled={pending}>
+        {pending ? (closesDay ? 'Asking Chili…' : 'Saving…') : closesDay ? 'Submit and close the day' : 'Submit sober'}
+      </button>
       {error && <p className="daily-form-error">{error}</p>}
     </form>
   )
@@ -341,10 +530,12 @@ function SoberForm({
 
 function SundayForm({
   briefing,
+  closesDay,
   onSaved,
 }: {
   briefing: DailyBriefing
-  onSaved: (next: DailyBriefing) => void
+  closesDay?: boolean
+  onSaved: (next?: DailyBriefing) => void
 }) {
   const sunday = briefing.sunday
   if (!sunday) return null
@@ -429,7 +620,9 @@ function SundayForm({
         <span>Anything to change next week?</span>
         <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} />
       </label>
-      <button className="daily-submit" type="submit" disabled={pending}>{pending ? 'Saving…' : 'Submit Sunday review'}</button>
+      <button className="daily-submit" type="submit" disabled={pending}>
+        {pending ? (closesDay ? 'Asking Chili…' : 'Saving…') : closesDay ? 'Submit and close the day' : 'Submit Sunday review'}
+      </button>
       {error && <p className="daily-form-error">{error}</p>}
     </form>
   )

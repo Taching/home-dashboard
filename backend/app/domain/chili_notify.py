@@ -52,3 +52,13 @@ class ChiliNotifyService:
     def release(self, dedupe_key: str) -> None:
         with self._lock:
             self._in_flight.discard(dedupe_key)
+
+    def forget(self, dedupe_key: str) -> None:
+        with self._lock:
+            self._memory.pop(dedupe_key, None)
+            self._in_flight.discard(dedupe_key)
+            with self._session_factory() as session:
+                row = session.get(ChiliNotifyDedupe, dedupe_key)
+                if row is not None:
+                    session.delete(row)
+                    session.commit()

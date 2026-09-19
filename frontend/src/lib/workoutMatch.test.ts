@@ -30,7 +30,7 @@ test('doneMarkLabel is only for a logged session', () => {
   assert.equal(workoutAlreadyLogged('skipped'), true)
   assert.equal(workoutAlreadyLogged('planned'), false)
   assert.equal(workoutFormLocked('completed'), true)
-  assert.equal(workoutFormLocked('skipped'), false)
+  assert.equal(workoutFormLocked('skipped'), true)
   assert.equal(workoutFormLocked('planned'), false)
 })
 

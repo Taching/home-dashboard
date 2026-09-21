@@ -135,6 +135,7 @@ class WeeklyReview(Base):
     previous_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     summary: Mapped[str | None] = mapped_column(String, nullable=True)
+    coach_review: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(16))
 
 

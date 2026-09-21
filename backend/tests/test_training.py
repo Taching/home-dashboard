@@ -121,9 +121,8 @@ class TrainingServiceTests(unittest.TestCase):
         self.assertEqual(saved.check_in.delta_kg, -0.4)
         self.assertIn("down 0.4 kg", saved.notify_message)
         self.assertNotIn("This week:", saved.notify_message)
-        self.assertIn("BJJ", saved.review_prompt)
-        self.assertIn("maybe drop Friday", saved.review_prompt)
-        self.assertIn("3–6 short lines", saved.review_prompt)
+        self.assertEqual(saved.check_in.review_note, "maybe drop Friday if BJJ is 4x")
+        self.assertIn("BJJ", WeeklyService.week_summary_text(saved.check_in.sessions))
 
     def test_nudge_messages_are_short_with_one_link(self) -> None:
         daily = self.service.nudge_message(date(2026, 9, 13))

@@ -190,6 +190,58 @@ def local_close_day_review(*, briefing: dict) -> str:
     return "\n".join([opening, sober_line, next_line])
 
 
+def weekly_training_review_prompt(
+    *,
+    week_review: dict,
+    weight_line: str,
+    sessions_summary: str,
+    preferences: str = "",
+) -> str:
+    planned = week_review.get("planned") or {}
+    completed = week_review.get("completed") or {}
+    counts = " · ".join(
+        f"{label} {completed.get(key, 0)}/{planned.get(key, 0)}"
+        for key, label in (("bjj", "BJJ"), ("strength", "Strength"), ("zone_2", "Zone 2"), ("grip", "Grip"))
+    )
+    avg_rpe = week_review.get("average_rpe")
+    rpe_line = (
+        f"Average RPE {avg_rpe}, trend {(week_review.get('trends') or {}).get('rpe', 'hold')}."
+        if avg_rpe is not None else "No RPE logged this week."
+    )
+    recovery_line = (week_review.get("recovery") or {}).get("notes") or "No recovery flags."
+    what_changes = week_review.get("what_changes") or "No adaptation notes."
+    prefs_block = f"\n{preferences}" if preferences else ""
+    return (
+        "Takatoshi just submitted his Sunday weigh-in and week review on the Chili dashboard.\n"
+        f"{weight_line}\n"
+        f"Planned vs completed: {counts}\n"
+        f"{rpe_line}\n"
+        f"Recovery: {recovery_line}\n"
+        f"Scheduler's own note: {what_changes}\n"
+        f"{sessions_summary}"
+        f"{prefs_block}\n\n"
+        "Reply in 4-7 short lines in Chili's voice from SOUL.md / IDENTITY.md:\n"
+        "1. Weight change in plain words.\n"
+        "2. What actually got done this week vs the plan, plainly.\n"
+        "3. One concrete thing to change next week to train harder or more consistently — "
+        "be specific (a session type, a day, an intensity), not generic encouragement.\n"
+        "4. One thing that is working and should stay the same.\n"
+        "Do not invent numbers that were not given. Do not ask sleep, readiness, or morning metrics. "
+        "Do not paste the full program."
+    )
+
+
+def local_weekly_training_review(*, week_review: dict, weight_line: str) -> str:
+    planned = week_review.get("planned") or {}
+    completed = week_review.get("completed") or {}
+    counts = " · ".join(
+        f"{label} {completed.get(key, 0)}/{planned.get(key, 0)}"
+        for key, label in (("bjj", "BJJ"), ("strength", "Strength"), ("zone_2", "Zone 2"), ("grip", "Grip"))
+    )
+    what_changes = week_review.get("what_changes") or "Hold the plan steady next week."
+    return "\n".join([weight_line, f"This week: {counts}.", what_changes])
+
+
 def _tomorrow_line(prescription: dict[str, Any]) -> str:
     session = str(prescription.get("session") or "rest").replace("_", " ")
     when = prescription.get("time")

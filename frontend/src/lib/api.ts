@@ -239,6 +239,14 @@ export async function logSober(day: string, payload: { sober: boolean; note?: st
   }))
 }
 
+export async function logSleep(day: string, hours: number) {
+  return requireJson<TrainingLogResult>(await fetch(`/api/v1/daily/${day}/sleep`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hours }),
+  }))
+}
+
 export async function closeDailyDay(day: string, force = false) {
   return requireJson<DailyBriefing>(await fetch(`/api/v1/daily/${day}/close`, {
     method: 'POST',

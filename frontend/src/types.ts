@@ -472,6 +472,7 @@ export type DailySunday = {
   review_note: string | null
   submitted: boolean
   sessions: DailyWeekSession[]
+  coach_review: string | null
 }
 
 export type DailyPlanItem = {
@@ -524,7 +525,7 @@ export type DailyBriefing = {
     answered: 'yes' | 'no' | null
     note: string | null
   }
-  sleep: null
+  sleep: { hours: number | null } | null
   sunday: DailySunday | null
   preview: boolean
   daily_url: string

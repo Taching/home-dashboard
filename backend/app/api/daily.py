@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 import hmac
+import logging
 from typing import Literal
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
@@ -14,11 +15,15 @@ from app.domain.training.review import (
     close_day_prompt,
     kinds_match,
     local_close_day_review,
+    local_weekly_training_review,
     local_workout_review,
+    weekly_training_review_prompt,
 )
+from app.domain.weekly import SundayCheckIn, WeeklyService
 
 
 daily_router = APIRouter()
+logger = logging.getLogger(__name__)
 _plan = DailyPlanService()
 
 
@@ -60,6 +65,10 @@ class DailyConstraintRequest(BaseModel):
 class DailySoberRequest(BaseModel):
     sober: bool
     note: str | None = Field(default=None, max_length=500)
+
+
+class DailySleepRequest(BaseModel):
+    hours: float = Field(ge=0, le=24)
 
 
 class DailySundayRequest(BaseModel):
@@ -335,6 +344,21 @@ def daily_sober(request: Request, day: date, body: DailySoberRequest) -> dict:
     }
 
 
+@daily_router.post("/daily/{day}/sleep")
+def daily_sleep(request: Request, day: date, body: DailySleepRequest) -> dict:
+    # Optional, quick, never gates closing the day — not a readiness form.
+    request.app.state.wellbeing_service.record(
+        day,
+        sleep_hours=body.hours,
+        source="daily-page",
+    )
+    return {
+        "status": "logged",
+        "message": f"Logged sleep: {body.hours}h.",
+        "briefing": _briefing(request, day),
+    }
+
+
 @daily_router.post("/daily/{day}/sunday")
 def daily_sunday(request: Request, day: date, body: DailySundayRequest) -> dict:
     weekly = request.app.state.weekly_service
@@ -355,10 +379,36 @@ def daily_sunday(request: Request, day: date, body: DailySundayRequest) -> dict:
         daily_notes=body.note,
         source="daily-page",
     )
-    _notify_chili(request, saved.notify_message, f"sunday-saved-{day.isoformat()}")
+    review_text = _weekly_training_review(request, day, saved.check_in)
+    weekly.store_coach_review(day, review_text)
+    _notify_chili(request, f"{saved.notify_message}\n\n{review_text}", f"sunday-saved-{day.isoformat()}")
     payload = _maybe_close_day(request, day, _briefing(request, day))
     payload["message"] = saved.notify_message
     return payload
+
+
+def _weekly_training_review(request: Request, day: date, check_in: SundayCheckIn) -> str:
+    training = request.app.state.training_service
+    week_review = training.week_review(check_in.week_start) if hasattr(training, "week_review") else {}
+    weight_line = WeeklyService.weight_line(check_in)
+    sessions_summary = WeeklyService.week_summary_text(check_in.sessions)
+    preferences = getattr(request.app.state, "training_preferences_service", None)
+    prefs_text = preferences.prompt_snippet() if preferences else ""
+
+    openclaw = getattr(request.app.state, "openclaw_service", None)
+    if openclaw is not None and openclaw.configured():
+        prompt = weekly_training_review_prompt(
+            week_review=week_review, weight_line=weight_line,
+            sessions_summary=sessions_summary, preferences=prefs_text,
+        )
+        try:
+            reply = openclaw.send(prompt).get("reply")
+            if reply:
+                return str(reply).strip()
+        except Exception:
+            logger.exception("Weekly training review via OpenClaw failed; falling back to local review")
+
+    return local_weekly_training_review(week_review=week_review, weight_line=weight_line)
 
 
 @daily_router.post("/daily/{day}/close")

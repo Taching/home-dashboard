@@ -39,13 +39,13 @@ class SundayCheckIn:
     review_note: str | None
     submitted: bool
     sessions: tuple[WeekSession, ...]
+    coach_review: str | None = None
 
 
 @dataclass(frozen=True)
 class SundaySaveResult:
     check_in: SundayCheckIn
     notify_message: str
-    review_prompt: str
 
 
 class WeeklyService:
@@ -77,7 +77,16 @@ class WeeklyService:
             review_note=saved.note if saved is not None else None,
             submitted=saved is not None,
             sessions=self.week_sessions(day, training),
+            coach_review=saved.coach_review if saved is not None else None,
         )
+
+    def store_coach_review(self, day: date, text: str) -> None:
+        with self._session_factory() as session:
+            row = session.scalars(select(WeeklyReview).where(WeeklyReview.week_ending == day)).first()
+            if row is None:
+                return
+            row.coach_review = text
+            session.commit()
 
     def save_sunday(
         self,
@@ -137,7 +146,6 @@ class WeeklyService:
         return SundaySaveResult(
             check_in=check_in,
             notify_message=self.notify_message(check_in, self.daily_url(day)),
-            review_prompt=self.review_prompt(check_in),
         )
 
     def review_for(self, sunday: date) -> WeeklyReview | None:
@@ -260,29 +268,12 @@ class WeeklyService:
 
     @staticmethod
     def notify_message(check_in: SundayCheckIn, daily_url: str) -> str:
-        weight = WeeklyService._weight_line(check_in)
+        weight = WeeklyService.weight_line(check_in)
         return (
             f"{daily_url}\n\n"
             f"Sunday saved.\n"
             f"{weight}\n"
             "I'll reply if next week needs a change."
-        )
-
-    @staticmethod
-    def review_prompt(check_in: SundayCheckIn) -> str:
-        weight = WeeklyService._weight_line(check_in)
-        note = check_in.review_note or "No extra note."
-        return (
-            "Takatoshi submitted the Sunday weigh-in and week review.\n"
-            f"{weight}\n"
-            f"{WeeklyService.week_summary_text(check_in.sessions)}\n"
-            f"His note: {note}\n\n"
-            "Reply in Telegram in 3–6 short lines:\n"
-            "1. Weight change in plain words.\n"
-            "2. How the week actually went.\n"
-            "3. One keep-or-change for next week.\n"
-            "Do not ask sleep, readiness, or morning metrics. "
-            "Do not paste the full program."
         )
 
     @staticmethod
@@ -309,7 +300,7 @@ class WeeklyService:
         return "\n".join(lines)
 
     @staticmethod
-    def _weight_line(check_in: SundayCheckIn) -> str:
+    def weight_line(check_in: SundayCheckIn) -> str:
         if check_in.weight_kg is None:
             return "Weight: not logged."
         if check_in.previous_weight_kg is None:

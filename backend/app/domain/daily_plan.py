@@ -416,6 +416,7 @@ class DailyPlanService:
                     "delta_kg": check.delta_kg,
                     "review_note": check.review_note,
                     "submitted": check.submitted,
+                    "coach_review": check.coach_review,
                     "sessions": [
                         {
                             "date": session.date.isoformat(),
@@ -463,7 +464,7 @@ class DailyPlanService:
                 "answered": None if answered is None else ("yes" if answered else "no"),
                 "note": check_in.get("daily_notes") if check_in else None,
             },
-            "sleep": None,
+            "sleep": {"hours": check_in.get("sleep_hours") if check_in else None},
             "sunday": sunday,
             "check_in": check_in,
             "advice": advice,

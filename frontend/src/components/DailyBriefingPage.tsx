@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import chiliLogo from '../assets/chili-logo.svg'
-import { closeDailyDay, fetchDailyBriefing, logDailyWorkout, logSober, logSundayReview } from '../lib/api'
+import { closeDailyDay, fetchDailyBriefing, logDailyWorkout, logSleep, logSober, logSundayReview } from '../lib/api'
 import { dailyAnswersFromBriefing } from '../lib/dailyPlan'
 import { useLiveResource } from '../hooks/useLiveResource'
 import { doneMarkLabel, workoutFormLocked } from '../lib/workoutMatch'
@@ -289,6 +289,11 @@ export function DailyBriefingPage({ day }: { day: string }) {
               onSaved={applyBriefing}
             />
           )}
+          <SleepForm
+            day={briefing.date}
+            hours={briefing.sleep?.hours ?? null}
+            onLogged={applyBriefing}
+          />
           <SoberForm
             day={briefing.date}
             answered={briefing.sobriety.answered}
@@ -480,6 +485,65 @@ function WorkoutForm({
   )
 }
 
+function SleepForm({
+  day,
+  hours,
+  onLogged,
+}: {
+  day: string
+  hours: number | null
+  onLogged: (next?: DailyBriefing) => void
+}) {
+  const [value, setValue] = useState(hours != null ? String(hours) : '')
+  const [pending, setPending] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    const parsed = Number(value)
+    if (pending || !value.trim() || Number.isNaN(parsed)) return
+    setPending(true)
+    setError(null)
+    void logSleep(day, parsed)
+      .then((result) => {
+        if (result.status === 'logged') {
+          setSaved(true)
+          onLogged(result.briefing)
+        } else {
+          setError(result.message)
+        }
+      })
+      .catch(() => setError('Could not save sleep.'))
+      .finally(() => setPending(false))
+  }
+
+  return (
+    <form className="daily-card daily-form" onSubmit={submit}>
+      <div className="daily-card-title">
+        <div><span className="daily-card-label">Optional</span><h2>Sleep</h2></div>
+      </div>
+      <label className="daily-field">
+        <span>Hours last night (from your watch, or a guess)</span>
+        <input
+          type="number"
+          inputMode="decimal"
+          step="0.5"
+          min="0"
+          max="14"
+          value={value}
+          onChange={(event) => { setValue(event.target.value); setSaved(false) }}
+        />
+      </label>
+      <button className="daily-submit" type="submit" disabled={pending || !value.trim()}>
+        {pending ? 'Saving…' : saved ? 'Update' : 'Save'}
+      </button>
+      {saved && <p className="daily-form-success">Saved.</p>}
+      {error && <p className="daily-form-error" role="alert">{error}</p>}
+    </form>
+  )
+}
+
 function SoberForm({
   day,
   answered,
@@ -608,6 +672,12 @@ function SundayForm({
           {delta != null ? ` · ${delta > 0 ? '+' : ''}${delta.toFixed(1)} kg` : ''}
         </p>
         {note.trim() && <p className="daily-done-note">{note}</p>}
+        {sunday.coach_review && (
+          <div className="coach-advice">
+            <span className="coach-advice-label">Chili says</span>
+            <p className="workout-advice">{sunday.coach_review}</p>
+          </div>
+        )}
       </section>
     )
   }

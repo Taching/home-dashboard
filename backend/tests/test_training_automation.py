@@ -247,9 +247,24 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(again.status_code, 200)
         self.assertEqual(len(self.app.state.openclaw_service.sent), 1)
         daily = self.client.get("/api/v1/daily/2026-09-13").json()
-        self.assertIsNone(daily["sleep"])
+        self.assertIsNone(daily["sleep"]["hours"])
         self.assertIsNotNone(daily["sunday"])
         self.assertEqual(daily["sunday"]["week_ending"], "2026-09-13")
+
+    def test_daily_sleep_is_optional_and_never_closes_the_day(self) -> None:
+        sleep = self.client.post(
+            "/api/v1/daily/2026-09-16/sleep",
+            json={"hours": 6.5},
+        )
+        self.assertEqual(sleep.status_code, 200)
+        self.assertEqual(sleep.json()["status"], "logged")
+        self.assertEqual(sleep.json()["briefing"]["sleep"]["hours"], 6.5)
+        # Logging sleep alone must not ask Chili anything or close the day —
+        # it is optional context, not a readiness form.
+        self.assertEqual(self.app.state.openclaw_service.sent, [])
+        self.assertEqual(self.app.state.openclaw_service.notified, [])
+        daily = self.client.get("/api/v1/daily/2026-09-16").json()
+        self.assertEqual(daily["sleep"]["hours"], 6.5)
 
     def test_sunday_review_compares_weight(self) -> None:
         first = self.client.post(
@@ -266,7 +281,11 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(body["sunday"]["previous_weight_kg"], 82.8)
         self.assertEqual(body["sunday"]["delta_kg"], -0.4)
         self.assertIn("down 0.4 kg", body["message"])
-        self.assertEqual(self.app.state.openclaw_service.sent, [])
+        # Sunday now gets one real weekly-training-review agent turn per submission
+        # (one for the first Sunday, one for the second).
+        self.assertEqual(len(self.app.state.openclaw_service.sent), 2)
+        self.assertIn("Sunday weigh-in and week review", self.app.state.openclaw_service.sent[-1])
+        self.assertIsNotNone(body["sunday"]["coach_review"])
         self.assertTrue(any(item.startswith(f"{settings.public_base_url()}/daily/2026-09-13") for item in self.app.state.openclaw_service.notified))
         self.assertNotEqual(body["advice"], body["message"])
         self.assertNotIn("/daily/", body["advice"] or "")

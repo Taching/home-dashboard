@@ -3,8 +3,10 @@ import unittest
 from app.domain.training.review import (
     exercise_done,
     kinds_match,
+    local_weekly_training_review,
     local_workout_review,
     week_counters_text,
+    weekly_training_review_prompt,
     workout_review_prompt,
 )
 
@@ -78,6 +80,52 @@ class TrainingReviewTests(unittest.TestCase):
     def test_week_counters_skip_missing_keys(self):
         self.assertEqual(week_counters_text(None), "Weekly status unavailable.")
         self.assertIn("BJJ 1/3", week_counters_text({"bjj": {"completed": 1, "target": 3}}))
+
+    def test_weekly_review_prompt_includes_discipline_counts_and_rpe(self):
+        week_review = {
+            "planned": {"bjj": 3, "strength": 2, "zone_2": 1, "grip": 2},
+            "completed": {"bjj": 1, "strength": 1, "zone_2": 0, "grip": 0},
+            "average_rpe": 7.5,
+            "trends": {"rpe": "up"},
+            "recovery": {"notes": "Logged fatigue was high."},
+            "what_changes": "Strength load held steady; add one zone_2 session.",
+        }
+        prompt = weekly_training_review_prompt(
+            week_review=week_review,
+            weight_line="Weight: 84.0 kg, down 1.0 kg from last week (85.0 kg).",
+            sessions_summary="Logged 2 session(s):\n- Mon BJJ Normal: completed",
+            preferences="Toshi's training preferences (context only, never a scheduling rule):\nBad left knee.",
+        )
+        self.assertIn("BJJ 1/3", prompt)
+        self.assertIn("Strength 1/2", prompt)
+        self.assertIn("Zone 2 0/1", prompt)
+        self.assertIn("Average RPE 7.5, trend up", prompt)
+        self.assertIn("Logged fatigue was high", prompt)
+        self.assertIn("down 1.0 kg", prompt)
+        self.assertIn("Bad left knee", prompt)
+        self.assertIn("One concrete thing to change next week", prompt)
+
+    def test_weekly_review_prompt_handles_missing_rpe_and_preferences(self):
+        prompt = weekly_training_review_prompt(
+            week_review={"planned": {}, "completed": {}},
+            weight_line="Weight: not logged.",
+            sessions_summary="No workouts logged this week.",
+        )
+        self.assertIn("No RPE logged this week", prompt)
+        self.assertNotIn("preferences", prompt.lower())
+
+    def test_local_weekly_review_is_deterministic_and_short(self):
+        text = local_weekly_training_review(
+            week_review={
+                "planned": {"bjj": 3, "strength": 2, "zone_2": 1, "grip": 2},
+                "completed": {"bjj": 1, "strength": 1, "zone_2": 0, "grip": 0},
+                "what_changes": "Add one zone_2 session next week.",
+            },
+            weight_line="Weight: 84.0 kg, down 1.0 kg from last week (85.0 kg).",
+        )
+        self.assertIn("down 1.0 kg", text)
+        self.assertIn("BJJ 1/3", text)
+        self.assertIn("Add one zone_2 session next week.", text)
 
 
 if __name__ == "__main__":

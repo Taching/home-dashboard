@@ -1,11 +1,63 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import chiliLogo from '../assets/chili-logo.svg'
-import { requestScheduleChange } from '../lib/api'
-import type { PlanAdjustment } from '../types'
+import { fetchTrainingOverview, requestScheduleChange } from '../lib/api'
+import { AlertIcon } from '../components/icons'
+import { localDateKey, timeLabel, typeTitle } from '../components/TrainingPlanner'
+import { useLiveResource } from '../hooks/useLiveResource'
+import type { PlanAdjustment, TrainingSession } from '../types'
 import '../workout.css'
 
 function todayStamp() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' })
+}
+
+function ThisWeek() {
+  const queryKey = useMemo(() => ['training-overview'] as const, [])
+  const { data: training } = useLiveResource((signal) => fetchTrainingOverview(signal), { queryKey })
+  if (!training) return null
+
+  const sessions = [training.today, training.tomorrow, ...(training.week ?? []), ...(training.upcoming ?? [])]
+    .filter((item): item is TrainingSession => Boolean(item))
+  const flags = training.day_flags ?? {}
+  const todayKey = localDateKey(new Date())
+  const start = new Date(`${todayKey}T00:00:00+09:00`)
+
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(start)
+    day.setDate(day.getDate() + index)
+    const key = localDateKey(day)
+    const session = sessions.find((item) => item.start_at && localDateKey(new Date(item.start_at)) === key)
+    return { day, key, session, dayFlags: flags[key] ?? [] }
+  })
+
+  return (
+    <section className="workout-section replan-week">
+      <h2>This week</h2>
+      <div className="replan-week-list">
+        {days.map(({ day, key, session, dayFlags }) => {
+          const closed = dayFlags.includes('HOLIDAY') || dayFlags.includes('CLOSED')
+          const unavailable = dayFlags.includes('UNAVAILABLE')
+          const what = session
+            ? typeTitle(session.planned_type)
+            : unavailable ? 'Away' : closed ? 'Gym closed' : dayFlags.includes('NO_CLASS') ? 'No BJJ class' : 'Open'
+          return (
+            <div key={key} className={`replan-week-row${key === todayKey ? ' is-today' : ''}`}>
+              <span className="replan-week-date">
+                {new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: 'Asia/Tokyo' }).format(day)} {Number(key.slice(-2))}
+              </span>
+              <span className="replan-week-what">
+                {what}
+                {session && !session.is_all_day && session.start_at ? ` · ${timeLabel(session.start_at)}` : ''}
+              </span>
+              {session && session.status !== 'planned' && (
+                <span className={`replan-week-status is-${session.status}`}>{session.status}</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
 }
 
 type Phase = 'idle' | 'sent' | 'done' | 'error'
@@ -64,6 +116,7 @@ export function ScheduleChangePage() {
         <h1>Change my schedule</h1>
         <span>Storm, sick, emergency — tell Chili what happened and it will replan.</span>
       </section>
+      <ThisWeek />
       <section className="workout-section">
         <form className="workout-form" onSubmit={submit}>
           <label className="workout-field">
@@ -77,30 +130,33 @@ export function ScheduleChangePage() {
             />
           </label>
           <button type="submit" disabled={busy || !instruction.trim()}>
-            Change my schedule
+            {busy ? 'Sending…' : 'Change my schedule'}
           </button>
         </form>
       </section>
       {(phase === 'sent' || phase === 'done') && (
-        <section className="workout-section workout-chili">
-          <p className="workout-done-badge">✓ Sent</p>
+        <section className="workout-section workout-chili replan-result">
+          <div className="replan-result-head">
+            <span className={`daily-verify is-${phase === 'done' ? 'ok' : 'wait'}`}>
+              {phase === 'done' ? 'Plan adjusted' : 'Sending…'}
+            </span>
+          </div>
           <p className="workout-note">“{sentText}”</p>
-          {phase === 'sent' && <p className="workout-status">Chili is adjusting your plan…</p>}
           {phase === 'done' && decision && (
-            <>
-              <p className="workout-advice">{decision.banner}</p>
-              <div className="daily-plan-change">
-                <strong>How</strong>
-                <ul>{decision.how.map((line) => <li key={line}>{line}</li>)}</ul>
-                <strong>Why</strong>
-                <ul>{decision.why.map((line) => <li key={line}>{line}</li>)}</ul>
-              </div>
-            </>
+            <div className="daily-plan-change">
+              <strong>How</strong>
+              <ul>{decision.how.map((line) => <li key={line}>{line}</li>)}</ul>
+              <strong>Why</strong>
+              <ul>{decision.why.map((line) => <li key={line}>{line}</li>)}</ul>
+            </div>
           )}
         </section>
       )}
       {phase === 'error' && (
-        <p className="workout-status" role="alert">{error}</p>
+        <section className="workout-section replan-error" role="alert">
+          <p className="replan-error-head"><AlertIcon size={16} /> Couldn't understand that</p>
+          <p className="workout-status is-error">{error}</p>
+        </section>
       )}
     </div>
   )

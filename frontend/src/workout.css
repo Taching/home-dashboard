@@ -206,6 +206,7 @@ html.is-workout * {
   color: var(--ink-muted);
   font-size: .88rem;
 }
+.workout-status.is-error { color: var(--danger); }
 
 .workout-empty {
   color: var(--ink-muted);
@@ -234,6 +235,47 @@ html.is-workout * {
   font-size: 1rem;
   line-height: 1.45;
   white-space: pre-wrap;
+}
+
+.coach-panel .coach-ask-button {
+  display: inline-flex; align-items: center; gap: .45rem;
+}
+.coach-advice { display: grid; gap: .3rem; margin-top: .3rem; }
+.coach-advice-label {
+  color: var(--positive); font-size: .7rem; font-weight: 800;
+  letter-spacing: .08em; text-transform: uppercase;
+}
+
+.replan-week-list { display: grid; gap: .35rem; }
+.replan-week-row {
+  display: grid; grid-template-columns: 3.4rem 1fr auto; align-items: center; gap: .6rem;
+  padding: .55rem .7rem; border-radius: .5rem;
+  background: color-mix(in srgb, var(--bg-elevated) 60%, transparent);
+}
+.replan-week-row.is-today {
+  background: color-mix(in srgb, var(--positive) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--positive) 35%, transparent);
+}
+.replan-week-date { color: var(--ink-muted); font-size: .82rem; font-weight: 700; }
+.replan-week-what { color: var(--ink); font-size: .88rem; }
+.replan-week-status {
+  padding: .12rem .5rem; border-radius: 999px; font-size: .68rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .04em;
+  color: var(--ink-muted); background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
+}
+.replan-week-status.is-completed { color: var(--positive); background: color-mix(in srgb, var(--positive) 14%, transparent); }
+.replan-week-status.is-skipped, .replan-week-status.is-cancelled { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+
+.replan-result-head { display: flex; }
+.replan-result .workout-note { margin: .5rem 0 0; font-style: italic; }
+.replan-error {
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-radius: .45rem;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.replan-error-head {
+  display: flex; align-items: center; gap: .45rem;
+  margin: 0; color: var(--danger); font-weight: 700;
 }
 
 .workout-checks {

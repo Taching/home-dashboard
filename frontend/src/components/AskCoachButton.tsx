@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { askCoach } from '../lib/api'
+import { SparklesIcon } from './icons'
 
 export function AskCoachButton({ sessionId }: { sessionId: string }) {
   const [pending, setPending] = useState(false)
@@ -17,14 +18,20 @@ export function AskCoachButton({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <div className="workout-section workout-chili">
+    <div className="workout-section workout-chili coach-panel">
       <div className="workout-form">
-        <button type="submit" onClick={ask} disabled={pending}>
+        <button type="submit" className="coach-ask-button" onClick={ask} disabled={pending}>
+          <SparklesIcon size={16} />
           {pending ? 'Asking coach…' : advice ? 'Ask again' : 'Ask coach'}
         </button>
       </div>
-      {error && <p className="workout-status">{error}</p>}
-      {advice && <p className="workout-advice">{advice}</p>}
+      {error && <p className="workout-status is-error">{error}</p>}
+      {advice && (
+        <div className="coach-advice">
+          <span className="coach-advice-label">Chili says</span>
+          <p className="workout-advice">{advice}</p>
+        </div>
+      )}
     </div>
   )
 }

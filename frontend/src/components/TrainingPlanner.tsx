@@ -4,7 +4,7 @@ import type { TrainingOverview, TrainingSession, WeatherForecast } from '../type
 
 const TIME_ZONE = 'Asia/Tokyo'
 
-function localDateKey(value: Date) {
+export function localDateKey(value: Date) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
   }).formatToParts(value)
@@ -12,7 +12,7 @@ function localDateKey(value: Date) {
   return `${part('year')}-${part('month')}-${part('day')}`
 }
 
-function timeLabel(value: string, allDay = false) {
+export function timeLabel(value: string, allDay = false) {
   if (allDay) return 'All day'
   return new Intl.DateTimeFormat('en-GB', { timeZone: TIME_ZONE, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value))
 }
@@ -65,7 +65,7 @@ function daysLeftLabel(days: number) {
   return `${days} days`
 }
 
-function typeTitle(type: string | undefined) {
+export function typeTitle(type: string | undefined) {
   return ({
     bjj_technical: 'BJJ Technical',
     bjj_normal: 'BJJ Normal',

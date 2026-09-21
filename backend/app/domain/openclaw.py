@@ -67,12 +67,15 @@ class OpenClawService:
             self._last_error = "OpenClaw is unavailable."
             raise OpenClawError(self._last_error) from error
 
-    def send(self, message: str) -> dict[str, str | None]:
+    def send(
+        self, message: str, *, await_reply_seconds: float = 25.0, poll_interval: float = 3.0,
+    ) -> dict[str, str | None]:
         try:
+            wrapped = self._message_with_context(message)
             payload = self._request(
                 "chat.send",
                 {
-                    "message": self._message_with_context(message),
+                    "message": wrapped,
                     "sessionKey": self._session_key(),
                     "deliver": False,
                     "timeoutMs": 30_000,
@@ -83,13 +86,44 @@ class OpenClawService:
             if delivery not in {"sent", "suppressed", "accepted", "queued", "started", "running", "completed"}:
                 raise OpenClawError("OpenClaw did not accept the message.")
             self._last_error = None
-            return {"delivery_status": delivery, "reply": self._find_reply(payload)}
+            reply = self._find_reply(payload)
+            if not reply and await_reply_seconds > 0 and delivery in {"started", "running", "queued", "accepted"}:
+                # The gateway's chat.send only ever acks receipt (a runId), it never
+                # carries the finished reply — the agent turn completes asynchronously
+                # and the real text only ever shows up later in chat.history. Poll for
+                # it briefly rather than always falling back to the local template.
+                reply = self._await_reply(message, deadline_seconds=await_reply_seconds, poll_interval=poll_interval)
+            return {"delivery_status": delivery, "reply": reply}
         except OpenClawError:
             self._last_error = "OpenClaw did not accept the message."
             raise
         except Exception as error:
             self._last_error = "OpenClaw is unavailable."
             raise OpenClawError(self._last_error) from error
+
+    def _await_reply(self, sent_message: str, *, deadline_seconds: float, poll_interval: float = 3.0) -> str | None:
+        deadline = time.monotonic() + deadline_seconds
+        while time.monotonic() < deadline:
+            time.sleep(min(poll_interval, max(deadline - time.monotonic(), 0)))
+            try:
+                messages = self.history(limit=10)
+            except Exception:
+                continue
+            reply = self._reply_after(messages, sent_message)
+            if reply:
+                return reply
+        return None
+
+    @staticmethod
+    def _reply_after(messages: list[OpenClawMessage], sent_message: str) -> str | None:
+        target = sent_message.strip()
+        for index, item in enumerate(messages):
+            if item.role != "user" or item.text.strip() != target:
+                continue
+            for later in messages[index + 1:]:
+                if later.role == "assistant" and later.text.strip():
+                    return later.text.strip()
+        return None
 
     def notify_user(self, message: str) -> dict[str, str | None]:
         """Push text to Telegram. Does not run the agent or use chat.send."""

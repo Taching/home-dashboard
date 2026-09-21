@@ -1,6 +1,6 @@
 import unittest
 
-from app.domain.openclaw import OpenClawError, OpenClawService
+from app.domain.openclaw import OpenClawError, OpenClawMessage, OpenClawService
 
 
 class FakeOpenClawService(OpenClawService):
@@ -160,9 +160,68 @@ class OpenClawServiceTests(unittest.TestCase):
     def test_send_accepts_started_gateway_status(self):
         service = FakeOpenClawService([{"status": "started", "runId": "run-one"}])
 
-        result = service.send("Hello")
+        # Skip the reply-polling wait — this test only cares about the
+        # immediate-ack path, not the async completion path (see below).
+        result = service.send("Hello", await_reply_seconds=0)
 
         self.assertEqual(result, {"delivery_status": "started", "reply": None})
+
+    def test_reply_after_finds_the_assistant_message_following_our_own(self):
+        messages = [
+            OpenClawMessage(id="1", role="user", text="earlier unrelated message"),
+            OpenClawMessage(id="2", role="assistant", text="earlier unrelated reply"),
+            OpenClawMessage(id="3", role="user", text="Reply with exactly this text: MARKER"),
+            OpenClawMessage(id="4", role="assistant", text="MARKER"),
+        ]
+
+        reply = OpenClawService._reply_after(messages, "Reply with exactly this text: MARKER")
+
+        self.assertEqual(reply, "MARKER")
+
+    def test_reply_after_ignores_earlier_replies_and_missing_matches(self):
+        messages = [
+            OpenClawMessage(id="1", role="assistant", text="stray reply before our message"),
+            OpenClawMessage(id="2", role="user", text="our message"),
+        ]
+
+        self.assertIsNone(OpenClawService._reply_after(messages, "our message"))
+        self.assertIsNone(OpenClawService._reply_after(messages, "a message we never sent"))
+
+    def test_await_reply_polls_history_until_the_reply_appears(self):
+        service = FakeOpenClawService([
+            {"messages": [{"id": "1", "role": "user", "content": "our message"}]},
+            {"messages": [
+                {"id": "1", "role": "user", "content": "our message"},
+                {"id": "2", "role": "assistant", "content": "the real reply"},
+            ]},
+        ])
+
+        reply = service._await_reply("our message", deadline_seconds=0.4, poll_interval=0.05)
+
+        self.assertEqual(reply, "the real reply")
+
+    def test_await_reply_gives_up_after_the_deadline(self):
+        service = FakeOpenClawService([
+            {"messages": [{"id": "1", "role": "user", "content": "our message"}]},
+        ] * 10)
+
+        reply = service._await_reply("our message", deadline_seconds=0.1, poll_interval=0.05)
+
+        self.assertIsNone(reply)
+
+    def test_send_polls_history_when_gateway_only_acks(self):
+        service = FakeOpenClawService([
+            {"status": "started", "runId": "run-one"},
+            {"messages": [{"id": "1", "role": "user", "content": "Hello"}]},
+            {"messages": [
+                {"id": "1", "role": "user", "content": "Hello"},
+                {"id": "2", "role": "assistant", "content": "Hi there"},
+            ]},
+        ])
+
+        result = service.send("Hello", await_reply_seconds=0.4, poll_interval=0.05)
+
+        self.assertEqual(result, {"delivery_status": "started", "reply": "Hi there"})
 
     def test_notify_user_uses_channel_send(self):
         service = FakeOpenClawService(

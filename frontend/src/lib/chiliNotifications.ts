@@ -1,4 +1,4 @@
-import type { CalendarEvent, CalendarToday, NotionTask, OpenClawMessage, VoiceStatus } from '../types'
+import type { CalendarEvent, CalendarToday, NotionTask, OpenClawMessage } from '../types'
 
 export type NotificationKind =
   | 'meeting_soon'
@@ -6,8 +6,6 @@ export type NotificationKind =
   | 'walk_reminder'
   | 'task_completed'
   | 'openclaw_message'
-  | 'voice_complete'
-  | 'voice_error'
   | 'spotify_playing'
 
 export type ChiliNotification = {
@@ -36,9 +34,7 @@ const PRIORITY: Record<NotificationKind, number> = {
   walk_reminder: 3,
   task_completed: 4,
   openclaw_message: 5,
-  voice_complete: 6,
-  voice_error: 6,
-  spotify_playing: 7,
+  spotify_playing: 6,
 }
 
 export function notificationPriority(kind: NotificationKind): number {
@@ -55,17 +51,6 @@ export function formatTaskCompleted(title: string): string {
 
 export function formatMeetingSoon(title: string, minutes: number): string {
   return `${title} starts in ${minutes} minutes`
-}
-
-export function formatVoiceHandled(transcript: string): string {
-  const trimmed = transcript.trim()
-  if (!trimmed) return 'Got it'
-  const short = trimmed.length > 80 ? `${trimmed.slice(0, 77)}…` : trimmed
-  return `Got it — ${short}`
-}
-
-export function formatVoiceError(message: string | null): string {
-  return message?.trim() || 'Sorry, I could not handle that'
 }
 
 export function formatOpenClawMessageWaiting(): string {
@@ -206,23 +191,6 @@ export function buildNotification(
 export function shouldPreempt(active: ChiliNotification | null, incoming: ChiliNotification): boolean {
   if (!active) return true
   return incoming.priority < active.priority
-}
-
-export function voiceTransitionNotification(
-  previous: VoiceStatus,
-  next: VoiceStatus,
-): ChiliNotification | null {
-  if (previous.state === next.state && previous.updated_at === next.updated_at) return null
-  if (next.state === 'complete') {
-    const text = next.transcript || next.message || ''
-    const dedupeKey = `voice:complete:${next.updated_at ?? text}`
-    return buildNotification('voice_complete', formatVoiceHandled(text), dedupeKey)
-  }
-  if (next.state === 'error') {
-    const dedupeKey = `voice:error:${next.updated_at ?? next.message ?? 'error'}`
-    return buildNotification('voice_error', formatVoiceError(next.message), dedupeKey)
-  }
-  return null
 }
 
 export function tasksFingerprint(tasks: NotionTask[]): string {

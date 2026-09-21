@@ -21,7 +21,6 @@ import {
   shouldPreempt,
   tasksFingerprint,
   tasksSnapshot,
-  voiceTransitionNotification,
   type ChiliNotification,
 } from '../lib/chiliNotifications'
 import { notifyChili } from '../lib/api'
@@ -30,7 +29,6 @@ import type {
   NotionToday,
   OpenClawConversation,
   SpotifyNowPlaying,
-  VoiceStatus,
   WalkReminder,
   TrainingOverview,
 } from '../types'
@@ -42,7 +40,6 @@ export type NotificationInputs = {
   notion: NotionToday
   spotify: SpotifyNowPlaying
   openclaw: OpenClawConversation
-  voiceStatus: VoiceStatus
   spotifyIntentToken: number
   walkReminder: WalkReminder
   lastAdjustment?: TrainingOverview['last_adjustment']
@@ -63,7 +60,6 @@ export class ChiliNotificationController {
   private notionSeeded = false
   private openClawFingerprint: string | null = null
   private openClawSeeded = false
-  private previousVoice: VoiceStatus | null = null
   private spotifyTrack: string | null = null
   private spotifyIntent = 0
   private lastSpokenId: string | null = null
@@ -265,12 +261,6 @@ export class ChiliNotificationController {
         `openclaw:${openClawFingerprint}`,
       ))
     }
-
-    if (this.previousVoice) {
-      const voiceNotification = voiceTransitionNotification(this.previousVoice, inputs.voiceStatus)
-      if (voiceNotification) found.push(voiceNotification)
-    }
-    this.previousVoice = inputs.voiceStatus
 
     if (inputs.spotifyIntentToken !== 0 && inputs.spotifyIntentToken !== this.spotifyIntent) {
       this.spotifyIntent = inputs.spotifyIntentToken

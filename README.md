@@ -12,7 +12,7 @@ A Raspberry Pi 5 kiosk dashboard for room conditions and home controls.
 - Historical 24-hour sensor chart.
 - Docker Compose services that restart after boot.
 
-Voice, Notion, phone control, remote access, and additional appliances are separate phases. This keeps the first release testable and reliable.
+Notion, phone control, remote access, and additional appliances are separate phases. This keeps the first release testable and reliable.
 
 ## Apple Calendar bridge
 
@@ -115,7 +115,7 @@ curl -fsS -H "Authorization: Bearer $DASHBOARD_AUTOMATION_TOKEN" \
 ```
 
 The response includes a `summary` (walk minutes/km/steps, sensor averages, counts)
-plus full row lists for sensors, walks, lights, pump runs, voice logs, calendar
+plus full row lists for sensors, walks, lights, pump runs, calendar
 events, and notify dedupe keys for that local-date range.
 
 ## Notion tasks
@@ -141,43 +141,6 @@ The default property names expect a title named `Name`, a date named
 Adjust the names if your database uses different labels, then rebuild/restart
 the backend.
 
-## Voice commands
-
-The voice worker listens locally for **Hey Chili** using the bundled
-`assets/voice/hey_chee_lee.tflite` openWakeWord model. Only
-the short command recorded after a wake detection is sent to OpenAI for
-transcription.
-
-1. Set `OPENAI_API_KEY` in `.env`. The USB microphone is configured as
-   `plughw:2,0`; change `VOICE_AUDIO_DEVICE` if ALSA assigns it differently.
-   By default, Compose mounts `./assets/voice/hey_chee_lee.tflite` into the voice
-   container at `/models/hey_chee_lee.tflite`.
-2. Start the worker alongside the dashboard:
-
-   ```sh
-   docker compose -f compose.yaml -f compose.pi.yaml --profile voice up -d --build
-   ```
-
-The worker stops recording shortly after you finish speaking (with a six-second
-maximum), then forwards the transcript to the backend. It does not retain
-recordings.
-
-Supported commands include: “play Spotify Yuuri”, “change artist to YOASOBI”,
-“stop the music”, “turn the volume up/down”, “set volume to 50 percent”, and
-“turn the lights on/off”. Volume controls the Raspberry Pi OS HDMI mixer, not
-Spotify volume. The dashboard lists the same command set.
-
-If it triggers repeatedly, increase `VOICE_WAKEWORD_THRESHOLD` and restart the
-voice container. The worker will not accept another wake detection until the
-model score has been below that threshold for `VOICE_WAKEWORD_REARM_SECONDS`.
-
-**Hey Chili not responsive?** The bundled model is custom-trained; official
-models like Hey Jarvis are tuned on much more data. Retrain with the
-[openWakeWord Colab notebook](https://colab.research.google.com/drive/1q1oe2zOyZp7UsB3jJiQ1IFn8z5YfjwEb?usp=sharing)
-and install via `./deploy/install-wakeword-model.sh`. See
-[docs/voice-wakeword-training.md](docs/voice-wakeword-training.md) for the full
-workflow and a mic benchmark tool to compare models.
-
 ## Local development
 
 1. Copy `.env.example` to `.env` and fill only values required for the active phase.
@@ -187,16 +150,16 @@ workflow and a mic benchmark tool to compare models.
    ./start.sh
    ```
 
-   The launcher starts the dashboard, voice worker, and Apple Calendar bridge.
-   It detects a Raspberry Pi and includes its hardware configuration
-   automatically. It runs the containers in the background and builds updated
-   images when necessary.
+   The launcher starts the dashboard and Apple Calendar bridge. It detects a
+   Raspberry Pi and includes its hardware configuration automatically. It
+   runs the containers in the background and builds updated images when
+   necessary.
 3. Open `http://localhost:8080` on the Pi.
 
 For a development machine without one of those integrations, exclude it:
 
 ```sh
-./start.sh --no-voice --no-calendar
+./start.sh --no-calendar
 ```
 
 Use `./start.sh --foreground` to keep logs in the terminal, and
@@ -214,7 +177,7 @@ dashboard-only view, add `?mode=kiosk` to the dashboard URL. On refresh, a
 startup splash checks backend, calendar bridge, Notion, Spotify, OpenClaw, and
 weather before revealing the dashboard. Hover the bottom center of the screen to switch
 **Full** vs **Lite** motion (saved in the browser; toggling reloads the page).
-Lite mode keeps voice and Spotify equalizer animations but drops the heaviest
+Lite mode keeps the Spotify equalizer animation but drops the heaviest
 GPU effects. Chromium CPU flags in `deploy/chili-kiosk.service` also help. For
 phone access away from the Pi, use the Tailscale Serve setup below instead of
 exposing the dashboard directly to the LAN or internet.
@@ -290,7 +253,6 @@ the same 20-second pulse each morning.
 
 - `backend/` — FastAPI, device integrations, scheduling, database.
 - `frontend/` — React dashboard, kiosk keyboard controls.
-- `voice/` — reserved for the independent wake-word/audio worker.
 - `deploy/` — systemd units for Compose and Chromium kiosk startup.
 - `docs/` — implementation plan and interface contracts.
 - `data/` — persistent SQLite database and learned IR code files; never commit.

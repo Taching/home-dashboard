@@ -11,21 +11,20 @@ it first if you're touching planning, training, notifications, or the wall UI.
 
 - `backend/` — FastAPI control API (Python 3.12, SQLAlchemy + SQLite, APScheduler-style jobs in `app/jobs/`). Domain logic lives in `backend/app/domain/*`, HTTP routes in `backend/app/api/*`.
 - `frontend/` — React 19 + TypeScript + Vite kiosk UI (`frontend/src`), plus the phone/daily pages under `frontend/src/pages`.
-- `voice/` — standalone wake-word (`Hey Chili`, openWakeWord) + OpenAI transcription worker, runs as its own container.
 - `walkingpad-collector/` — BLE collector for the KingSmith WalkingPad S1, host networking, own container.
 - `macos/apple-calendar-bridge/` — Swift/macOS helper that syncs Apple Calendar to the Pi over a read-only bridge.
 - `deploy/` — systemd units + shell scripts for Compose lifecycle, Chromium kiosk, health watchdog, and OpenClaw automation hooks (`openclaw-*.sh`).
 - `openclaw-skills/` — skills the OpenClaw agent uses to call this dashboard's automation API (daily-os, bjj-training, lights, display).
 - `docs/` — product/architecture handoffs and design notes. `docs/agent-handoff-chili.md` is the canonical one; treat others (`agent-handoff-efficiency.md`, `plan.md`, `design.md`) as historical/point-in-time unless corroborated by current code.
 - `data/` — SQLite DB (`chili.db`) and learned IR codes. Never commit; gitignored.
-- `.env` / `.env.example` — all integration config (weather, BroadLink, Notion, Spotify, OpenClaw, SwitchBot, WalkingPad, voice). Copy `.env.example`, fill only what the active phase needs.
+- `.env` / `.env.example` — all integration config (weather, BroadLink, Notion, Spotify, OpenClaw, SwitchBot, WalkingPad). Copy `.env.example`, fill only what the active phase needs.
 
 ## Running it
 
-- `./start.sh` — the normal entry point. Auto-detects Raspberry Pi hardware and includes the right Compose override. Flags: `--no-voice`, `--no-calendar`, `--foreground`, `--help`.
-- Plain dev machine: `./start.sh --no-voice --no-calendar`.
+- `./start.sh` — the normal entry point. Auto-detects Raspberry Pi hardware and includes the right Compose override. Flags: `--no-calendar`, `--foreground`, `--help`.
+- Plain dev machine: `./start.sh --no-calendar`.
 - On the Pi directly: `docker compose -f compose.yaml -f compose.pi.yaml up --build -d`.
-- Optional profiles: `--profile voice`, `--profile walkingpad` (see README for env vars each needs).
+- Optional profile: `--profile walkingpad` (see README for env vars it needs).
 - Dashboard binds `127.0.0.1:8080`. Stop with `docker compose down` (add `-f compose.pi.yaml` on the Pi).
 
 ## Tests

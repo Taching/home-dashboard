@@ -15,7 +15,6 @@ from app.database.models import (
     LightCommand,
     SensorReading,
     TrainingLog,
-    VoiceCommandLog,
     WalkingPadCollectorSync,
     WalkingPadSession,
     WaterPumpRun,
@@ -58,7 +57,6 @@ class DbReadService:
             walks = self._walk_rows(session, bounds)
             lights = self._light_rows(session, bounds)
             pumps = self._pump_rows(session, bounds)
-            voice = self._voice_rows(session, bounds)
             calendar = self._calendar_rows(session, bounds)
             notifies = self._notify_rows(session, bounds)
             training = self._training_rows(session, bounds)
@@ -82,7 +80,6 @@ class DbReadService:
                 "walk_total_calories": round(sum(row["calories"] for row in walks), 1),
                 "light_command_count": len(lights),
                 "water_pump_run_count": len(pumps),
-                "voice_command_count": len(voice),
                 "calendar_event_count": len(calendar),
                 "notify_dedupe_count": len(notifies),
                 "training_log_count": len(training),
@@ -96,7 +93,6 @@ class DbReadService:
             "weekly_reviews": weekly,
             "light_commands": lights,
             "water_pump_runs": pumps,
-            "voice_command_logs": voice,
             "calendar_bridge_events": calendar,
             "chili_notify_dedupe": notifies,
             "meta": {
@@ -191,27 +187,6 @@ class DbReadService:
                 "source": row.source,
                 "duration_seconds": row.duration_seconds,
                 "result": row.result,
-            }
-            for row in rows
-        ]
-
-    def _voice_rows(self, session, bounds: DbDayBounds) -> list[dict]:
-        rows = session.scalars(
-            select(VoiceCommandLog)
-            .where(VoiceCommandLog.occurred_at >= bounds.start_utc)
-            .where(VoiceCommandLog.occurred_at < bounds.end_utc)
-            .order_by(VoiceCommandLog.occurred_at)
-        ).all()
-        return [
-            {
-                "id": row.id,
-                "occurred_at": self._iso(row.occurred_at),
-                "transcript": row.transcript,
-                "action": row.action,
-                "status": row.status,
-                "response_message": row.response_message,
-                "wake_score": row.wake_score,
-                "failure_stage": row.failure_stage,
             }
             for row in rows
         ]

@@ -5,7 +5,6 @@ set -euo pipefail
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$root_dir"
 
-use_voice=true
 use_calendar=true
 detach=true
 build=true
@@ -14,12 +13,10 @@ usage() {
   cat <<'EOF'
 Usage: ./start.sh [options]
 
-Starts the complete dashboard stack: dashboard, voice worker, and Apple
-Calendar bridge. On a Raspberry Pi it automatically enables the hardware
-Compose override.
+Starts the complete dashboard stack: dashboard and Apple Calendar bridge. On
+a Raspberry Pi it automatically enables the hardware Compose override.
 
 Options:
-  --no-voice    Do not start the voice worker.
   --no-calendar Do not start the Apple Calendar bridge.
   --foreground  Stream container logs instead of running in the background.
   --no-build    Do not rebuild container images before starting.
@@ -29,7 +26,6 @@ EOF
 
 for argument in "$@"; do
   case "$argument" in
-    --no-voice) use_voice=false ;;
     --no-calendar) use_calendar=false ;;
     --foreground) detach=false ;;
     --no-build) build=false ;;
@@ -56,9 +52,6 @@ if "$use_calendar"; then
 fi
 
 compose_options=()
-if "$use_voice"; then
-  compose_options+=(--profile voice)
-fi
 
 compose_args=(up)
 if "$detach"; then

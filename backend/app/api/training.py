@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from app.core.settings import settings
 from app.domain.training.adjust import CalendarAdjuster
 from app.domain.training.coach import EveningCoach
+from app.domain.training.review import local_workout_review, workout_review_prompt
 from app.domain.training.templates import WORKOUT_TEMPLATES
 from app.domain.training.types import WorkoutType
 
@@ -116,6 +117,14 @@ class AdjustCalendarRequest(BaseModel):
     instruction: str = Field(min_length=1, max_length=2000)
 
 
+class ReplanRequest(BaseModel):
+    instruction: str = Field(min_length=1, max_length=2000)
+
+
+class TrainingPreferencesRequest(BaseModel):
+    notes: str | None = Field(default=None, max_length=2000)
+
+
 class AutomationRunRequest(BaseModel):
     action: Literal["morning", "evening", "dispatch"]
 
@@ -142,6 +151,16 @@ async def training_overview(request: Request) -> dict:
     return request.app.state.training_service.overview()
 
 
+@training_router.get("/training/preferences")
+async def get_training_preferences(request: Request) -> dict:
+    return request.app.state.training_preferences_service.get()
+
+
+@training_router.put("/training/preferences")
+async def put_training_preferences(request: Request, body: TrainingPreferencesRequest) -> dict:
+    return request.app.state.training_preferences_service.save(body.notes)
+
+
 @training_router.get("/training/weeks/{week_start}/review")
 async def training_week_review(request: Request, week_start: date) -> dict:
     return request.app.state.training_service.week_review(week_start)
@@ -160,6 +179,45 @@ async def log_training_session_result(request: Request, session_id: str, body: S
         raise HTTPException(status_code=404, detail="Training session not found.") from None
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
+
+
+@training_router.post("/training/sessions/{session_id}/coach")
+async def coach_review_session(request: Request, session_id: str) -> dict:
+    training = request.app.state.training_service
+    session = training.session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Training session not found.")
+    result = session.get("result") or {}
+    if not result:
+        raise HTTPException(status_code=400, detail="Log this session before asking the coach.")
+
+    overview = training.overview()
+    preferences = getattr(request.app.state, "training_preferences_service", None)
+    prefs_text = preferences.prompt_snippet() if preferences else ""
+
+    prompt = workout_review_prompt(
+        session=session,
+        kind=session.get("planned_type"),
+        note=result.get("notes"),
+        exercises=session.get("exercises") or [],
+        overview=overview,
+    )
+    if prefs_text:
+        prompt = f"{prompt}\n\n{prefs_text}"
+
+    openclaw = getattr(request.app.state, "openclaw_service", None)
+    if openclaw is not None and openclaw.configured():
+        try:
+            reply = openclaw.send(prompt).get("reply")
+            if reply:
+                return {"advice": str(reply).strip(), "source": "openclaw"}
+        except Exception:
+            logger.exception("Coach review via OpenClaw failed; falling back to local review")
+
+    advice = local_workout_review(
+        session=session, kind=session.get("planned_type"), note=result.get("notes"), overview=overview,
+    )
+    return {"advice": advice, "source": "local"}
 
 
 @training_router.get("/training/templates/{workout_type}")
@@ -347,6 +405,35 @@ async def adjust_training_calendar(
     message = result.get("notification") if isinstance(result, dict) else None
     if message:
         dedupe = (decision or {}).get("id") or f"training:adjust:{body.instruction[:40]}"
+        result["notify"] = _send_once(request, str(message), str(dedupe))
+    return result
+
+
+@training_router.post("/training/replan")
+async def request_schedule_change(request: Request, body: ReplanRequest) -> dict:
+    adjuster = getattr(request.app.state, "calendar_adjuster", None) or CalendarAdjuster()
+    preferences = getattr(request.app.state, "training_preferences_service", None)
+    prefs_text = preferences.prompt_snippet() if preferences else ""
+    instruction = f"{body.instruction}\n\n{prefs_text}" if prefs_text else body.instruction
+    try:
+        result = adjuster.adjust(
+            instruction,
+            training=request.app.state.training_service,
+            calendar=getattr(request.app.state, "calendar_bridge_service", None),
+            notion=getattr(request.app.state, "notion_service", None),
+            notion_sync=getattr(request.app.state, "training_notion_sync", None),
+        )
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error) or "Could not understand that. Try describing it in plainer words.",
+        ) from error
+    decision = result.get("decision") if isinstance(result, dict) else None
+    message = result.get("notification") if isinstance(result, dict) else None
+    if message:
+        dedupe = (decision or {}).get("id") or f"training:replan-request:{body.instruction[:40]}"
         result["notify"] = _send_once(request, str(message), str(dedupe))
     return result
 

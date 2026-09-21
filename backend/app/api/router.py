@@ -214,72 +214,14 @@ def _wellbeing_response(request: Request) -> dict[str, object]:
     }
 
 
-class VoiceTranscriptRequest(BaseModel):
-    text: str
-    audio_seconds: float | None = Field(default=None, ge=0, le=120)
-    wake_score: float | None = Field(default=None, ge=0, le=1)
-
-
-class VoiceLogRequest(BaseModel):
-    transcript: str | None = Field(default=None, max_length=500)
-    action: str | None = Field(default=None, max_length=64)
-    interpret_source: Literal["fast_path", "gpt"] | None = None
-    artist: str | None = Field(default=None, max_length=200)
-    volume_percent: int | None = Field(default=None, ge=0, le=100)
-    intent_message: str | None = Field(default=None, max_length=500)
-    status: Literal["success", "failed", "no_match"]
-    response_message: str | None = Field(default=None, max_length=500)
-    audio_seconds: float | None = Field(default=None, ge=0, le=120)
-    wake_score: float | None = Field(default=None, ge=0, le=1)
-    failure_stage: str | None = Field(default=None, max_length=32)
-
-
-class VoiceLogResponse(BaseModel):
-    id: int
-    occurred_at: datetime
-    transcript: str | None
-    action: str | None
-    interpret_source: str | None
-    artist: str | None
-    volume_percent: int | None
-    intent_message: str | None
-    status: str
-    response_message: str | None
-    audio_seconds: float | None
-    wake_score: float | None
-    failure_stage: str | None
-
-
-class VoiceStateRequest(BaseModel):
-    state: Literal["idle", "listening", "thinking", "complete", "error"]
-    transcript: str | None = Field(default=None, max_length=500)
-    message: str | None = Field(default=None, max_length=200)
-
-
-class VoiceStateResponse(BaseModel):
-    state: Literal["offline", "idle", "listening", "thinking", "complete", "error"]
-    updated_at: datetime | None
-    transcript: str | None
-    message: str | None
-
-
-class VoiceEventRequest(BaseModel):
-    direction: Literal["in", "out", "info"]
-    service: str = Field(max_length=32)
-    detail: str = Field(max_length=240)
-
-
-class VoiceEventResponse(BaseModel):
+class ActivityEventResponse(BaseModel):
     at: datetime
     direction: Literal["in", "out", "info"]
     service: str
     detail: str
 
 
-ActivityEventResponse = VoiceEventResponse
-
-
-def _activity_responses(request: Request, limit: int) -> list[VoiceEventResponse]:
+def _activity_responses(request: Request, limit: int) -> list[ActivityEventResponse]:
     hidden = {"openclaw", "sensor"}
     events = [
         event
@@ -287,7 +229,7 @@ def _activity_responses(request: Request, limit: int) -> list[VoiceEventResponse
         if event.service not in hidden
     ][-limit:]
     return [
-        VoiceEventResponse(
+        ActivityEventResponse(
             at=event.at,
             direction=event.direction,
             service=event.service,
@@ -1573,196 +1515,6 @@ async def automation_lights(
     )
 
 
-@api_router.post("/voice/transcripts")
-async def voice_transcript(request: Request, body: VoiceTranscriptRequest) -> dict[str, str]:
-    voice_log = request.app.state.voice_log_service
-    transcript = body.text.strip()
-    log_activity(request, "in", "backend", f"transcript: {transcript}")
-    interpretation = None
-    try:
-        interpretation = request.app.state.voice_command_interpreter.interpret(body.text)
-        command = interpretation.command
-        log_activity(request, "out", "openai", f"action={command.action}")
-
-        def respond(status: str, message: str, *, log_status: str | None = None) -> dict[str, str]:
-            log_activity(request, "out", "backend", f"action={command.action} status={status}")
-            voice_log.record(
-                transcript=transcript,
-                command=command,
-                interpret_source=interpretation.source,
-                status=log_status or ("no_match" if command.action == "no_match" else status),
-                response_message=message,
-                audio_seconds=body.audio_seconds,
-                wake_score=body.wake_score,
-            )
-            return {"status": status, "message": message}
-
-        if command.action == "no_match":
-            return respond("failed", "I don't know that command yet.", log_status="no_match")
-        if command.action == "spotify.play_artist":
-            artist = request.app.state.spotify_service.play_artist(command.artist or "")
-            return respond("success", f"Playing {artist}.")
-        if command.action == "spotify.pause":
-            request.app.state.spotify_service.pause()
-            return respond("success", "Music stopped.")
-        if command.action in {"system.volume_up", "system.volume_down"}:
-            volume = request.app.state.pi_volume_service.adjust("up" if command.action == "system.volume_up" else "down")
-            return respond("success", f"Raspberry Pi volume {volume} percent.")
-        if command.action == "system.volume_set":
-            volume = request.app.state.pi_volume_service.set(command.volume_percent or 0)
-            return respond("success", f"Raspberry Pi volume {volume} percent.")
-        if command.action == "openclaw.send_message":
-            request.app.state.openclaw_service.send(command.message or "")
-            return respond("success", "Sent to Chili.")
-        result = request.app.state.light_service.set_state(
-            "on" if command.action == "light.turn_on" else "off", "voice"
-        )
-        return respond(result.status, result.message)
-    except RuntimeError as error:
-        logger.info("Voice Spotify command failed: %s", error)
-        log_activity(request, "out", "backend", f"status=failed detail={error}")
-        voice_log.record(
-            transcript=transcript,
-            command=interpretation.command if interpretation else None,
-            interpret_source=interpretation.source if interpretation else None,
-            status="failed",
-            response_message=str(error),
-            audio_seconds=body.audio_seconds,
-            wake_score=body.wake_score,
-            failure_stage="execute",
-        )
-        return {"status": "failed", "message": str(error)}
-    except (httpx.HTTPError, ValueError):
-        logger.exception("Voice Spotify command failed")
-        log_activity(request, "out", "backend", "status=failed detail=spotify")
-        voice_log.record(
-            transcript=transcript,
-            command=interpretation.command if interpretation else None,
-            interpret_source=interpretation.source if interpretation else None,
-            status="failed",
-            response_message="Spotify could not complete that command.",
-            audio_seconds=body.audio_seconds,
-            wake_score=body.wake_score,
-            failure_stage="execute",
-        )
-        return {"status": "failed", "message": "Spotify could not complete that command."}
-    except Exception:
-        logger.exception("Unexpected voice command failure")
-        log_activity(request, "out", "backend", "status=failed detail=unexpected")
-        voice_log.record(
-            transcript=transcript,
-            command=interpretation.command if interpretation else None,
-            interpret_source=interpretation.source if interpretation else None,
-            status="failed",
-            response_message="The voice command could not complete.",
-            audio_seconds=body.audio_seconds,
-            wake_score=body.wake_score,
-            failure_stage="execute",
-        )
-        return {"status": "failed", "message": "The voice command could not complete."}
-
-
-def _voice_log_response(entry) -> VoiceLogResponse:
-    return VoiceLogResponse(
-        id=entry.id,
-        occurred_at=entry.occurred_at,
-        transcript=entry.transcript,
-        action=entry.action,
-        interpret_source=entry.interpret_source,
-        artist=entry.artist,
-        volume_percent=entry.volume_percent,
-        intent_message=entry.intent_message,
-        status=entry.status,
-        response_message=entry.response_message,
-        audio_seconds=entry.audio_seconds,
-        wake_score=entry.wake_score,
-        failure_stage=entry.failure_stage,
-    )
-
-
-@api_router.post("/voice/logs", response_model=VoiceLogResponse)
-async def create_voice_log(request: Request, body: VoiceLogRequest) -> VoiceLogResponse:
-    from app.domain.voice_commands import VoiceCommand
-
-    command = None
-    if body.action:
-        command = VoiceCommand(
-            body.action,
-            artist=body.artist,
-            volume_percent=body.volume_percent,
-            message=body.intent_message,
-        )
-    entry = request.app.state.voice_log_service.record(
-        transcript=body.transcript,
-        command=command,
-        interpret_source=body.interpret_source,
-        status=body.status,
-        response_message=body.response_message,
-        audio_seconds=body.audio_seconds,
-        wake_score=body.wake_score,
-        failure_stage=body.failure_stage,
-    )
-    return _voice_log_response(entry)
-
-
-@api_router.get("/voice/logs", response_model=list[VoiceLogResponse])
-async def list_voice_logs(
-    request: Request,
-    days: int = Query(default=30, ge=1, le=365),
-    limit: int = Query(default=200, ge=1, le=1000),
-) -> list[VoiceLogResponse]:
-    entries = request.app.state.voice_log_service.recent(days=days, limit=limit)
-    return [_voice_log_response(entry) for entry in entries]
-
-
-@api_router.get("/voice/commands")
-async def voice_commands() -> dict[str, object]:
-    from app.domain.voice_commands import VOICE_COMMANDS
-
-    return {"commands": VOICE_COMMANDS}
-
-
-@api_router.get("/voice/status", response_model=VoiceStateResponse)
-async def voice_status(request: Request) -> VoiceStateResponse:
-    snapshot = request.app.state.voice_state_service.current()
-    return VoiceStateResponse(
-        state=snapshot.state,
-        updated_at=snapshot.updated_at,
-        transcript=snapshot.transcript,
-        message=snapshot.message,
-    )
-
-
-@api_router.get("/voice/events", response_model=list[VoiceEventResponse])
-async def voice_events(request: Request, limit: int = Query(default=30, ge=1, le=80)) -> list[VoiceEventResponse]:
-    return _activity_responses(request, limit)
-
-
 @api_router.get("/activity/events", response_model=list[ActivityEventResponse])
 async def activity_events(request: Request, limit: int = Query(default=40, ge=1, le=80)) -> list[ActivityEventResponse]:
     return _activity_responses(request, limit)
-
-
-@api_router.post("/voice/events", response_model=VoiceEventResponse)
-async def create_voice_event(request: Request, body: VoiceEventRequest) -> VoiceEventResponse:
-    feed = request.app.state.activity_feed_service
-    feed.add_event(body.direction, body.service, body.detail)
-    event = feed.recent_events(1)[-1]
-    return VoiceEventResponse(
-        at=event.at,
-        direction=event.direction,
-        service=event.service,
-        detail=event.detail,
-    )
-
-
-@api_router.post("/voice/status", response_model=VoiceStateResponse)
-async def update_voice_status(request: Request, body: VoiceStateRequest) -> VoiceStateResponse:
-    request.app.state.voice_state_service.set_state(body.state, body.transcript, body.message)
-    snapshot = request.app.state.voice_state_service.current()
-    return VoiceStateResponse(
-        state=snapshot.state,
-        updated_at=snapshot.updated_at,
-        transcript=snapshot.transcript,
-        message=snapshot.message,
-    )

@@ -10,7 +10,6 @@ import type {
   OpenClawConversation,
   OpenClawSendResult,
   ActivityEvent,
-  VoiceStatus,
   WeatherForecast,
   WalkReminder,
   WalkingPadToday,
@@ -23,6 +22,8 @@ import type {
   DailyBriefing,
   TrainingSession,
   WeeklyReview,
+  PlanAdjustment,
+  TrainingPreferences,
 } from '../types'
 import { announcePlanningChange } from './planningRefresh'
 
@@ -90,17 +91,9 @@ export function openOpenClawMessageStream(
   return stream
 }
 
-export async function fetchVoiceStatus() {
-  return requireJson<VoiceStatus>(await fetch('/api/v1/voice/status'))
-}
-
 export async function fetchActivityEvents(limit = 40) {
   const query = new URLSearchParams({ limit: String(limit) })
   return requireJson<ActivityEvent[]>(await fetch(`/api/v1/activity/events?${query}`))
-}
-
-export async function fetchVoiceEvents(limit = 40) {
-  return fetchActivityEvents(limit)
 }
 
 export async function fetchWeather(signal?: AbortSignal) {
@@ -138,6 +131,39 @@ export async function logTrainingSessionResult(sessionId: string, payload: Recor
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   }))
+  announcePlanningChange()
+  return result
+}
+
+export async function askCoach(sessionId: string) {
+  return requireJson<{ advice: string; source: string }>(
+    await fetch(`/api/v1/training/sessions/${sessionId}/coach`, { method: 'POST' }),
+  )
+}
+
+export async function fetchTrainingPreferences(signal?: AbortSignal) {
+  return requireJson<TrainingPreferences>(await freshGet('/api/v1/training/preferences', signal))
+}
+
+export async function saveTrainingPreferences(notes: string) {
+  return requireJson<TrainingPreferences>(await fetch('/api/v1/training/preferences', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes: notes.trim() || null }),
+  }))
+}
+
+export async function requestScheduleChange(instruction: string) {
+  const response = await fetch('/api/v1/training/replan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ instruction }),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null
+    throw new Error(body?.detail || `Request failed with status ${response.status}`)
+  }
+  const result = await response.json() as { decision: PlanAdjustment; status: string }
   announcePlanningChange()
   return result
 }

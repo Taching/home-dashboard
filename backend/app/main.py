@@ -18,15 +18,13 @@ from app.domain.spotify import SpotifyService
 from app.domain.bluetooth_audio import BluetoothAudioService
 from app.domain.system_status import SystemStatusService
 from app.domain.weather import WeatherService
-from app.domain.voice_log import VoiceLogService
-from app.domain.voice_state import VoiceStateService
-from app.domain.voice_commands import VoiceCommandInterpreter
 from app.domain.system_volume import PiVolumeService
 from app.domain.water_pump import WaterPumpService
 from app.domain.walkingpad import WalkingPadService
 from app.domain.training import TrainingService
 from app.domain.training_logs import TrainingService as TrainingLogService
 from app.domain.training.notion_sync import TrainingNotionSync
+from app.domain.training_preferences import TrainingPreferencesService
 from app.domain.wellbeing import WellbeingService
 from app.domain.weekly import WeeklyService
 from app.domain.progress_reports import ProgressReportService
@@ -52,6 +50,7 @@ async def lifespan(application: FastAPI):
     application.state.walkingpad_service = WalkingPadService()
     wellbeing_service = WellbeingService()
     application.state.wellbeing_service = wellbeing_service
+    application.state.training_preferences_service = TrainingPreferencesService()
     application.state.weather_service = WeatherService()
     training_service = TrainingService(weather_service=application.state.weather_service)
     application.state.training_service = training_service
@@ -65,9 +64,6 @@ async def lifespan(application: FastAPI):
     application.state.spotify_service = SpotifyService()
     application.state.activity_feed_service = ActivityFeedService()
     application.state.chili_notify_service = ChiliNotifyService()
-    application.state.voice_state_service = VoiceStateService()
-    application.state.voice_log_service = VoiceLogService()
-    application.state.voice_command_interpreter = VoiceCommandInterpreter()
     application.state.pi_volume_service = PiVolumeService()
     application.state.system_status_service = SystemStatusService()
     application.state.bluetooth_audio_service = BluetoothAudioService()

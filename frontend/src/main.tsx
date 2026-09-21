@@ -21,6 +21,8 @@ import './workout.css'
 const DailyBriefingPage = lazy(() => import('./components/DailyBriefingPage').then((module) => ({ default: module.DailyBriefingPage })))
 const WorkoutApp = lazy(() => import('./pages/WorkoutApp').then((module) => ({ default: module.WorkoutApp })))
 const WeeklyReviewPage = lazy(() => import('./pages/WeeklyReviewPage').then((module) => ({ default: module.WeeklyReviewPage })))
+const ScheduleChangePage = lazy(() => import('./pages/ScheduleChangePage').then((module) => ({ default: module.ScheduleChangePage })))
+const TrainingPreferencesPage = lazy(() => import('./pages/TrainingPreferencesPage').then((module) => ({ default: module.TrainingPreferencesPage })))
 
 function isPresentationMode() {
   const params = new URLSearchParams(window.location.search)
@@ -75,7 +77,6 @@ function DashboardApp({
     notion,
     spotify,
     openclaw: { status: 'not_configured', messages: [], message: null },
-    voiceStatus: { state: 'offline', updated_at: null, transcript: null, message: null },
     spotifyIntentToken: 0,
     walkReminder,
     lastAdjustment: training.last_adjustment,
@@ -140,7 +141,19 @@ function isWeeklyPath() {
   return path === '/weekly' || path.startsWith('/weekly/')
 }
 
-if (isWorkoutPath() || isWeeklyPath()) document.documentElement.classList.add('is-workout')
+function isScheduleChangePath() {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/'
+  return path === '/schedule-change'
+}
+
+function isTrainingPreferencesPath() {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/'
+  return path === '/training/preferences'
+}
+
+if (isWorkoutPath() || isWeeklyPath() || isScheduleChangePath() || isTrainingPreferencesPath()) {
+  document.documentElement.classList.add('is-workout')
+}
 if (isDailyPath()) document.documentElement.classList.add('is-daily')
 
 function PhoneApp() {
@@ -150,13 +163,15 @@ function PhoneApp() {
     return <DailyBriefingPage day={day} />
   }
   if (isWeeklyPath()) return <WeeklyReviewPage />
+  if (isScheduleChangePath()) return <ScheduleChangePage />
+  if (isTrainingPreferencesPath()) return <TrainingPreferencesPage />
   return <WorkoutApp />
 }
 
 createRoot(document.getElementById('root')!).render(
   <AppErrorBoundary>
     <QueryClientProvider client={queryClient}>
-      {isWorkoutPath() || isDailyPath() || isWeeklyPath() ? (
+      {isWorkoutPath() || isDailyPath() || isWeeklyPath() || isScheduleChangePath() || isTrainingPreferencesPath() ? (
         <Suspense fallback={<PageSkeleton />}><PhoneApp /></Suspense>
       ) : <AppShell />}
     </QueryClientProvider>

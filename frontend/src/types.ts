@@ -357,6 +357,11 @@ export type TomorrowPrescription = {
   weekly_status: TrainingWeeklyStatus
 }
 
+export type TrainingPreferences = {
+  notes: string | null
+  updated_at: string | null
+}
+
 export type BjjCandidate = {
   date: string
   suggested_type: string
@@ -576,25 +581,14 @@ export type OpenClawSendResult = {
   message: string | null
 }
 
-export type VoiceState = 'offline' | 'idle' | 'listening' | 'thinking' | 'complete' | 'error'
-
-export type VoiceStatus = {
-  state: VoiceState
-  updated_at: string | null
-  transcript: string | null
-  message: string | null
-}
-
-export type VoiceEventDirection = 'in' | 'out' | 'info'
+export type ActivityEventDirection = 'in' | 'out' | 'info'
 
 export type ActivityEvent = {
   at: string
-  direction: VoiceEventDirection
+  direction: ActivityEventDirection
   service: string
   detail: string
 }
-
-export type VoiceEvent = ActivityEvent
 
 export type WeatherIcon = 'sunny' | 'evening' | 'cloudy' | 'fog' | 'rain' | 'snow' | 'storm'
 

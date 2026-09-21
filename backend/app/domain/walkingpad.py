@@ -270,7 +270,7 @@ class WalkingPadService:
         lines.append(
             "- Historical dashboard DB read (auth required): GET /api/v1/db/YYYY-MM-DD "
             "(optional ?days=7 or ?end=YYYY-MM-DD). Returns walks/steps, sensors, lights, "
-            "voice logs, calendar events for that local-date range."
+            "calendar events for that local-date range."
         )
         next_event = self._next_timed_event(calendar_events, current)
         if next_event is not None:

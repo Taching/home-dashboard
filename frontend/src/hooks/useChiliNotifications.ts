@@ -10,7 +10,6 @@ import type {
   OpenClawConversation,
   SpotifyNowPlaying,
   WalkReminder,
-  VoiceStatus,
   TrainingOverview,
 } from '../types'
 
@@ -20,7 +19,6 @@ type Inputs = {
   notion: NotionToday
   spotify: SpotifyNowPlaying
   openclaw: OpenClawConversation
-  voiceStatus: VoiceStatus
   spotifyIntentToken: number
   walkReminder: WalkReminder
   lastAdjustment?: TrainingOverview['last_adjustment']
@@ -32,7 +30,6 @@ export function useChiliNotifications({
   notion,
   spotify,
   openclaw,
-  voiceStatus,
   spotifyIntentToken,
   walkReminder,
   lastAdjustment,
@@ -52,12 +49,11 @@ export function useChiliNotifications({
       notion,
       spotify,
       openclaw,
-      voiceStatus,
       spotifyIntentToken,
       walkReminder,
       lastAdjustment,
     })
-  }, [calendar, controller, lastAdjustment, notion, now, openclaw, spotify, spotifyIntentToken, state, today, voiceStatus, walkReminder])
+  }, [calendar, controller, lastAdjustment, notion, now, openclaw, spotify, spotifyIntentToken, state, today, walkReminder])
 
   useEffect(() => () => controller.dispose(), [controller])
 

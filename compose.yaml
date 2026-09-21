@@ -26,25 +26,6 @@ services:
       - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:8080:80"
     restart: unless-stopped
 
-  voice:
-    build:
-      context: ./voice
-    env_file: .env
-    environment:
-      BACKEND_URL: http://backend:8000
-      AUDIO_DEVICE: plughw:2,0
-      VOICE_WAKEWORD_MODEL: ${VOICE_WAKEWORD_MODEL:-/models/hey_chee_lee.tflite}
-      VOICE_WAKEWORD_LABEL: ${VOICE_WAKEWORD_LABEL:-Hey Chili}
-    volumes:
-      - ./assets/voice:/models
-    devices:
-      - /dev/snd:/dev/snd
-    depends_on:
-      backend:
-        condition: service_started
-    profiles: [voice]
-    restart: unless-stopped
-
   walkingpad-collector:
     build:
       context: ./walkingpad-collector

@@ -13,6 +13,7 @@ from app.api.router import api_router
 from app.database.session import Base
 from app.domain.training.adjust import CalendarAdjuster, match_calendar_adjust_fast_path
 from app.domain.training.service import TrainingService
+from app.domain.training_preferences import TrainingPreferencesService
 
 
 def factory():
@@ -192,3 +193,75 @@ class CalendarAdjustApiTests(unittest.TestCase):
         self.assertEqual(body["analysis"]["mutations"][0]["workout_type"], "strength_a")
         self.assertIn("How", body["notification"])
         self.assertEqual(body["notify"]["status"], "not_configured")
+
+
+class ScheduleChangeApiTests(unittest.TestCase):
+    """POST /api/v1/training/replan — the phone-facing, unauthenticated 'something changed' endpoint."""
+
+    def setUp(self) -> None:
+        self.factory = factory()
+        self.now = datetime(2026, 9, 13, 3, tzinfo=UTC)
+        self.app = FastAPI()
+        self.app.include_router(api_router, prefix="/api/v1")
+        self.app.state.training_service = TrainingService(self.factory, timezone_name="Asia/Tokyo")
+        self.app.state.training_service.bootstrap(self.now)
+        self.app.state.calendar_adjuster = CalendarAdjuster(timezone_name="Asia/Tokyo", api_key="")
+        self.app.state.training_notion_sync = type("Sync", (), {"sync_due": lambda self, limit=25: 1})()
+        self.app.state.calendar_bridge_service = type("Cal", (), {"configured": lambda self: False})()
+        self.app.state.training_preferences_service = TrainingPreferencesService(self.factory)
+        self.client = TestClient(self.app)
+
+    def test_fast_path_instruction_applies_and_returns_decision(self) -> None:
+        response = self.client.post("/api/v1/training/replan", json={"instruction": "I want Strength A today"})
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        decision = body["decision"]
+        self.assertIn("how", decision)
+        self.assertIn("why", decision)
+        self.assertIn("banner", decision)
+        self.assertEqual(body["overview"]["today"]["planned_type"], "strength_a")
+
+    def test_unclear_instruction_returns_clean_400_not_500(self) -> None:
+        response = self.client.post("/api/v1/training/replan", json={"instruction": "hmm maybe later"})
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(response.json()["detail"])
+
+    @patch("app.domain.training.adjust.httpx.post")
+    def test_storm_instruction_routes_through_gpt_path(self, post) -> None:
+        # "storm today" matches no fast-path regex at all, so this must reach the
+        # schema-constrained OpenAI call, same as any other unrecognized free text.
+        post.return_value.raise_for_status = lambda: None
+        post.return_value.json.return_value = {
+            "output_text": json.dumps({
+                "summary": "Storm today, cancel the gym commute.",
+                "mutations": [{
+                    "op": "cannot_train", "date": "2026-09-13", "to_date": None,
+                    "workout_type": None, "session_id": None, "start_at": None, "end_at": None,
+                    "fatigue_state": None, "task_id": None, "task_title": None, "event_id": None,
+                    "hard": None,
+                }],
+            }),
+        }
+        self.app.state.calendar_adjuster = CalendarAdjuster(timezone_name="Asia/Tokyo", api_key="sk-test")
+        response = self.client.post(
+            "/api/v1/training/replan",
+            json={"instruction": "there's a storm today, I don't want to ride to the gym"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["analysis"]["source"], "gpt")
+
+    @patch("app.domain.training.adjust.httpx.post")
+    def test_preferences_are_appended_to_the_instruction_sent_to_openai(self, post) -> None:
+        self.app.state.training_preferences_service.save("Bad left knee, avoid running on pavement.")
+        post.return_value.raise_for_status = lambda: None
+        post.return_value.json.return_value = {
+            "output_text": json.dumps({"summary": "No change.", "mutations": []}),
+        }
+        self.app.state.calendar_adjuster = CalendarAdjuster(timezone_name="Asia/Tokyo", api_key="sk-test")
+        self.client.post(
+            "/api/v1/training/replan",
+            json={"instruction": "something came up, not sure what to do"},
+        )
+        sent_json = post.call_args.kwargs["json"]
+        user_content = sent_json["input"][1]["content"]
+        self.assertIn("Bad left knee", user_content)

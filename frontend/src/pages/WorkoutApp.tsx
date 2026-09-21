@@ -5,6 +5,7 @@ import { useLiveResource } from '../hooks/useLiveResource'
 import { formatDate } from '../lib/format'
 import { canLogWorkout, doneMarkLabel, slugForType, workoutAlreadyLogged, workoutFormLocked } from '../lib/workoutMatch'
 import type { PlannedExercise, PlannedWorkout } from '../types'
+import { AskCoachButton } from '../components/AskCoachButton'
 import { PageSkeleton } from '../components/PageSkeleton'
 import '../workout.css'
 
@@ -435,6 +436,7 @@ function SessionResultForm({
         {saved && <p className="workout-done-badge">✓ {doneMarkLabel(session.status) ?? 'Logged'}</p>}
         {message && <p className="workout-status">{message}</p>}
       </form>
+      {saved && <AskCoachButton sessionId={session.id} />}
     </section>
   )
 }

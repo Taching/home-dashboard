@@ -13,6 +13,7 @@ from app.database.models import (
     Competition,
     DailyWellbeingCheckIn,
     TrainingExercise,
+    TrainingExerciseProgress,
     TrainingExerciseResult,
     TrainingGymClosure,
     TrainingMetric,
@@ -20,10 +21,12 @@ from app.database.models import (
     TrainingReminder,
     TrainingSession,
     TrainingSessionResult,
+    TrainingStrengthCycle,
     TrainingUnavailability,
     TrainingWeekAdaptation,
 )
 from app.database.session import SessionLocal
+from app.domain.training import strength_progress as sp
 from app.domain.training.classes import template_from_json, template_to_json
 from app.domain.training.policy import (
     BJJ_DISPLACEABLE_TYPES,
@@ -33,7 +36,7 @@ from app.domain.training.policy import (
 )
 from app.domain.training.scheduler import TrainingScheduler, assess_readiness, phase_for_date
 from app.domain.training.review import exercise_done, kinds_match
-from app.domain.training.templates import WORKOUT_TEMPLATES
+from app.domain.training.templates import STRENGTH_SKIP, WORKOUT_TEMPLATES, build_strength_exercises
 from app.domain.training.types import (
     ExistingSession,
     FatigueState,
@@ -42,11 +45,20 @@ from app.domain.training.types import (
     ReadinessAssessment,
     ReadinessInput,
     SessionStatus,
+    TrainingPhase,
     WeatherCondition,
     WeatherHint,
     WeekAdaptation,
     WorkoutType,
 )
+
+STRENGTH_WORKOUT_TYPES = (WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B)
+# No PR chasing this close to (or right after) a competition — decisions cap at REPEAT.
+STRENGTH_PROGRESSION_GATE_PHASES = {
+    TrainingPhase.TAPER_1, TrainingPhase.TAPER_2,
+    TrainingPhase.COMPETITION_1, TrainingPhase.COMPETITION_2,
+    TrainingPhase.POST_COMPETITION,
+}
 
 
 class TrainingService:
@@ -183,12 +195,15 @@ class TrainingService:
             readiness = self._readiness_assessment(session, now)
             declined = self._declined_dates(planner_settings, week_start)
             class_template = template_from_json(getattr(planner_settings, "class_template", None) if planner_settings else None)
-            gym_availability, unavailability, weather_conditions, adaptation = self._rebuild_inputs(session, week_start)
+            gym_availability, unavailability, weather_conditions, adaptation, strength_progress, strength_deload = (
+                self._rebuild_inputs(session, week_start)
+            )
             plan_kwargs = dict(
                 week_start=week_start, now=now, busy=busy, labeled_busy=labeled_busy, fixed_bjj=fixed_bjj,
                 existing=existing, fatigue=fatigue, weather=self._weather_hints(), declined_bjj=declined,
                 readiness=readiness, class_template=class_template, gym_availability=gym_availability,
                 unavailability=unavailability, weather_conditions=weather_conditions, adaptation=adaptation,
+                strength_progress=strength_progress, strength_deload=strength_deload,
                 use_llm=False,
             )
             plan = self._scheduler.plan_week(**plan_kwargs)
@@ -459,6 +474,10 @@ class TrainingService:
                     "actual_reps": item.actual_reps,
                     "actual_duration_seconds": item.actual_duration_seconds,
                     "completed": item.completed,
+                    "rpe": item.rpe,
+                    "technique": item.technique,
+                    "pain": item.pain,
+                    "status": item.status,
                 }
                 for item in actuals
             ]
@@ -600,12 +619,27 @@ class TrainingService:
                     source="manual", pinned=True, revision=1, created_at=current, updated_at=current,
                 )
                 session.add(row)
-                self._replace_exercises(session, row.id, template.exercises)
+                self._replace_exercises(session, row.id, self._strength_exercises_now(session, target))
             session.commit()
         self.reconcile(current)
         result = self.session(session_id)
         assert result is not None
         return result
+
+    def _strength_exercises_now(self, session, target: WorkoutType) -> tuple:
+        progress = {
+            row.exercise_name: sp.ExerciseState(
+                workout_type=row.workout_type, exercise_name=row.exercise_name,
+                load_value=row.load_value, load_unit=row.load_unit,
+                sets=row.sets, rep_target=row.rep_target,
+            )
+            for row in session.scalars(
+                select(TrainingExerciseProgress).where(TrainingExerciseProgress.workout_type == target.value)
+            ).all()
+        }
+        cycle = session.get(TrainingStrengthCycle, target.value)
+        deload = bool(cycle and (cycle.force_deload or cycle.sessions_since_deload >= 3))
+        return build_strength_exercises(target, progress, deload=deload)
 
     def place_session(self, day: date, workout_type: str, *, now: datetime | None = None, pinned: bool = False) -> dict:
         current = self._as_utc(now or datetime.now(UTC))
@@ -684,7 +718,11 @@ class TrainingService:
                     source=source, pinned=pinned, revision=1, created_at=now, updated_at=now,
                 )
                 session.add(row)
-                self._replace_exercises(session, row.id, template.exercises)
+                exercises = (
+                    self._strength_exercises_now(session, target)
+                    if target in STRENGTH_WORKOUT_TYPES else template.exercises
+                )
+                self._replace_exercises(session, row.id, exercises)
             session.commit()
         self.reconcile(now)
         result = self.session(session_id)
@@ -902,6 +940,7 @@ class TrainingService:
                     target = by_name.get(str(item.get("name") or ""))
                     if target is None:
                         continue
+                    exercise_status = item.get("status") or ("skipped" if item.get("completed") is False and item.get("done") is False else None)
                     session.add(TrainingExerciseResult(
                         exercise_id=target.id, session_id=session_id,
                         actual_load=item.get("actual_load"),
@@ -909,14 +948,79 @@ class TrainingService:
                         actual_reps=item.get("actual_reps"),
                         actual_duration_seconds=item.get("actual_duration_seconds"),
                         completed=bool(item.get("completed") or item.get("done")),
+                        rpe=item.get("rpe"),
+                        technique=item.get("technique"),
+                        pain=item.get("pain"),
+                        status=exercise_status,
                     ))
                     if item.get("done") is not None:
                         target.done = bool(item.get("done"))
+                if row.planned_type in {WorkoutType.STRENGTH_A.value, WorkoutType.STRENGTH_B.value} and row.status in {
+                    SessionStatus.COMPLETED.value, SessionStatus.PARTIAL.value,
+                }:
+                    self._advance_strength_progress(session, row, prescribed, exercises, current)
             session.commit()
         self.reconcile(current)
         result = self.session(session_id)
         assert result is not None
         return result
+
+    def _advance_strength_progress(
+        self, session, row: TrainingSession, prescribed: list[TrainingExercise],
+        exercises: list[dict], now: datetime,
+    ) -> None:
+        workout_type = row.planned_type
+        local_day = self._as_utc(row.start_at).astimezone(self._timezone).date()
+        gate_progress = phase_for_date(local_day) in STRENGTH_PROGRESSION_GATE_PHASES
+        by_name = {item.name: item for item in prescribed}
+        if not row.deload:
+            for item in exercises:
+                name = str(item.get("name") or "")
+                target = by_name.get(name)
+                if target is None or name in STRENGTH_SKIP or item.get("status") == "skipped":
+                    continue
+                recipe = sp.recipe_for(name)
+                progress_row = session.get(TrainingExerciseProgress, (workout_type, name))
+                state = (
+                    sp.ExerciseState(
+                        workout_type=workout_type, exercise_name=name,
+                        load_value=progress_row.load_value, load_unit=progress_row.load_unit,
+                        sets=progress_row.sets, rep_target=progress_row.rep_target,
+                    )
+                    if progress_row is not None else
+                    sp.seed_state(
+                        workout_type, name=name, load_value=target.load_value,
+                        load_unit=target.load_unit, sets=target.sets, recipe=recipe,
+                    )
+                )
+                classification = sp.classify(
+                    rpe=item.get("rpe"), technique=item.get("technique"), pain=item.get("pain"),
+                    sets_done=item.get("actual_sets"), sets_prescribed=target.sets,
+                )
+                decision = sp.decide(classification)
+                if gate_progress and decision == sp.Decision.PROGRESS:
+                    decision = sp.Decision.REPEAT
+                new_state = sp.apply_decision(state, decision, recipe)
+                if progress_row is None:
+                    progress_row = TrainingExerciseProgress(workout_type=workout_type, exercise_name=name)
+                    session.add(progress_row)
+                progress_row.load_value = new_state.load_value
+                progress_row.load_unit = new_state.load_unit
+                progress_row.sets = new_state.sets
+                progress_row.rep_target = new_state.rep_target
+                progress_row.last_classification = classification.value
+                progress_row.last_decision = decision.value
+                progress_row.updated_at = now
+        cycle = session.get(TrainingStrengthCycle, workout_type)
+        if cycle is None:
+            cycle = TrainingStrengthCycle(workout_type=workout_type, sessions_since_deload=0, force_deload=False)
+            session.add(cycle)
+        if row.deload:
+            cycle.sessions_since_deload = 0
+            cycle.force_deload = False
+        else:
+            cycle.sessions_since_deload = min(3, cycle.sessions_since_deload + 1)
+        cycle.updated_at = now
 
     def add_gym_closure(self, day: date, *, gym_id: str = "mita", closure_type: str = "HOLIDAY", note: str | None = None, now: datetime | None = None) -> dict:
         current = self._as_utc(now or datetime.now(UTC))
@@ -1048,6 +1152,22 @@ class TrainingService:
                 session.add(row)
             row.payload = adaptation_payload(adaptation)
             row.summary = adaptation.notes
+            sleep_rows = session.scalars(
+                select(DailyWellbeingCheckIn.sleep_hours)
+                .where(DailyWellbeingCheckIn.local_date >= week_start)
+                .where(DailyWellbeingCheckIn.local_date < week_start + timedelta(days=7))
+            ).all()
+            sleep_hours = [float(item) for item in sleep_rows if item is not None]
+            triggers = sp.evaluate_deload_triggers(review["sessions"], sleep_hours)
+            for workout_type, force in triggers.items():
+                if not force:
+                    continue
+                cycle = session.get(TrainingStrengthCycle, workout_type)
+                if cycle is None:
+                    cycle = TrainingStrengthCycle(workout_type=workout_type, sessions_since_deload=0)
+                    session.add(cycle)
+                cycle.force_deload = True
+                cycle.updated_at = current
             session.commit()
         self.reconcile(current)
         return self.week_review(week_start)
@@ -1462,7 +1582,27 @@ class TrainingService:
                 reduce_preceding_strength=bool(payload.get("reduce_preceding_strength")),
                 notes=row.summary or "",
             )
-        return gym_availability, unavailability, weather_conditions, adaptation
+        strength_progress = self._load_strength_progress(session)
+        strength_deload = self._load_strength_deload(session)
+        return gym_availability, unavailability, weather_conditions, adaptation, strength_progress, strength_deload
+
+    @staticmethod
+    def _load_strength_progress(session) -> dict[str, dict[str, sp.ExerciseState]]:
+        result: dict[str, dict[str, sp.ExerciseState]] = {item.value: {} for item in STRENGTH_WORKOUT_TYPES}
+        for row in session.scalars(select(TrainingExerciseProgress)).all():
+            result.setdefault(row.workout_type, {})[row.exercise_name] = sp.ExerciseState(
+                workout_type=row.workout_type, exercise_name=row.exercise_name,
+                load_value=row.load_value, load_unit=row.load_unit,
+                sets=row.sets, rep_target=row.rep_target,
+            )
+        return result
+
+    @staticmethod
+    def _load_strength_deload(session) -> dict[str, bool]:
+        result = {item.value: False for item in STRENGTH_WORKOUT_TYPES}
+        for row in session.scalars(select(TrainingStrengthCycle)).all():
+            result[row.workout_type] = bool(row.force_deload) or row.sessions_since_deload >= 3
+        return result
 
     def _weather_conditions(self) -> tuple[WeatherCondition, ...]:
         if self._weather_service is None or not hasattr(self._weather_service, "travel_conditions"):
@@ -1503,6 +1643,7 @@ class TrainingService:
             "preparation": item.preparation, "target_rounds": item.target_rounds,
             "round_length_seconds": item.round_length_seconds, "rest_seconds": item.rest_seconds,
             "source": item.source, "pinned": item.pinned, "source_calendar_event_id": item.source_calendar_event_id,
+            "deload": item.deload,
         }
         changed = any(
             self._as_utc(getattr(row, key)) != value
@@ -1562,6 +1703,7 @@ class TrainingService:
             "final_round_quality": row.final_round_quality, "notes": row.notes,
             "calendar_event_id": row.apple_event_id or row.source_calendar_event_id,
             "source": row.source, "pinned": bool(row.pinned), "miss_reason": row.miss_reason,
+            "deload": bool(row.deload),
         }
 
     @staticmethod

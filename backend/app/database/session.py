@@ -51,6 +51,11 @@ def initialise_database() -> None:
     _ensure_column("training_planner_settings", "class_template", "JSON")
     _ensure_column("training_planner_settings", "gym_id", "VARCHAR(40)")
     _ensure_column("training_sessions", "miss_reason", "VARCHAR(32)")
+    _ensure_column("training_sessions", "deload", "BOOLEAN NOT NULL DEFAULT 0")
+    _ensure_column("training_exercise_results", "rpe", "FLOAT")
+    _ensure_column("training_exercise_results", "technique", "VARCHAR(16)")
+    _ensure_column("training_exercise_results", "pain", "BOOLEAN")
+    _ensure_column("training_exercise_results", "status", "VARCHAR(16)")
     _ensure_column("weekly_reviews", "coach_review", "TEXT")
 
 

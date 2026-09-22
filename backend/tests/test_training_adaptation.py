@@ -93,7 +93,11 @@ class AdaptationTests(unittest.TestCase):
             row = session.scalar(select(TrainingExercise).where(TrainingExercise.session_id == created["id"]).where(TrainingExercise.name == "Back Squat"))
             self.assertEqual(row.load_value, prescribed)
 
-    def test_rebuild_consumes_stored_adaptation(self) -> None:
+    def test_rebuild_ignores_week_adaptation_for_strength(self) -> None:
+        # WeekAdaptation.strength_load_delta is a blanket weekly delta that used
+        # to drive Strength A/B templates. It's superseded by the per-exercise
+        # strength_progress engine (see strength_progress.py); Strength A/B now
+        # ignore it entirely and only fall back to the static template default.
         from datetime import datetime
         from zoneinfo import ZoneInfo
         from app.domain.training.classes import MITA_CLASS_TEMPLATE
@@ -119,7 +123,44 @@ class AdaptationTests(unittest.TestCase):
         strength = next(item for item in plan.sessions if item.type == WorkoutType.STRENGTH_B)
         deadlift = next(item for item in strength.exercises if item.name == "Deadlift")
         base = next(item for item in WORKOUT_TEMPLATES[WorkoutType.STRENGTH_B].exercises if item.name == "Deadlift")
-        self.assertGreater(deadlift.load_value or 0, base.load_value or 0)
+        self.assertEqual(deadlift.load_value, base.load_value)
+
+    def test_rebuild_uses_stored_strength_progress(self) -> None:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from app.domain.training.classes import MITA_CLASS_TEMPLATE
+        from app.domain.training.scheduler import TrainingScheduler
+        from app.domain.training.strength_progress import ExerciseState
+        from app.domain.training.types import ExistingSession, SessionStatus
+
+        tokyo = ZoneInfo("Asia/Tokyo")
+        scheduler = TrainingScheduler("Asia/Tokyo")
+        base = next(item for item in WORKOUT_TEMPLATES[WorkoutType.STRENGTH_B].exercises if item.name == "Deadlift")
+        progressed_load = (base.load_value or 0) + 2.5
+        plan = scheduler.plan_week(
+            date(2026, 9, 14),
+            now=datetime(2026, 9, 14, 8, tzinfo=tokyo),
+            class_template=MITA_CLASS_TEMPLATE,
+            strength_progress={
+                "strength_b": {
+                    "Deadlift": ExerciseState(
+                        workout_type="strength_b", exercise_name="Deadlift",
+                        load_value=progressed_load, load_unit="kg", sets=3, rep_target=None,
+                    ),
+                },
+            },
+            existing=(
+                ExistingSession(
+                    "sun-a", WorkoutType.STRENGTH_A,
+                    datetime(2026, 9, 13, 7, 30, tzinfo=tokyo),
+                    datetime(2026, 9, 13, 8, 30, tzinfo=tokyo),
+                    SessionStatus.COMPLETED,
+                ),
+            ),
+        )
+        strength = next(item for item in plan.sessions if item.type == WorkoutType.STRENGTH_B)
+        deadlift = next(item for item in strength.exercises if item.name == "Deadlift")
+        self.assertEqual(deadlift.load_value, progressed_load)
 
     def test_completed_exercises_stay_frozen_after_rebuild(self) -> None:
         from datetime import UTC, datetime

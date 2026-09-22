@@ -156,6 +156,7 @@ class PlannedSession:
     pinned: bool = False
     source_calendar_event_id: str | None = None
     is_all_day: bool = False
+    deload: bool = False
 
     @property
     def local_date(self) -> date:

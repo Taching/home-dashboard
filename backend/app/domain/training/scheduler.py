@@ -8,7 +8,13 @@ from app.domain.training.policy import (
     COMPLETED_STATUSES,
 )
 from app.domain.training.rebuild import rebuild_schedule
-from app.domain.training.templates import WORKOUT_TEMPLATES, apply_adaptation, reduced_template
+from app.domain.training.strength_progress import ExerciseState
+from app.domain.training.templates import (
+    WORKOUT_TEMPLATES,
+    apply_adaptation,
+    build_strength_exercises,
+    reduced_template,
+)
 from app.domain.training.types import (
     AthleteState,
     ExistingSession,
@@ -33,6 +39,7 @@ from app.domain.training.types import (
     WeekAdaptation,
     WeekPlan,
     WeekQuality,
+    WorkoutTemplate,
     WorkoutType,
 )
 
@@ -141,6 +148,8 @@ class TrainingScheduler:
         adaptation: WeekAdaptation | None = None,
         upcoming_hard_bjj: date | None = None,
         tournament_date: date | None = None,
+        strength_progress: dict[str, dict[str, ExerciseState]] | None = None,
+        strength_deload: dict[str, bool] | None = None,
         use_llm: bool = False,
     ) -> WeekPlan:
         if labeled_busy and not busy:
@@ -242,6 +251,7 @@ class TrainingScheduler:
                     plan.session, day, start, end,
                     fatigue if day == today + timedelta(days=1) else FatigueState.NORMAL,
                     weather=hint, adaptation=adaptation, reason=plan.reason,
+                    strength_progress=strength_progress, strength_deload=strength_deload,
                 )
                 planned.append(session)
         return WeekPlan(week_start, tuple(sorted(planned, key=lambda item: item.start_at)), ())
@@ -309,11 +319,25 @@ class TrainingScheduler:
         weather: WeatherHint | None = None,
         adaptation: WeekAdaptation | None = None,
         reason: str | None = None,
+        strength_progress: dict[str, dict[str, ExerciseState]] | None = None,
+        strength_deload: dict[str, bool] | None = None,
     ) -> PlannedSession:
         phase = phase_for_date(day)
         taper = phase in {TrainingPhase.TAPER_1, TrainingPhase.TAPER_2}
-        template = reduced_template(workout_type) if taper and workout_type in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B} else WORKOUT_TEMPLATES[workout_type]
-        template = apply_adaptation(template, adaptation)
+        is_strength = workout_type in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B}
+        is_deload = False
+        if is_strength and not taper:
+            is_deload = bool((strength_deload or {}).get(workout_type.value))
+            progress_map = (strength_progress or {}).get(workout_type.value, {})
+            exercises = build_strength_exercises(workout_type, progress_map, deload=is_deload)
+            template = WorkoutTemplate(
+                workout_type, WORKOUT_TEMPLATES[workout_type].title,
+                WORKOUT_TEMPLATES[workout_type].estimated_minutes, WORKOUT_TEMPLATES[workout_type].intensity,
+                exercises, WORKOUT_TEMPLATES[workout_type].conditioning,
+            )
+        else:
+            template = reduced_template(workout_type) if taper and is_strength else WORKOUT_TEMPLATES[workout_type]
+            template = apply_adaptation(template, adaptation)
         text = reason or "Placed around BJJ with enough recovery before the hardest mat session."
         if fatigue in {FatigueState.PAIN, FatigueState.VERY_FATIGUED}:
             return self._recovery_session(day, start, fatigue)
@@ -335,9 +359,12 @@ class TrainingScheduler:
                 for item in exercises
             )
             text = "Zone 2 stays; weather only changes the indoor modality."
+        if is_deload:
+            text = f"{text} Deload week: lighter load, one fewer set per lift."
         return PlannedSession(
             workout_type, start, end, phase, text, intensity, exercises=exercises,
             preparation="Hydrate and prepare training equipment the night before.",
+            deload=is_deload,
         )
 
     @staticmethod

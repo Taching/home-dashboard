@@ -250,6 +250,7 @@ class TrainingSession(Base):
     final_round_quality: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     miss_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    deload: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
@@ -356,6 +357,10 @@ class TrainingExerciseResult(Base):
     actual_reps: Mapped[str | None] = mapped_column(String(32), nullable=True)
     actual_duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    rpe: Mapped[float | None] = mapped_column(Float, nullable=True)
+    technique: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    pain: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    status: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
 class TrainingWeekAdaptation(Base):
@@ -365,3 +370,26 @@ class TrainingWeekAdaptation(Base):
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     summary: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class TrainingExerciseProgress(Base):
+    __tablename__ = "training_exercise_progress"
+
+    workout_type: Mapped[str] = mapped_column(String(40), primary_key=True)
+    exercise_name: Mapped[str] = mapped_column(String(120), primary_key=True)
+    load_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    load_unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    sets: Mapped[int] = mapped_column(Integer)
+    rep_target: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_classification: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    last_decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class TrainingStrengthCycle(Base):
+    __tablename__ = "training_strength_cycles"
+
+    workout_type: Mapped[str] = mapped_column(String(40), primary_key=True)
+    sessions_since_deload: Mapped[int] = mapped_column(Integer, default=0)
+    force_deload: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

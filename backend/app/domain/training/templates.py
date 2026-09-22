@@ -1,5 +1,10 @@
+from app.domain.training import strength_progress as sp
 from app.domain.training.types import ExercisePrescription as E
 from app.domain.training.types import WorkoutTemplate, WorkoutType
+
+# Conditioning entries inside the strength templates that the progression
+# engine never touches (no working load/rep target to track).
+STRENGTH_SKIP = {"Stationary bike warm-up", "Stationary bike intervals"}
 
 
 WORKOUT_TEMPLATES: dict[WorkoutType, WorkoutTemplate] = {
@@ -25,12 +30,12 @@ WORKOUT_TEMPLATES: dict[WorkoutType, WorkoutTemplate] = {
         55,
         "normal",
         (
-            E("Deadlift", 120, "kg", 2, "3"),
-            E("Military Press", 40, "kg", 3, "5"),
-            E("Pull-ups", sets=3, reps="6–8", notes="Bodyweight"),
-            E("Weighted Dips", 10, "kg", 2, "8"),
-            E("Copenhagen Plank", sets=3, reps="20–30 sec/side"),
-            E("Suitcase Carry", sets=3, reps="30–45 sec/side", notes="Heavy DB/KB"),
+            E("Deadlift", 140, "kg", 3, "3", notes="RPE 7–8. Rest 3–4 minutes."),
+            E("Military Press", 52, "kg", 3, "5–7", notes="RPE 7–8."),
+            E("Weighted Dips", 20, "kg", 3, "6–8"),
+            E("Bulgarian Split Squat", None, None, 3, "6–8/leg", notes="Stability and depth before load."),
+            E("Leg Raise", None, None, 3, "6–10", notes="Progress reps, not added weight."),
+            E("Seated Cable Row", 60, "kg", 3, "8–12", notes="Controlled eccentric, no torso swing."),
         ),
     ),
     WorkoutType.ZONE_2: WorkoutTemplate(
@@ -115,7 +120,7 @@ def reduced_template(workout_type: WorkoutType) -> WorkoutTemplate:
     if workout_type == WorkoutType.STRENGTH_A:
         keep = {"Stationary bike warm-up", "Back Squat", "Bench Press", "Pull-ups", "Standing Landmine Rotation"}
     else:
-        keep = {"Deadlift", "Military Press", "Pull-ups", "Copenhagen Plank"}
+        keep = {"Deadlift", "Military Press", "Weighted Dips"}
     exercises = tuple(
         E(
             item.name, item.load_value, item.load_unit,
@@ -125,3 +130,33 @@ def reduced_template(workout_type: WorkoutType) -> WorkoutTemplate:
         for item in base.exercises if item.name in keep
     )
     return WorkoutTemplate(base.type, f"{base.title} · taper", 35, "normal", exercises)
+
+
+def build_strength_exercises(
+    workout_type: WorkoutType,
+    progress: dict[str, sp.ExerciseState],
+    *,
+    deload: bool,
+) -> tuple[E, ...]:
+    """Per-exercise version of apply_adaptation for Strength A/B: each exercise
+    renders from its own stored TrainingExerciseProgress state (or the template
+    default the first time it's ever scheduled) instead of one blanket weekly
+    delta applied to every exercise alike."""
+    template = WORKOUT_TEMPLATES[workout_type]
+    exercises: list[E] = []
+    for item in template.exercises:
+        if item.name in STRENGTH_SKIP:
+            exercises.append(item)
+            continue
+        recipe = sp.recipe_for(item.name)
+        state = progress.get(item.name) or sp.seed_state(
+            workout_type.value, name=item.name, load_value=item.load_value,
+            load_unit=item.load_unit, sets=item.sets, recipe=recipe,
+        )
+        if deload:
+            state = sp.deload_prescription(state, recipe)
+        exercises.append(E(
+            state.exercise_name, state.load_value, state.load_unit, state.sets,
+            sp.render_reps(state, recipe), item.duration_seconds, item.notes,
+        ))
+    return tuple(exercises)

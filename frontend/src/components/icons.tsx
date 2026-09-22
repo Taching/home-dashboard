@@ -36,3 +36,26 @@ export function SparklesIcon({ size = 18 }: IconProps) {
     </svg>
   )
 }
+
+export function DumbbellIcon({ size = 18 }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width={size} height={size} aria-hidden="true">
+      <path d="M6.5 6.5v11M17.5 6.5v11" />
+      <path d="M4 9.5v5M20 9.5v5" />
+      <path d="M6.5 12h11" />
+    </svg>
+  )
+}
+
+export function ListIcon({ size = 18 }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width={size} height={size} aria-hidden="true">
+      <line x1="8" y1="6" x2="21" y2="6" />
+      <line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" />
+      <line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" />
+      <line x1="3" y1="18" x2="3.01" y2="18" />
+    </svg>
+  )
+}

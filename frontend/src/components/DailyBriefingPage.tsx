@@ -6,7 +6,7 @@ import { useLiveResource } from '../hooks/useLiveResource'
 import { doneMarkLabel, workoutFormLocked } from '../lib/workoutMatch'
 import type { DailyAnswerItem, DailyBriefing, PlannedExercise } from '../types'
 import { AskCoachButton } from './AskCoachButton'
-import { AlertIcon, SlidersIcon } from './icons'
+import { AlertIcon, DumbbellIcon, SlidersIcon } from './icons'
 import { PageSkeleton } from './PageSkeleton'
 
 function formatTime(value: string, allDay = false) {
@@ -46,6 +46,10 @@ function DailyQuickActions() {
       <a className="daily-quick-action is-neutral" href="/training/preferences" title="Training preferences">
         <SlidersIcon size={20} />
         <span>Preferences</span>
+      </a>
+      <a className="daily-quick-action is-workout" href="/workout" title="Today's workout">
+        <DumbbellIcon size={20} />
+        <span>Workout</span>
       </a>
     </div>
   )

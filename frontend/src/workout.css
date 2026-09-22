@@ -15,7 +15,9 @@ html.is-workout * {
 .workout-page {
   min-height: 100dvh;
   padding: 1.1rem 1.15rem 2.4rem;
-  background: radial-gradient(ellipse 80% 55% at 100% 0%, var(--bg-wash) 0%, var(--bg) 58%);
+  background:
+    radial-gradient(ellipse 70% 40% at 100% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%),
+    radial-gradient(ellipse 80% 55% at 100% 0%, var(--bg-wash) 0%, var(--bg) 58%);
   color: var(--ink);
 }
 
@@ -49,15 +51,24 @@ html.is-workout * {
 }
 
 .workout-back {
+  padding: .35rem .75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
   color: var(--ink-muted);
-  font-size: .86rem;
+  font-size: .82rem;
   font-weight: 650;
+  background: color-mix(in srgb, var(--bg-elevated) 60%, transparent);
+  transition: transform .12s ease, border-color .12s ease, color .12s ease;
+}
+
+.workout-back:active {
+  transform: scale(.95);
 }
 
 .workout-hero {
   display: grid;
   gap: .35rem;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.4rem;
 }
 
 .workout-hero p,
@@ -79,6 +90,56 @@ html.is-workout * {
 
 .workout-hero h1 {
   font-size: clamp(1.8rem, 7vw, 2.4rem);
+  background: linear-gradient(135deg, var(--ink), color-mix(in srgb, var(--ink) 78%, var(--accent)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.workout-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+  margin-top: .15rem;
+}
+
+.workout-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .28rem .7rem;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.workout-pill.is-hard {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+.workout-pill.is-normal {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+}
+
+.workout-pill.is-easy {
+  color: var(--positive);
+  background: color-mix(in srgb, var(--positive) 14%, transparent);
+  border-color: color-mix(in srgb, var(--positive) 38%, transparent);
+}
+
+.workout-pill.is-deload {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
 }
 
 .workout-section {
@@ -96,10 +157,17 @@ html.is-workout * {
 .workout-log {
   display: grid;
   gap: .28rem;
-  padding: .9rem .95rem;
+  padding: .95rem 1.05rem;
   border: 1px solid var(--line);
-  border-radius: .45rem;
-  background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  border-radius: .65rem;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--bg-elevated) 82%, transparent), color-mix(in srgb, var(--bg-elevated) 68%, transparent));
+  box-shadow: 0 .4rem 1.1rem color-mix(in srgb, var(--black) 20%, transparent);
+  transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+}
+
+a.workout-plan-link:active {
+  transform: scale(.98);
 }
 
 .workout-plan-link strong,
@@ -130,7 +198,7 @@ html.is-workout * {
 
 .workout-form {
   display: grid;
-  gap: .85rem;
+  gap: .9rem;
 }
 
 .workout-field {
@@ -140,15 +208,25 @@ html.is-workout * {
 
 .workout-field span {
   color: var(--ink-muted);
-  font-size: .78rem;
-  letter-spacing: .04em;
+  font-size: .74rem;
+  font-weight: 700;
+  letter-spacing: .06em;
   text-transform: uppercase;
 }
 
 .workout-choices {
   display: flex;
   flex-wrap: wrap;
-  gap: .6rem;
+  gap: .5rem;
+  padding: .3rem;
+  border-radius: .8rem;
+  background: color-mix(in srgb, var(--bg-sunken) 55%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+.workout-choices.is-compact {
+  padding: .22rem;
+  gap: .35rem;
 }
 
 .workout-choices button,
@@ -156,28 +234,69 @@ html.is-workout * {
 .workout-form textarea,
 .workout-form button[type='submit'] {
   min-height: 2.4rem;
-  border: 1px solid var(--line-strong);
-  border-radius: .3rem;
+  border: 1px solid transparent;
+  border-radius: .5rem;
   color: var(--ink);
   background: var(--bg-elevated);
   font: inherit;
+  transition: transform .1s ease, background .12s ease, color .12s ease, border-color .12s ease;
 }
 
 .workout-choices button {
-  min-height: 2.8rem;
+  flex: 1 1 auto;
+  min-height: 2.6rem;
   padding: 0 .9rem;
+  background: transparent;
+  color: var(--ink-muted);
+  font-weight: 700;
 }
 
-.workout-choices button.is-selected,
-.workout-form button[type='submit'] {
-  border-color: var(--accent);
-  background: var(--bg-wash);
+.workout-choices.is-compact button {
+  min-height: 2.15rem;
+  font-size: .82rem;
+}
+
+.workout-choices button:active {
+  transform: scale(.96);
+}
+
+.workout-choices button.is-selected {
+  color: var(--ink-inverse);
+  background: var(--accent);
+  box-shadow: 0 .25rem .7rem color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.workout-choices button.is-selected.is-completed,
+.workout-choices button.is-selected.is-technique-clean {
+  background: var(--positive);
+  box-shadow: 0 .25rem .7rem color-mix(in srgb, var(--positive) 45%, transparent);
+}
+
+.workout-choices button.is-selected.is-partial,
+.workout-choices button.is-selected.is-technique-shaky {
+  background: var(--warning);
+  box-shadow: 0 .25rem .7rem color-mix(in srgb, var(--warning) 45%, transparent);
+}
+
+.workout-choices button.is-selected.is-skipped,
+.workout-choices button.is-selected.is-technique-breakdown {
+  background: var(--danger);
+  box-shadow: 0 .25rem .7rem color-mix(in srgb, var(--danger) 45%, transparent);
 }
 
 .workout-form input:not([type='radio']):not([type='checkbox']),
 .workout-form textarea {
   width: 100%;
   padding: .6rem .7rem;
+  border-color: var(--line-strong);
+}
+
+.workout-form input:focus-visible,
+.workout-form textarea:focus-visible,
+.workout-form select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .workout-form textarea {
@@ -186,19 +305,39 @@ html.is-workout * {
 }
 
 .workout-form button[type='submit'] {
-  justify-self: start;
+  justify-self: stretch;
+  margin-top: .3rem;
   padding: 0 1rem;
-  font-weight: 740;
+  min-height: 3rem;
+  color: var(--ink-inverse);
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, var(--positive)));
+  box-shadow: 0 .5rem 1.2rem color-mix(in srgb, var(--accent) 32%, transparent);
+  font-weight: 800;
+  font-size: .95rem;
+}
+
+.workout-form button[type='submit']:active {
+  transform: scale(.98);
 }
 
 .workout-form button:disabled {
   opacity: .55;
+  transform: none;
+  box-shadow: none;
 }
 
 .workout-done-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  width: fit-content;
   margin: 0;
+  padding: .3rem .75rem;
+  border-radius: 999px;
   color: var(--positive);
+  background: color-mix(in srgb, var(--positive) 14%, transparent);
   font-weight: 780;
+  font-size: .85rem;
 }
 
 .workout-status {
@@ -217,8 +356,9 @@ html.is-workout * {
   gap: .45rem;
   padding: .95rem 1rem;
   border: 1px solid color-mix(in srgb, var(--positive) 32%, transparent);
-  border-radius: .45rem;
+  border-radius: .65rem;
   background: linear-gradient(150deg, color-mix(in srgb, var(--bg-wash) 95%, transparent), color-mix(in srgb, var(--bg-elevated) 96%, transparent));
+  box-shadow: 0 .4rem 1.1rem color-mix(in srgb, var(--black) 20%, transparent);
 }
 
 .workout-chili h2 {
@@ -246,15 +386,16 @@ html.is-workout * {
   letter-spacing: .08em; text-transform: uppercase;
 }
 
-.replan-week-list { display: grid; gap: .35rem; }
+.replan-week-list { display: grid; gap: .4rem; }
 .replan-week-row {
   display: grid; grid-template-columns: 3.4rem 1fr auto; align-items: center; gap: .6rem;
-  padding: .55rem .7rem; border-radius: .5rem;
+  padding: .6rem .75rem; border-radius: .6rem;
   background: color-mix(in srgb, var(--bg-elevated) 60%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 60%, transparent);
 }
 .replan-week-row.is-today {
   background: color-mix(in srgb, var(--positive) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--positive) 35%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--positive) 40%, transparent);
 }
 .replan-week-date { color: var(--ink-muted); font-size: .82rem; font-weight: 700; }
 .replan-week-what { color: var(--ink); font-size: .88rem; }
@@ -270,7 +411,7 @@ html.is-workout * {
 .replan-result .workout-note { margin: .5rem 0 0; font-style: italic; }
 .replan-error {
   border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
-  border-radius: .45rem;
+  border-radius: .65rem;
   background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 .replan-error-head {
@@ -280,7 +421,7 @@ html.is-workout * {
 
 .workout-checks {
   display: grid;
-  gap: .55rem;
+  gap: .6rem;
 }
 
 .workout-check {
@@ -288,15 +429,21 @@ html.is-workout * {
   grid-template-columns: 1.35rem 1fr;
   gap: .7rem;
   align-items: start;
-  padding: .85rem .9rem;
+  padding: .95rem 1.05rem;
   border: 1px solid var(--line);
-  border-radius: .45rem;
-  background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--line-strong) 70%, transparent);
+  border-radius: .65rem;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--bg-elevated) 82%, transparent), color-mix(in srgb, var(--bg-elevated) 68%, transparent));
+  box-shadow: 0 .35rem .95rem color-mix(in srgb, var(--black) 18%, transparent);
+}
+
+.workout-check:has(> :only-child) {
+  grid-template-columns: 1fr;
 }
 
 .workout-check.is-checked {
-  border-color: var(--accent);
-  background: var(--bg-wash);
+  border-left-color: var(--accent);
+  box-shadow: 0 .35rem .95rem color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .workout-check input {
@@ -308,7 +455,7 @@ html.is-workout * {
 
 .workout-check span {
   display: grid;
-  gap: .2rem;
+  gap: .3rem;
 }
 
 .workout-check strong {
@@ -326,23 +473,117 @@ html.is-workout * {
 .workout-actuals {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: .4rem;
+  gap: .45rem;
+  margin-top: .3rem;
+}
+
+.workout-actuals-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.workout-stat {
+  display: grid;
+  gap: .22rem;
+}
+
+.workout-stat > span {
+  color: var(--ink-faint);
+  font-size: .64rem;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.workout-exercise-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+  margin-top: .5rem;
+}
+
+.workout-exercise-meta .workout-choices {
+  flex: 1 1 auto;
+}
+
+.workout-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-top: .5rem;
+}
+
+.workout-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .4rem .8rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--ink-muted);
+  background: color-mix(in srgb, var(--bg-elevated) 70%, transparent);
+  font-size: .8rem;
+  font-weight: 700;
+  transition: transform .1s ease, background .12s ease, color .12s ease, border-color .12s ease;
+}
+
+.workout-chip::before {
+  content: '';
+  width: .5rem;
+  height: .5rem;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: .35;
+}
+
+.workout-chip:active {
+  transform: scale(.95);
+}
+
+.workout-chip.is-active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.workout-chip.is-active::before {
+  opacity: 1;
+}
+
+.workout-chip.is-danger.is-active {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
 }
 
 .workout-actuals input,
 .workout-field input,
 .workout-field select {
   width: 100%;
-  padding: .45rem .55rem;
-  border: 1px solid var(--line);
-  border-radius: .4rem;
+  padding: .5rem .55rem;
+  border: 1px solid var(--line-strong);
+  border-radius: .45rem;
   background: var(--bg-elevated);
   color: inherit;
+  text-align: center;
+}
+
+.workout-field select {
+  text-align: left;
+}
+
+.workout-actuals input:focus-visible,
+.workout-field input:focus-visible,
+.workout-field select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .weekly-stats {
   display: grid;
-  gap: .4rem;
+  gap: .45rem;
   margin: 0 0 1rem;
   padding: 0;
   list-style: none;
@@ -352,6 +593,9 @@ html.is-workout * {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
+  padding: .55rem .75rem;
+  border-radius: .5rem;
+  background: color-mix(in srgb, var(--bg-elevated) 55%, transparent);
 }
 
 .daily-constraints,

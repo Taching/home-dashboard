@@ -1980,6 +1980,11 @@ html.is-daily * { cursor: auto; }
   background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
   border-color: color-mix(in srgb, var(--line-strong) 45%, transparent);
 }
+.daily-quick-action.is-workout {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+}
 .daily-card-title > span { color: var(--ink-muted); font-size: .78rem; text-transform: capitalize; }
 .daily-card > p { margin: .65rem 0 0; color: var(--ink-muted); line-height: 1.55; }
 .daily-workout-card { border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
@@ -2114,7 +2119,9 @@ html.is-daily * { cursor: auto; }
 
 @media (max-width: 520px) {
   .daily-briefing-shell { padding: .9rem; }
-  .daily-hero { align-items: center; }
+  .daily-hero { flex-wrap: wrap; align-items: flex-start; }
+  .daily-quick-actions { flex-wrap: wrap; }
+  .daily-streak { min-width: 0; justify-items: start; margin-top: .3rem; }
   .daily-streak strong { font-size: 1.8rem; }
   .daily-form-grid { grid-template-columns: 1fr; }
   .daily-wide { grid-column: auto; }

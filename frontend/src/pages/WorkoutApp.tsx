@@ -6,6 +6,7 @@ import { formatDate } from '../lib/format'
 import { canLogWorkout, doneMarkLabel, slugForType, workoutAlreadyLogged, workoutFormLocked } from '../lib/workoutMatch'
 import type { PlannedExercise, PlannedWorkout } from '../types'
 import { AskCoachButton } from '../components/AskCoachButton'
+import { AlertIcon, ListIcon, SlidersIcon } from '../components/icons'
 import { PageSkeleton } from '../components/PageSkeleton'
 import '../workout.css'
 
@@ -44,6 +45,35 @@ function exerciseLine(item: PlannedExercise) {
     item.reps && `${item.reps} reps`,
     item.duration_seconds && `${Math.round(item.duration_seconds / 60)} min`,
   ].filter(Boolean).join(' · ')
+}
+
+function IntensityPill({ intensity, deload }: { intensity?: string; deload?: boolean }) {
+  if (!intensity && !deload) return null
+  return (
+    <span className="workout-hero-meta">
+      {intensity && <span className={`workout-pill is-${intensity}`}>{intensity}</span>}
+      {deload && <span className="workout-pill is-deload">Deload week</span>}
+    </span>
+  )
+}
+
+function WorkoutQuickActions() {
+  return (
+    <div className="daily-quick-actions" aria-label="Quick actions">
+      <a className="daily-quick-action is-alert" href="/schedule-change" title="Something changed?">
+        <AlertIcon size={20} />
+        <span>Change plan</span>
+      </a>
+      <a className="daily-quick-action is-neutral" href="/training/preferences" title="Training preferences">
+        <SlidersIcon size={20} />
+        <span>Preferences</span>
+      </a>
+      <a className="daily-quick-action is-workout" href="/weekly" title="My workouts">
+        <ListIcon size={20} />
+        <span>My workouts</span>
+      </a>
+    </div>
+  )
 }
 
 export function WorkoutApp() {
@@ -111,7 +141,9 @@ function TodayPage() {
         <p>Today</p>
         <h1>{headingDate}</h1>
         <span>{workout ? workout.title : 'No prescribed session'}</span>
+        <IntensityPill intensity={workout?.intensity} deload={workout?.deload} />
         {logged && workout && <p className="workout-done-badge">✓ {doneMarkLabel(workout.status) ?? 'Done'}</p>}
+        <WorkoutQuickActions />
       </section>
       {error && <p className="workout-status">{error}</p>}
       <section className="workout-section">
@@ -175,15 +207,16 @@ function SessionPage({ sessionId }: { sessionId: string }) {
       {session && (
         <>
           <section className="workout-hero">
-            <p>{session.estimated_minutes} min · {session.intensity}</p>
+            <p>{session.estimated_minutes} min</p>
             <h1>{session.title}</h1>
             <span>{session.reason}</span>
+            <IntensityPill intensity={session.intensity} deload={session.deload} />
           </section>
           <section className="workout-section">
             <h2>Prescribed</h2>
             <div className="workout-checks">
               {session.exercises.map((item) => (
-                <div key={item.name} className="workout-check">
+                <div key={item.name} className={`workout-check${item.done ? ' is-checked' : ''}`}>
                   <span>
                     <strong>{item.name}</strong>
                     <em>{exerciseLine(item)}</em>
@@ -231,12 +264,19 @@ function SessionResultForm({
   const [intensity, setIntensity] = useState(session.result?.perceived_intensity ?? 'normal')
   const [grip, setGrip] = useState(session.result?.grip_fatigue ?? 'NORMAL')
   const [recovery, setRecovery] = useState(session.result?.recovery_activity ?? 'mobility')
-  const [actuals, setActuals] = useState<Record<string, { load: string; sets: string; reps: string; duration: string }>>(
+  const [actuals, setActuals] = useState<Record<string, {
+    load: string; sets: string; reps: string; duration: string
+    rpe: string; technique: 'clean' | 'shaky' | 'breakdown'; pain: boolean; skip: boolean
+  }>>(
     Object.fromEntries(session.exercises.map((item) => [item.name, {
       load: String(item.load_value ?? ''),
       sets: String(item.sets ?? ''),
       reps: String(item.reps ?? ''),
       duration: item.duration_seconds ? String(Math.round(item.duration_seconds / 60)) : '',
+      rpe: '',
+      technique: 'clean' as const,
+      pain: false,
+      skip: false,
     }])),
   )
   const [pending, setPending] = useState(false)
@@ -266,14 +306,19 @@ function SessionResultForm({
       if (type === 'grip') payload.grip_fatigue = grip
       payload.exercises = session.exercises.map((item) => {
         const actual = actuals[item.name]
+        const exerciseSkipped = status === 'skipped' || Boolean(actual?.skip)
         return {
           name: item.name,
           actual_load: actual?.load ? Number(actual.load) : undefined,
           actual_sets: actual?.sets ? Number(actual.sets) : undefined,
           actual_reps: actual?.reps || undefined,
           actual_duration_seconds: actual?.duration ? Number(actual.duration) * 60 : undefined,
-          completed: status !== 'skipped',
-          done: status !== 'skipped',
+          completed: !exerciseSkipped,
+          done: !exerciseSkipped,
+          status: exerciseSkipped ? 'skipped' : undefined,
+          rpe: !exerciseSkipped && actual?.rpe ? Number(actual.rpe) : undefined,
+          technique: !exerciseSkipped && type.startsWith('strength_') ? actual?.technique : undefined,
+          pain: !exerciseSkipped && type.startsWith('strength_') ? Boolean(actual?.pain) : undefined,
         }
       })
     }
@@ -301,7 +346,7 @@ function SessionResultForm({
             <button
               key={value}
               type="button"
-              className={status === value ? 'is-selected' : ''}
+              className={`is-${value}${status === value ? ' is-selected' : ''}`}
               aria-pressed={status === value}
               disabled={saved}
               onClick={() => setStatus(value)}
@@ -320,19 +365,77 @@ function SessionResultForm({
         )}
         {type.startsWith('strength_') && (
           <div className="workout-checks">
-            {session.exercises.map((item) => (
-              <label key={item.name} className="workout-check">
-                <span>
-                  <strong>{item.name}</strong>
-                  <em>Prescribed {exerciseLine(item)}</em>
-                  <span className="workout-actuals">
-                    <input placeholder="kg" value={actuals[item.name]?.load ?? ''} disabled={saved} onChange={(event) => setActuals((current) => ({ ...current, [item.name]: { ...current[item.name], load: event.target.value } }))} />
-                    <input placeholder="sets" value={actuals[item.name]?.sets ?? ''} disabled={saved} onChange={(event) => setActuals((current) => ({ ...current, [item.name]: { ...current[item.name], sets: event.target.value } }))} />
-                    <input placeholder="reps" value={actuals[item.name]?.reps ?? ''} disabled={saved} onChange={(event) => setActuals((current) => ({ ...current, [item.name]: { ...current[item.name], reps: event.target.value } }))} />
+            {session.exercises.map((item) => {
+              const actual = actuals[item.name]
+              const update = (patch: Partial<typeof actual>) =>
+                setActuals((current) => ({ ...current, [item.name]: { ...current[item.name], ...patch } }))
+              return (
+                <div key={item.name} className={`workout-check${actual?.skip ? '' : ' is-checked'}`}>
+                  <span>
+                    <strong>{item.name}</strong>
+                    <em>Prescribed {exerciseLine(item)}</em>
+                    <span className="workout-actuals workout-actuals-4">
+                      <label className="workout-stat">
+                        <span>Kg</span>
+                        <input value={actual?.load ?? ''} disabled={saved || actual?.skip} onChange={(event) => update({ load: event.target.value })} />
+                      </label>
+                      <label className="workout-stat">
+                        <span>Sets</span>
+                        <input value={actual?.sets ?? ''} disabled={saved || actual?.skip} onChange={(event) => update({ sets: event.target.value })} />
+                      </label>
+                      <label className="workout-stat">
+                        <span>Reps</span>
+                        <input value={actual?.reps ?? ''} disabled={saved || actual?.skip} onChange={(event) => update({ reps: event.target.value })} />
+                      </label>
+                      <label className="workout-stat">
+                        <span>RPE</span>
+                        <input inputMode="decimal" value={actual?.rpe ?? ''} disabled={saved || actual?.skip} onChange={(event) => update({ rpe: event.target.value })} />
+                      </label>
+                    </span>
+                    {!actual?.skip && (
+                      <div className="workout-exercise-meta">
+                        <div className="workout-choices is-compact" role="radiogroup" aria-label={`${item.name} technique`}>
+                          {(['clean', 'shaky', 'breakdown'] as const).map((value) => (
+                            <button
+                              key={value}
+                              type="button"
+                              className={`is-technique-${value}${actual?.technique === value ? ' is-selected' : ''}`}
+                              aria-pressed={actual?.technique === value}
+                              disabled={saved}
+                              onClick={() => update({ technique: value })}
+                            >
+                              {value === 'clean' ? 'Clean' : value === 'shaky' ? 'Shaky' : 'Breakdown'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="workout-chip-row">
+                      {!actual?.skip && (
+                        <button
+                          type="button"
+                          className={`workout-chip is-danger${actual?.pain ? ' is-active' : ''}`}
+                          aria-pressed={Boolean(actual?.pain)}
+                          disabled={saved}
+                          onClick={() => update({ pain: !actual?.pain })}
+                        >
+                          Pain
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className={`workout-chip${actual?.skip ? ' is-active' : ''}`}
+                        aria-pressed={Boolean(actual?.skip)}
+                        disabled={saved}
+                        onClick={() => update({ skip: !actual?.skip })}
+                      >
+                        Skip this one
+                      </button>
+                    </div>
                   </span>
-                </span>
-              </label>
-            ))}
+                </div>
+              )
+            })}
           </div>
         )}
         {type === 'zone_2' && (
@@ -422,10 +525,15 @@ function SessionResultForm({
                 <option value="HIGH">High</option>
               </select>
             </label>
-            <label className="workout-check">
-              <input type="checkbox" checked={pain} disabled={saved} onChange={(event) => setPain(event.target.checked)} />
-              <span>Pain</span>
-            </label>
+            <button
+              type="button"
+              className={`workout-chip is-danger${pain ? ' is-active' : ''}`}
+              aria-pressed={pain}
+              disabled={saved}
+              onClick={() => setPain(!pain)}
+            >
+              Pain
+            </button>
           </>
         )}
         <label className="workout-field">

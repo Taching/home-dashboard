@@ -302,6 +302,7 @@ export type PlannedWorkout = {
   miss_reason?: string | null
   result?: TrainingSessionResult | null
   exercise_results?: TrainingExerciseResult[]
+  deload?: boolean
 }
 
 export type TrainingSessionResult = {
@@ -328,6 +329,10 @@ export type TrainingExerciseResult = {
   actual_reps?: string | null
   actual_duration_seconds?: number | null
   completed: boolean
+  rpe?: number | null
+  technique?: 'clean' | 'shaky' | 'breakdown' | null
+  pain?: boolean | null
+  status?: 'completed' | 'partial' | 'skipped' | null
 }
 
 export type TrainingSession = PlannedWorkout & {

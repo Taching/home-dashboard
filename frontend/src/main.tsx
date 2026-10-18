@@ -76,7 +76,6 @@ function DashboardApp({
     calendar,
     notion,
     spotify,
-    openclaw: { status: 'not_configured', messages: [], message: null },
     spotifyIntentToken: 0,
     walkReminder,
     lastAdjustment: training.last_adjustment,

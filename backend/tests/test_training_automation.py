@@ -239,13 +239,14 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(sober.json()["status"], "logged")
         self.assertEqual(sober.json()["briefing"]["sobriety"]["answered"], "yes")
         self.assertTrue(sober.json()["briefing"]["answers"]["all_answered"])
-        self.assertEqual(len(self.app.state.openclaw_service.sent), 1)
-        self.assertIn("finished every answer", self.app.state.openclaw_service.sent[0])
+        # Day close is local-only (no agent turn), but it still sends a Telegram notify.
+        self.assertEqual(self.app.state.openclaw_service.sent, [])
         self.assertEqual(len(self.app.state.openclaw_service.notified), 2)
         self.assertTrue(sober.json()["briefing"]["chili_reply"])
+        self.assertEqual(sober.json()["briefing"]["chili_delivery"], "local")
         again = self.client.post("/api/v1/daily/2026-09-15/close")
         self.assertEqual(again.status_code, 200)
-        self.assertEqual(len(self.app.state.openclaw_service.sent), 1)
+        self.assertEqual(self.app.state.openclaw_service.sent, [])
         daily = self.client.get("/api/v1/daily/2026-09-13").json()
         self.assertIsNone(daily["sleep"]["hours"])
         self.assertIsNotNone(daily["sunday"])
@@ -281,10 +282,8 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(body["sunday"]["previous_weight_kg"], 82.8)
         self.assertEqual(body["sunday"]["delta_kg"], -0.4)
         self.assertIn("down 0.4 kg", body["message"])
-        # Sunday now gets one real weekly-training-review agent turn per submission
-        # (one for the first Sunday, one for the second).
-        self.assertEqual(len(self.app.state.openclaw_service.sent), 2)
-        self.assertIn("Sunday weigh-in and week review", self.app.state.openclaw_service.sent[-1])
+        # Sunday review is local-only (no agent turn), but it still sends a Telegram notify.
+        self.assertEqual(self.app.state.openclaw_service.sent, [])
         self.assertIsNotNone(body["sunday"]["coach_review"])
         self.assertTrue(any(item.startswith(f"{settings.public_base_url()}/daily/2026-09-13") for item in self.app.state.openclaw_service.notified))
         self.assertNotEqual(body["advice"], body["message"])
@@ -311,7 +310,7 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(today["logs"][0]["kind"], "strength_a")
         self.assertTrue(today["advice"])
 
-    def test_rest_day_close_asks_chili_after_sober(self) -> None:
+    def test_rest_day_close_uses_local_review_after_sober(self) -> None:
         self.app.state.training_service.planned_type = "rest"
         too_soon = self.client.post("/api/v1/daily/2026-09-15/close")
         self.assertEqual(too_soon.status_code, 200)
@@ -324,11 +323,10 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(sober.status_code, 200)
         self.assertTrue(sober.json()["briefing"]["answers"]["all_answered"])
         self.assertTrue(sober.json()["briefing"]["chili_reply"])
-        self.assertEqual(len(self.app.state.openclaw_service.sent), 1)
-        self.assertTrue(any("Day is closed" in item or "finished every answer" in item or "forwarded:" in item for item in [
-            sober.json()["briefing"]["chili_reply"],
-            *self.app.state.openclaw_service.sent,
-        ]))
+        # Day close is local-only (no agent turn), so sent stays empty.
+        self.assertEqual(self.app.state.openclaw_service.sent, [])
+        self.assertEqual(sober.json()["briefing"]["chili_delivery"], "local")
+        self.assertIn("Day is closed", sober.json()["briefing"]["chili_reply"])
 
     def test_daily_workout_rejects_mismatched_kind(self) -> None:
         response = self.client.post(

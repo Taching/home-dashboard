@@ -134,6 +134,8 @@ Cut 2’s Notion checks assume Cut 3’s cache exists. Stop after 1+4 if Toshi a
 
 ### Cut 4 — Local review + Telegram; no `chat.send`
 
+**Status: Completed (Oct 2026).** Workout review, day close, and Sunday weekly review all use local-only functions. `_ask_chili` has been removed. Telegram notifications via `_notify_chili` remain.
+
 **Do**
 
 - `review_logged_workout`: use `local_workout_review` only. Do not call `_ask_chili`.

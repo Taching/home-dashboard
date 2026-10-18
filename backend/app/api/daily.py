@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import date, datetime
 import hmac
-import logging
 from typing import Literal
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
@@ -12,18 +11,15 @@ from app.core.settings import settings
 from app.domain.daily_plan import DailyPlanService, preview_workout_dict
 from app.domain.training.adjust import CalendarAdjuster
 from app.domain.training.review import (
-    close_day_prompt,
     kinds_match,
     local_close_day_review,
     local_weekly_training_review,
     local_workout_review,
-    weekly_training_review_prompt,
 )
 from app.domain.weekly import SundayCheckIn, WeeklyService
 
 
 daily_router = APIRouter()
-logger = logging.getLogger(__name__)
 _plan = DailyPlanService()
 
 
@@ -157,22 +153,6 @@ def review_logged_workout(
     return advice
 
 
-def _ask_chili(request: Request, message: str) -> tuple[str | None, str | None]:
-    openclaw = getattr(request.app.state, "openclaw_service", None)
-    if openclaw is None or not getattr(openclaw, "configured", lambda: False)():
-        return None, "not_configured"
-    try:
-        result = openclaw.send(message)
-        if not isinstance(result, dict):
-            return None, "failed"
-        reply = result.get("reply")
-        delivery = result.get("delivery_status")
-        text = str(reply).strip() if reply else None
-        return text, str(delivery) if delivery else "completed"
-    except Exception:
-        return None, "failed"
-
-
 def _close_day(request: Request, day: date, *, force: bool = False, briefing: dict | None = None) -> dict:
     if briefing is None:
         briefing = _briefing(request, day)
@@ -184,29 +164,19 @@ def _close_day(request: Request, day: date, *, force: bool = False, briefing: di
     if existing and not force:
         return briefing
     notify_key = f"day-close:{day.isoformat()}"
-    ask_key = f"day-close-ask:{day.isoformat()}"
     notify_service = getattr(request.app.state, "chili_notify_service", None)
     if force and notify_service is not None and hasattr(notify_service, "forget"):
-        notify_service.forget(ask_key)
         notify_service.forget(notify_key)
-    if notify_service is not None and hasattr(notify_service, "should_send"):
-        if not notify_service.should_send(ask_key):
-            # Another concurrent request is already asking Chili (or just did); don't double-fire.
-            return briefing
-    reply, asked = _ask_chili(request, close_day_prompt(briefing=briefing))
-    if notify_service is not None and hasattr(notify_service, "mark_sent"):
-        notify_service.mark_sent(ask_key)
-    text = reply or local_close_day_review(briefing=briefing)
+    text = local_close_day_review(briefing=briefing)
     _notify_chili(request, f"{_daily_url(day)}\n\n{text}", notify_key)
-    delivery = asked or "failed"
     wellbeing = getattr(request.app.state, "wellbeing_service", None)
     if wellbeing is not None and hasattr(wellbeing, "store_chili_close"):
-        wellbeing.store_chili_close(day, text, delivery)
+        wellbeing.store_chili_close(day, text, "local")
     briefing["chili_reply"] = text
-    briefing["chili_delivery"] = delivery
+    briefing["chili_delivery"] = "local"
     briefing["advice"] = text
     answers["chili_reply"] = text
-    answers["chili_delivery"] = delivery
+    answers["chili_delivery"] = "local"
     briefing["answers"] = answers
     return briefing
 
@@ -391,23 +361,6 @@ def _weekly_training_review(request: Request, day: date, check_in: SundayCheckIn
     training = request.app.state.training_service
     week_review = training.week_review(check_in.week_start) if hasattr(training, "week_review") else {}
     weight_line = WeeklyService.weight_line(check_in)
-    sessions_summary = WeeklyService.week_summary_text(check_in.sessions)
-    preferences = getattr(request.app.state, "training_preferences_service", None)
-    prefs_text = preferences.prompt_snippet() if preferences else ""
-
-    openclaw = getattr(request.app.state, "openclaw_service", None)
-    if openclaw is not None and openclaw.configured():
-        prompt = weekly_training_review_prompt(
-            week_review=week_review, weight_line=weight_line,
-            sessions_summary=sessions_summary, preferences=prefs_text,
-        )
-        try:
-            reply = openclaw.send(prompt).get("reply")
-            if reply:
-                return str(reply).strip()
-        except Exception:
-            logger.exception("Weekly training review via OpenClaw failed; falling back to local review")
-
     return local_weekly_training_review(week_review=week_review, weight_line=weight_line)
 
 

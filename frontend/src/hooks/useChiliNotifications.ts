@@ -7,7 +7,6 @@ import { useClock } from './useClock'
 import type {
   CalendarToday,
   NotionToday,
-  OpenClawConversation,
   SpotifyNowPlaying,
   WalkReminder,
   TrainingOverview,
@@ -18,7 +17,6 @@ type Inputs = {
   calendar: CalendarToday
   notion: NotionToday
   spotify: SpotifyNowPlaying
-  openclaw: OpenClawConversation
   spotifyIntentToken: number
   walkReminder: WalkReminder
   lastAdjustment?: TrainingOverview['last_adjustment']
@@ -29,7 +27,6 @@ export function useChiliNotifications({
   calendar,
   notion,
   spotify,
-  openclaw,
   spotifyIntentToken,
   walkReminder,
   lastAdjustment,
@@ -48,12 +45,11 @@ export function useChiliNotifications({
       calendar,
       notion,
       spotify,
-      openclaw,
       spotifyIntentToken,
       walkReminder,
       lastAdjustment,
     })
-  }, [calendar, controller, lastAdjustment, notion, now, openclaw, spotify, spotifyIntentToken, state, today, walkReminder])
+  }, [calendar, controller, lastAdjustment, notion, now, spotify, spotifyIntentToken, state, today, walkReminder])
 
   useEffect(() => () => controller.dispose(), [controller])
 

@@ -677,27 +677,6 @@ export type TrainingLogResult = {
   briefing?: DailyBriefing
 }
 
-export type OpenClawMessage = {
-  id: string
-  role: 'user' | 'assistant' | 'system'
-  text: string
-  created_at: string | null
-  sender?: 'user' | 'home-dashboard-agent' | 'assistant' | 'system' | null
-}
-
-export type OpenClawConversation = {
-  status: IntegrationStatus
-  messages: OpenClawMessage[]
-  message: string | null
-}
-
-export type OpenClawSendResult = {
-  status: 'success' | 'failed'
-  delivery_status: string | null
-  reply: string | null
-  message: string | null
-}
-
 export type ActivityEventDirection = 'in' | 'out' | 'info'
 
 export type ActivityEvent = {

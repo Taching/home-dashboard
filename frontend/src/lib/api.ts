@@ -7,8 +7,6 @@ import type {
   NotionToday,
   Reading,
   SpotifyNowPlaying,
-  OpenClawConversation,
-  OpenClawSendResult,
   ActivityEvent,
   WeatherForecast,
   WalkReminder,
@@ -74,22 +72,6 @@ export async function fetchNotionToday() {
 
 export async function fetchSpotifyNowPlaying(signal?: AbortSignal) {
   return requireJson<SpotifyNowPlaying>(await freshGet('/api/v1/spotify/now-playing', signal))
-}
-
-export async function fetchOpenClawMessages() {
-  return requireJson<OpenClawConversation>(await fetch('/api/v1/openclaw/messages'))
-}
-
-export function openOpenClawMessageStream(
-  onConversation: (conversation: OpenClawConversation) => void,
-  onError?: () => void,
-) {
-  const stream = new EventSource('/api/v1/openclaw/messages/stream')
-  stream.addEventListener('conversation', (event) => {
-    onConversation(JSON.parse((event as MessageEvent).data) as OpenClawConversation)
-  })
-  stream.onerror = () => onError?.()
-  return stream
 }
 
 export async function fetchActivityEvents(limit = 40) {
@@ -283,13 +265,6 @@ export async function logWeeklyCheckIn(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-  }))
-}
-
-export async function sendOpenClawMessage(message: string) {
-  return requireJson<OpenClawSendResult>(await fetch('/api/v1/openclaw/messages', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
   }))
 }
 

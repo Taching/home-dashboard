@@ -1,6 +1,7 @@
 import unittest
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -11,6 +12,17 @@ from sqlalchemy.pool import StaticPool
 from app.api.router import api_router
 from app.database.session import Base
 from app.domain.wellbeing import WellbeingService
+
+
+def _make_frozen_datetime(frozen_time: datetime):
+    """Return a datetime class whose now() always returns frozen_time."""
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return frozen_time.replace(tzinfo=None)
+            return frozen_time.astimezone(tz)
+    return FrozenDatetime
 
 
 def test_session_factory():
@@ -79,7 +91,7 @@ class DailyBriefingApiTests(unittest.TestCase):
         self.app.include_router(api_router, prefix="/api/v1")
         self.app.state.wellbeing_service = WellbeingService(
             self.factory, timezone_name="Asia/Tokyo",
-            sober_baseline_date=self.day - timedelta(days=1), sober_baseline_days=7,
+            sober_baseline_date=self.day, sober_baseline_days=7,
         )
         self.app.state.calendar_bridge_service = FakeCalendar()
         self.app.state.training_service = FakeTraining()
@@ -88,7 +100,11 @@ class DailyBriefingApiTests(unittest.TestCase):
         self.client = TestClient(self.app)
 
     def test_daily_page_combines_workout_meetings_and_sobriety(self):
-        response = self.client.get(f"/api/v1/daily/{self.day.isoformat()}")
+        frozen_time = datetime(2026, 9, 14, 12, 0, 0, tzinfo=UTC)
+        frozen_dt = _make_frozen_datetime(frozen_time)
+        with patch("app.domain.daily_plan.datetime", frozen_dt), \
+             patch("app.domain.wellbeing.datetime", frozen_dt):
+            response = self.client.get(f"/api/v1/daily/{self.day.isoformat()}")
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()

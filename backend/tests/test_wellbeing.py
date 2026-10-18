@@ -89,20 +89,22 @@ class WellbeingServiceTests(unittest.TestCase):
         self.assertEqual(summary.sober_days, 1)
         self.assertEqual(summary.workouts_this_week, 1)
 
-    def test_unanswered_day_leaves_streak_unchanged_and_late_correction_recomputes(self) -> None:
+    def test_unanswered_days_keep_the_streak_and_a_drink_resets_it(self) -> None:
         self.service.record(
             date(2026, 8, 25), sober=True,
             now=datetime(2026, 8, 25, 13, tzinfo=UTC),
         )
         before = self.service.summary(datetime(2026, 8, 26, 13, tzinfo=UTC))
-        self.assertEqual(before.sober_days, 8)
+        # Baseline is 7 on Aug 23. Aug 24 and Aug 26 have no drink report, so they count.
+        self.assertEqual(before.sober_days, 10)
         self.assertTrue(before.checkin_stale)
 
         after = self.service.record(
             date(2026, 8, 25), sober=False,
             now=datetime(2026, 8, 26, 14, tzinfo=UTC),
         )
-        self.assertEqual(after.sober_days, 0)
+        # Aug 24 counts, the Aug 25 drink resets, and Aug 26 counts again.
+        self.assertEqual(after.sober_days, 1)
 
     def test_training_rolls_over_on_monday_in_tokyo(self) -> None:
         self.service.record(
@@ -145,25 +147,24 @@ class WellbeingServiceTests(unittest.TestCase):
         self.assertFalse(before_cutoff.checkin_stale)
         self.assertTrue(after_cutoff.checkin_stale)
 
-    def test_sober_followup_after_missed_evening(self) -> None:
+    def test_sober_nudge_is_one_evening_line(self) -> None:
         self.service.record(
             date(2026, 9, 11), sober=True,
             now=datetime(2026, 9, 11, 13, tzinfo=UTC),
         )
         morning = self.service.sober_nudges(datetime(2026, 9, 13, 2, tzinfo=UTC))
-        self.assertEqual([nudge.kind for nudge in morning], ["followup"])
-        self.assertEqual(morning[0].day, date(2026, 9, 12))
-        self.assertIn("/daily/2026-09-12", morning[0].message)
+        self.assertEqual(morning, [])
 
         evening = self.service.sober_nudges(datetime(2026, 9, 13, 12, 30, tzinfo=UTC))
-        self.assertEqual({nudge.kind for nudge in evening}, {"ask", "followup"})
-        self.assertTrue(any(nudge.day == date(2026, 9, 13) and nudge.kind == "ask" for nudge in evening))
+        self.assertEqual([nudge.kind for nudge in evening], ["ask"])
+        self.assertTrue(evening[0].message.startswith("The streak keeps going."))
+        self.assertIn("/sober", evening[0].message)
 
         self.service.record(
-            date(2026, 9, 12), sober=True,
-            now=datetime(2026, 9, 13, 3, tzinfo=UTC),
+            date(2026, 9, 13), sober=True,
+            now=datetime(2026, 9, 13, 13, tzinfo=UTC),
         )
-        after = self.service.sober_nudges(datetime(2026, 9, 13, 2, 10, tzinfo=UTC))
+        after = self.service.sober_nudges(datetime(2026, 9, 13, 13, 10, tzinfo=UTC))
         self.assertEqual(after, [])
 
     def test_weight_is_tracked_without_masking_a_missing_checkin(self) -> None:
@@ -171,6 +172,9 @@ class WellbeingServiceTests(unittest.TestCase):
             date(2026, 8, 30), weight_kg=85.0,
             now=datetime(2026, 8, 30, 13, tzinfo=UTC),
         )
+        history = self.service.history(days=14, now=datetime(2026, 8, 30, 13, tzinfo=UTC))
+        self.assertEqual(history["weights"], [{"date": "2026-08-30", "kg": 85.0}])
+        self.assertEqual(history["sober"][-1]["date"], "2026-08-30")
         self.assertEqual(summary.current_weight_kg, 85.0)
         self.assertEqual(summary.latest_weight_date, date(2026, 8, 30))
         self.assertTrue(summary.checkin_stale)

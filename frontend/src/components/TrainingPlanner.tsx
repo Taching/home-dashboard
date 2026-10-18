@@ -38,14 +38,19 @@ function phaseLabel(phase: string) {
     build_november: 'Build · November',
     taper_november: 'Taper · November',
     competition_november: 'Competition · November',
+    build_march: 'Build · March',
+    peak_march: 'Final six weeks',
+    taper_march: 'Taper · March',
+    competition_march: 'Competition · March',
     post_competition: 'Season recovery',
   } as Record<string, string>)[phase] ?? phase.replaceAll('_', ' ')
 }
 
 function eventName(name: string) {
+  if (/all japan master/i.test(name)) return 'All Japan Master'
   if (/all japan/i.test(name)) return 'All Japan'
   if (/asian open/i.test(name)) return 'Asian Open'
-  return name.replace(/ Gi BJJ Tournament/i, '').replace(/\s+2026$/, '')
+  return name.replace(/ Gi BJJ Tournament/i, '').replace(/\s+20\d\d$/, '')
 }
 
 function eventDateRange(start: string, end: string) {

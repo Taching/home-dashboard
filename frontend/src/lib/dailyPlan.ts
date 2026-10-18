@@ -20,7 +20,7 @@ export function dailyAnswersFromBriefing(briefing: DailyBriefing): DailyAnswers 
     && kind !== 'competition'
     && briefing.workout.status !== 'preview',
   )
-  const sundayRequired = Boolean(briefing.sunday) && !briefing.preview
+  const weeklyRequired = Boolean(briefing.weekly) && !briefing.preview
   const items = [
     {
       id: 'workout' as const,
@@ -29,16 +29,16 @@ export function dailyAnswersFromBriefing(briefing: DailyBriefing): DailyAnswers 
       done: !workoutRequired || workoutAlreadyLogged(briefing.workout?.status),
     },
     {
-      id: 'sunday' as const,
-      label: 'Sunday review',
-      required: sundayRequired,
-      done: !sundayRequired || Boolean(briefing.sunday?.submitted),
+      id: 'weekly' as const,
+      label: 'Monday check-in',
+      required: weeklyRequired,
+      done: !weeklyRequired || Boolean(briefing.weekly?.submitted),
     },
     {
       id: 'sober' as const,
       label: 'Sober',
-      required: !briefing.preview,
-      done: briefing.preview || briefing.sobriety.answered != null,
+      required: false,
+      done: true,
     },
   ]
   return {

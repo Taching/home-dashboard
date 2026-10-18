@@ -33,11 +33,18 @@ export function Header({
   const bjjTarget = wellbeing.jiujitsu_weekly_goal
   const strengthTarget = wellbeing.gym_weekly_goal
   const weekHint = training.phase.startsWith('taper') ? 'Taper week' : 'This week'
-  const currentWeight = training.readiness?.weight_kg ?? wellbeing.current_weight_kg
-  const averageWeight = training.trends.weight_7d_average
-  const weightHint = averageWeight != null
-    ? `7d ${averageWeight.toFixed(1)}`
-    : `Goal ${wellbeing.weight_goal_kg}`
+  // The cut is judged only from the seven-day average; today's scale number is noise.
+  const averageWeight = wellbeing.weight_7d_average_kg ?? training.trends.weight_7d_average
+  const currentWeight = averageWeight ?? training.readiness?.weight_kg ?? wellbeing.current_weight_kg
+  const weightTarget = wellbeing.weight_target_kg
+  const weightHint = weightTarget != null
+    ? `7d · aim ${weightTarget.toFixed(1)}`
+    : averageWeight != null ? '7d avg' : `Goal ${wellbeing.weight_goal_kg}`
+  // Last night from the Garmin watch; hidden until it has synced.
+  const sleep = wellbeing.watch
+  const sleepHint = sleep?.hrv_status
+    ? `HRV ${sleep.hrv_status}`
+    : sleep?.sleep_score != null ? `Score ${sleep.sleep_score}` : 'Last night'
 
   return (
     <header className={`dashboard-header${showNotification ? ' has-notification' : ''}`}>
@@ -77,6 +84,16 @@ export function Header({
           tone="weight"
           description={`Weight ${currentWeight ?? 'not recorded'} kilograms. ${weightHint}.`}
         />
+        {sleep && (
+          <HeaderStat
+            label="Sleep"
+            value={sleep.sleep_hours.toFixed(1)}
+            unit="h"
+            hint={sleepHint}
+            tone="sleep"
+            description={`Slept ${sleep.sleep_hours.toFixed(1)} hours last night. ${sleepHint}.`}
+          />
+        )}
         <WalkingPadBadge walkingPad={walkingPad} />
         <WeatherWidget forecast={weather} />
         <time className="header-clock" dateTime={now.toISOString()}>

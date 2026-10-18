@@ -8,8 +8,9 @@ function formatSteps(value: number) {
 export function WalkingPadBadge({ walkingPad }: { walkingPad: WalkingPadToday }) {
   if (walkingPad.status === 'not_configured') return null
 
-  const steps = walkingPad.total_steps
-  const goal = walkingPad.goal_steps || 10_000
+  // Watch steps count all day; the pad only counts treadmill walks.
+  const steps = walkingPad.day_steps || walkingPad.total_steps
+  const goal = walkingPad.goal_steps || 8_000
   const isWalking = walkingPad.status === 'walking'
   const hint = walkingPad.goal_met ? 'Goal met' : `of ${formatSteps(goal)}`
 

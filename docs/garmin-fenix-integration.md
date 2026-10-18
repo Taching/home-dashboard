@@ -1,6 +1,6 @@
 # Garmin Fenix 8 Pro Dashboard Integration
 
-> Future work — not implemented yet. Plan for adding Garmin Connect stats to the Chili home dashboard.
+> **Implemented (Oct 2026), phone-only v1** — `backend/app/domain/garmin.py`, `app/jobs/garmin_sync.py` (30-min poll), `app/jobs/garmin_login.py` (one-time MFA login), table `garmin_daily_snapshots`. Shipped scope differs from the plan below: steps ARE used (watch steps count toward the 8,000 step goal via `WalkingPadService.use_watch_steps`), Garmin sleep fills the daily sleep field only when empty, resting HR / HRV / Body Battery / sleep score show on `/daily` and as weekly averages in the Monday check-in, and watch activities are listed but never change session status. The 06:00 morning Telegram (`_morning_message` in `api/training.py`) does one fresh sync, then adds a `Watch:` line and, on a rough night (sleep < 6 h, Body Battery high < 30, HRV low/unbalanced/poor), one `recovery_hint()` sentence — the same hint shows on the `/daily` Fenix card. The wall gets only a Sleep header stat (`wellbeing.watch`); the hint is deliberately kept out of the wall advice. No wall panel. Nothing feeds the scheduler. The rest of this doc is the original plan.
 
 ## Overview
 

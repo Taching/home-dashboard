@@ -207,11 +207,11 @@ export class ChiliNotificationController {
         continue
       }
       this.meetingKeysCollected.add(dedupeKey)
+      // Wall banner only — Toshi turned off the Telegram ping for meetings.
       found.push(buildNotification(
         'meeting_soon',
         formatMeetingSoon(event.title, 10),
         dedupeKey,
-        { sendTelegram: true },
       ))
     }
 

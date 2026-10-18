@@ -376,7 +376,8 @@ class CalendarAdjuster:
                             "role": "system",
                             "content": (
                                 "Rewrite the plan-change notification in Chili's voice using SOUL.md and IDENTITY.md. "
-                                "Keep the daily URL on the first line. Keep How and Why. Do not invent extra workouts. "
+                                "First line is one sentence of what changed. The daily URL is the next line. "
+                                "Do not add How or Why bullets. Do not invent extra workouts. "
                                 "Do not sound like a corporate coach. Do not add baby talk unless the soul asks for it."
                             ),
                         },
@@ -661,14 +662,9 @@ def explain_adjustment(
     if prescription.get("time"):
         tomorrow = f"{tomorrow} at {prescription['time']}"
     banner = _banner(mutations, today)
-    lines = [daily_url, "", "Changed the week because you asked.", "", "How"]
-    lines.extend(f"• {item}" for item in how)
-    lines.extend(["", "Why"])
-    lines.extend(f"• {item}" for item in why)
-    if tomorrow:
-        lines.extend(["", f"Tomorrow: {tomorrow}."])
-        if prescription.get("why"):
-            lines.append(str(prescription["why"]))
+    from app.domain.telegram_text import telegram_message
+    summary = f"Changed the week. Tomorrow: {tomorrow}." if tomorrow else "Changed the week."
+    lines = [telegram_message(summary, daily_url)]
     decision_id = f"training:adjust:{today.isoformat()}:{'-'.join(item.op for item in mutations)}"
     return {
         "id": decision_id,

@@ -324,15 +324,7 @@ class TrainingServiceTests(unittest.TestCase):
         updated = self.service.log_matching_workout(
             date(2026, 9, 13),
             kind="strength_a",
-            exercises=[
-                {"name": "Warm-up", "done": True},
-                {"name": "Back Squat", "done": True},
-                {"name": "Bench Press", "done": True},
-                {"name": "Pull-ups", "done": True},
-                {"name": "Bulgarian Split Squat", "done": True},
-                {"name": "Standing Landmine Rotation", "done": True},
-                {"name": "Stationary Bike Intervals", "done": True},
-            ],
+            exercises=[{"name": item["name"], "done": True} for item in created["exercises"]],
             note="easy lifts, hard intervals",
             now=sunday,
         )

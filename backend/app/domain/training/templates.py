@@ -2,27 +2,36 @@ from app.domain.training import strength_progress as sp
 from app.domain.training.types import ExercisePrescription as E
 from app.domain.training.types import WorkoutTemplate, WorkoutType
 
-# Conditioning entries inside the strength templates that the progression
-# engine never touches (no working load/rep target to track).
-STRENGTH_SKIP = {"Stationary bike warm-up", "Stationary bike intervals"}
+# Entries inside the strength templates that the progression engine never
+# touches (conditioning, carries, isometrics — no load/rep target to track).
+STRENGTH_SKIP = {
+    "Stationary bike warm-up", "Stationary bike intervals", "Easy cardio",
+    "Suitcase Carry", "Farmer Carry", "Neck Isometric Holds", "Side Plank",
+}
 
+# March 2027 plan. Starting loads are estimates from the last logged lifts
+# (deadlift 142.5×3, back squat 122.5×3, bench 87.5×3, row 60×9); the first
+# logged actual load replaces them (TrainingService._advance_strength_progress).
+_ESTIMATE = "Starting estimate — log the load you actually used."
+_RESERVE = "Stop with about two good reps left. Never to failure."
 
 WORKOUT_TEMPLATES: dict[WorkoutType, WorkoutTemplate] = {
     WorkoutType.STRENGTH_A: WorkoutTemplate(
         WorkoutType.STRENGTH_A,
         "Gym (Strength A)",
-        60,
+        75,
         "hard",
         (
-            E("Stationary bike warm-up", duration_seconds=8 * 60, notes="Easy"),
-            E("Back Squat", 120, "kg", 3, "3"),
-            E("Bench Press", 85, "kg", 3, "3"),
-            E("Pull-ups", sets=3, reps="6–8", notes="Bodyweight"),
-            E("Bulgarian Split Squat", 14, "kg/hand", 2, "6/leg"),
-            E("Standing Landmine Rotation", 20, "kg", 3, "8/side"),
-            E("Stationary bike intervals", sets=10, reps="30 sec hard / 30 sec easy", notes="Repeatable output; record every round"),
+            E("Stationary bike warm-up", duration_seconds=6 * 60, notes="Easy"),
+            E("Trap-bar Deadlift", 125, "kg", 3, "4–6", notes=f"{_RESERVE} {_ESTIMATE}"),
+            E("Dumbbell Bench Press", 30, "kg/hand", 3, "6–8", notes=f"Or weighted push-up. {_ESTIMATE}"),
+            E("Bulgarian Split Squat", 14, "kg/hand", 2, "6–8/leg"),
+            E("Chest-Supported Row", 24, "kg/hand", 3, "6–10", notes=_ESTIMATE),
+            E("Suitcase Carry", 28, "kg", 2, "30–40 m/side", notes="Stay tall; no lean toward the bell."),
+            E("Neck Isometric Holds", sets=2, reps="15–20 s each direction", notes="Front, back, both sides. Gentle pressure."),
+            E("Easy cardio", duration_seconds=25 * 60, notes="20–30 min conversational pace: incline walk, bike, row, or swim. No sprints."),
         ),
-        "10 × 30 seconds hard / 30 seconds easy; do not sprint the first round.",
+        "20–30 minutes easy cardio after lifting; conversational pace, no intervals.",
     ),
     WorkoutType.STRENGTH_B: WorkoutTemplate(
         WorkoutType.STRENGTH_B,
@@ -30,20 +39,21 @@ WORKOUT_TEMPLATES: dict[WorkoutType, WorkoutTemplate] = {
         55,
         "normal",
         (
-            E("Deadlift", 140, "kg", 3, "3", notes="RPE 7–8. Rest 3–4 minutes."),
-            E("Military Press", 52, "kg", 3, "5–7", notes="RPE 7–8."),
-            E("Weighted Dips", 20, "kg", 3, "6–8"),
-            E("Bulgarian Split Squat", None, None, 3, "6–8/leg", notes="Stability and depth before load."),
-            E("Leg Raise", None, None, 3, "6–10", notes="Progress reps, not added weight."),
-            E("Seated Cable Row", 60, "kg", 3, "8–12", notes="Controlled eccentric, no torso swing."),
+            E("Stationary bike warm-up", duration_seconds=6 * 60, notes="Easy"),
+            E("Front Squat", 90, "kg", 3, "4–6", notes=f"Or goblet squat. {_RESERVE} {_ESTIMATE}"),
+            E("Romanian Deadlift", 100, "kg", 3, "6–8", notes=_ESTIMATE),
+            E("Military Press", 52, "kg", 3, "6–8", notes="Or landmine press."),
+            E("Pull-ups", sets=3, reps="6–10", notes="Bodyweight, or lat pulldown."),
+            E("Farmer Carry", 32, "kg/hand", 3, "30–40 m"),
+            E("Side Plank", sets=2, reps="30 s/side", notes="Or Pallof press, 2 × 10/side."),
         ),
     ),
     WorkoutType.ZONE_2: WorkoutTemplate(
         WorkoutType.ZONE_2,
-        "Zone 2",
-        45,
+        "Easy cardio (Zone 2)",
+        35,
         "easy",
-        (E("Zone 2 cardio", duration_seconds=45 * 60, notes="Conversation pace; do not turn it into tempo"),),
+        (E("Zone 2 cardio", duration_seconds=35 * 60, notes="30–40 min conversational pace: incline walk, bike, row, or swim. Do not turn it into tempo."),),
     ),
     WorkoutType.GRIP: WorkoutTemplate(
         WorkoutType.GRIP,
@@ -115,21 +125,37 @@ def apply_adaptation(template: WorkoutTemplate, adaptation) -> WorkoutTemplate:
     return WorkoutTemplate(template.type, template.title, template.estimated_minutes, template.intensity, tuple(exercises), template.conditioning)
 
 
-def reduced_template(workout_type: WorkoutType) -> WorkoutTemplate:
+# Taper keeps the main lifts moderately heavy at low volume; accessories,
+# carries and the cardio finisher drop out.
+TAPER_KEEP = {
+    WorkoutType.STRENGTH_A: {"Stationary bike warm-up", "Trap-bar Deadlift", "Dumbbell Bench Press", "Chest-Supported Row"},
+    WorkoutType.STRENGTH_B: {"Stationary bike warm-up", "Front Squat", "Military Press", "Pull-ups"},
+}
+
+
+def taper_strength(workout_type: WorkoutType, exercises: tuple[E, ...]) -> WorkoutTemplate:
     base = WORKOUT_TEMPLATES[workout_type]
-    if workout_type == WorkoutType.STRENGTH_A:
-        keep = {"Stationary bike warm-up", "Back Squat", "Bench Press", "Pull-ups", "Standing Landmine Rotation"}
-    else:
-        keep = {"Deadlift", "Military Press", "Weighted Dips"}
-    exercises = tuple(
-        E(
+    keep = TAPER_KEEP[workout_type]
+    reduced = tuple(
+        item if item.name in STRENGTH_SKIP else E(
             item.name, item.load_value, item.load_unit,
-            1 if item.name == "Deadlift" else min(item.sets or 2, 2),
-            item.reps, item.duration_seconds, "Taper: leave substantial reserve",
+            min(item.sets or 2, 2), item.reps, item.duration_seconds,
+            "Taper: same load, short and sharp, leave substantial reserve",
         )
-        for item in base.exercises if item.name in keep
+        for item in exercises if item.name in keep
     )
-    return WorkoutTemplate(base.type, f"{base.title} · taper", 35, "normal", exercises)
+    return WorkoutTemplate(base.type, f"{base.title} · taper", 35, "normal", reduced)
+
+
+def peak_strength(exercises: tuple[E, ...]) -> tuple[E, ...]:
+    """Final six weeks: keep the weight moderately heavy, two working sets."""
+    return tuple(
+        item if item.name in STRENGTH_SKIP or item.sets is None else E(
+            item.name, item.load_value, item.load_unit, min(item.sets, 2),
+            item.reps, item.duration_seconds, item.notes,
+        )
+        for item in exercises
+    )
 
 
 def build_strength_exercises(

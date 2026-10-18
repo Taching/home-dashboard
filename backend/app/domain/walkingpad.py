@@ -43,6 +43,10 @@ class WalkingPadTodaySnapshot:
     session_count: int
     active_session: WalkingPadActiveSession | None
     goal_met: bool
+    # All-day steps: the larger of the pad and the watch (which also counts
+    # treadmill steps when worn). The step goal is judged on this.
+    day_steps: int = 0
+    watch_steps: int | None = None
 
 
 @dataclass(frozen=True)
@@ -57,6 +61,11 @@ class WalkingPadService:
         self._session_factory = session_factory
         self._bridge_token = bridge_token
         self._timezone = ZoneInfo(settings.timezone)
+        self._watch_steps = None
+
+    def use_watch_steps(self, provider) -> None:
+        """provider(local_date) -> steps from the Garmin watch, or None."""
+        self._watch_steps = provider
 
     def configured(self) -> bool:
         token = self._bridge_token if self._bridge_token is not None else settings.walkingpad_bridge_token
@@ -170,7 +179,9 @@ class WalkingPadService:
         goal_minutes = settings.walkingpad_goal_minutes
         goal_distance = settings.walkingpad_goal_distance_km
         goal_steps = settings.walkingpad_goal_steps
-        goal_met = total_steps >= goal_steps
+        watch_steps = self._watch_steps_for(current)
+        day_steps = max(total_steps, watch_steps or 0)
+        goal_met = day_steps >= goal_steps
         status = self._resolve_status(synced_at, active is not None, current)
         active_session = None
         if active is not None:
@@ -195,7 +206,17 @@ class WalkingPadService:
             session_count=len(completed) + (1 if active else 0),
             active_session=active_session,
             goal_met=goal_met,
+            day_steps=day_steps,
+            watch_steps=watch_steps,
         )
+
+    def _watch_steps_for(self, current: datetime) -> int | None:
+        if self._watch_steps is None:
+            return None
+        try:
+            return self._watch_steps(current.astimezone(self._timezone).date())
+        except Exception:
+            return None
 
     def reminder(
         self,
@@ -223,7 +244,7 @@ class WalkingPadService:
         local_date = local_now.date().isoformat()
         next_key = next_event.external_id if next_event else "end-of-day"
         dedupe_key = f"walk:window:{local_date}:{next_key}"
-        walked = snapshot.total_steps
+        walked = snapshot.day_steps or snapshot.total_steps
         goal = snapshot.goal_steps
         if next_event is not None:
             title = next_event.title

@@ -34,18 +34,26 @@ DEFAULT_RECIPE = ExerciseRecipe(kind="load", increment=2.5)
 # blocks) fall back to DEFAULT_RECIPE, which is never reached in practice because
 # the caller skips non-strength entries entirely (see templates.STRENGTH_SKIP).
 RECIPES: dict[str, ExerciseRecipe] = {
+    # March 2027 plan: every main lift is a rep range; add a small amount of
+    # weight only once every set reaches the top of the range cleanly.
+    "Trap-bar Deadlift": ExerciseRecipe(kind="double_progression", increment=2.5, rep_min=4, rep_max=6),
+    "Dumbbell Bench Press": ExerciseRecipe(kind="double_progression", increment=2.0, rep_min=6, rep_max=8),
+    "Chest-Supported Row": ExerciseRecipe(kind="double_progression", increment=2.0, rep_min=6, rep_max=10),
+    "Front Squat": ExerciseRecipe(kind="double_progression", increment=2.5, rep_min=4, rep_max=6),
+    "Romanian Deadlift": ExerciseRecipe(kind="double_progression", increment=2.5, rep_min=6, rep_max=8),
+    # Retired after the October final; kept so logged history still resolves.
     "Deadlift": ExerciseRecipe(kind="load", increment=2.5, fixed_reps="3"),
     "Back Squat": ExerciseRecipe(kind="load", increment=2.5, fixed_reps="3"),
     "Bench Press": ExerciseRecipe(kind="load", increment=2.5, fixed_reps="3"),
     "Standing Landmine Rotation": ExerciseRecipe(kind="load", increment=1.0, fixed_reps="8/side"),
-    "Military Press": ExerciseRecipe(kind="double_progression", increment=2.5, rep_min=5, rep_max=7),
+    "Military Press": ExerciseRecipe(kind="double_progression", increment=2.5, rep_min=6, rep_max=8),
     "Weighted Dips": ExerciseRecipe(kind="double_progression", increment=2.5, rep_min=6, rep_max=8),
     "Seated Cable Row": ExerciseRecipe(kind="double_progression", increment=2.5, rep_min=8, rep_max=12),
     "Bulgarian Split Squat": ExerciseRecipe(
         kind="double_progression", increment=1.0, rep_min=6, rep_max=8,
         unit_suffix="/leg", load_optional=True,
     ),
-    "Pull-ups": ExerciseRecipe(kind="double_progression", increment=0.0, rep_min=6, rep_max=8, load_optional=True),
+    "Pull-ups": ExerciseRecipe(kind="double_progression", increment=0.0, rep_min=6, rep_max=10, load_optional=True),
     "Leg Raise": ExerciseRecipe(kind="double_progression", increment=0.0, rep_min=6, rep_max=10, load_optional=True),
 }
 
@@ -134,10 +142,9 @@ def apply_decision(state: ExerciseState, decision: Decision, recipe: ExerciseRec
 
 
 def deload_prescription(state: ExerciseState, recipe: ExerciseRecipe) -> ExerciseState:
-    sets = max(1, state.sets - 1)
+    """Every fourth week: about 40% fewer working sets at the same load."""
+    sets = max(1, round(state.sets * 0.6))
     load = state.load_value
-    if not recipe.load_optional and load is not None:
-        load = _round_half(load * 0.85)
     rep_target = state.rep_target
     if recipe.kind == "double_progression" and recipe.rep_min is not None:
         rep_target = recipe.rep_min

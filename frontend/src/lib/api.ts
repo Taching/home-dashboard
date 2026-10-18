@@ -20,6 +20,7 @@ import type {
   TrainingLogResult,
   WorkoutLogPayload,
   DailyBriefing,
+  WellbeingHistory,
   TrainingSession,
   WeeklyReview,
   PlanAdjustment,
@@ -202,6 +203,10 @@ export async function logTraining(payload: TrainingLogPayload) {
   }))
 }
 
+export async function fetchWellbeingHistory(days = 90, signal?: AbortSignal) {
+  return requireJson<WellbeingHistory>(await freshGet(`/api/v1/wellbeing/history?days=${days}`, signal))
+}
+
 export async function fetchDailyBriefing(day: string, preview?: string, signal?: AbortSignal) {
   const query = preview ? `?preview=${encodeURIComponent(preview)}` : ''
   return requireJson<DailyBriefing>(await freshGet(`/api/v1/daily/${day}${query}`, signal))
@@ -255,11 +260,26 @@ export async function closeDailyDay(day: string, force = false) {
   }))
 }
 
-export async function logSundayReview(
+export async function logWeight(day: string, weightKg: number) {
+  return requireJson<TrainingLogResult>(await fetch(`/api/v1/daily/${day}/weight`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ weight_kg: weightKg }),
+  }))
+}
+
+export async function logWeeklyCheckIn(
   day: string,
-  payload: { weight_kg?: number; same_as_last?: boolean; note?: string },
+  payload: {
+    energy: number
+    hunger: number
+    bjj_performance: number
+    waist_cm?: number
+    pain_note?: string
+    note?: string
+  },
 ) {
-  return requireJson<DailyBriefing>(await fetch(`/api/v1/daily/${day}/sunday`, {
+  return requireJson<DailyBriefing>(await fetch(`/api/v1/daily/${day}/weekly`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

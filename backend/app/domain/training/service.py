@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from uuid import NAMESPACE_URL, uuid5
 from zoneinfo import ZoneInfo
@@ -34,6 +35,7 @@ from app.domain.training.policy import (
     assess_week_quality,
     weekly_targets,
 )
+from app.domain.training.phases import MARCH_COMPETITION_END, MARCH_COMPETITION_START, MARCH_TAPER_START
 from app.domain.training.scheduler import TrainingScheduler, assess_readiness, phase_for_date
 from app.domain.training.review import exercise_done, kinds_match
 from app.domain.training.templates import STRENGTH_SKIP, WORKOUT_TEMPLATES, build_strength_exercises
@@ -54,11 +56,17 @@ from app.domain.training.types import (
 
 STRENGTH_WORKOUT_TYPES = (WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B)
 # No PR chasing this close to (or right after) a competition — decisions cap at REPEAT.
+# The final six weeks hold the weight "moderately heavy" rather than adding to it.
 STRENGTH_PROGRESSION_GATE_PHASES = {
-    TrainingPhase.TAPER_1, TrainingPhase.TAPER_2,
-    TrainingPhase.COMPETITION_1, TrainingPhase.COMPETITION_2,
-    TrainingPhase.POST_COMPETITION,
+    TrainingPhase.TAPER_1, TrainingPhase.TAPER_2, TrainingPhase.TAPER_3,
+    TrainingPhase.COMPETITION_1, TrainingPhase.COMPETITION_2, TrainingPhase.COMPETITION_3,
+    TrainingPhase.PEAK_3, TrainingPhase.POST_COMPETITION,
 }
+
+
+def _has_intervals(session: dict) -> bool:
+    """Bike intervals only exist in the pre-March Strength A template."""
+    return any(item.get("name") == "Stationary bike intervals" for item in session.get("exercises") or [])
 
 
 class TrainingService:
@@ -89,9 +97,13 @@ class TrainingService:
                     existing_settings.class_template = template_to_json()
             for competition in (
                 Competition(id="oct-2026", name="9th All Japan Jiu-Jitsu Championship", start_date=date(2026, 10, 10), end_date=date(2026, 10, 11), taper_start=date(2026, 10, 5), recovery_days=2),
-                Competition(id="nov-2026", name="ASJJF Asian Open Jiu-Jitsu Championship 2026", start_date=date(2026, 11, 7), end_date=date(2026, 11, 8), taper_start=date(2026, 11, 2), recovery_days=2),
+                Competition(id="mar-2027", name="21st All Japan Master Jiu-Jitsu Championship", start_date=MARCH_COMPETITION_START, end_date=MARCH_COMPETITION_END, taper_start=MARCH_TAPER_START, recovery_days=3),
             ):
                 session.merge(competition)
+            # Dropped after the October final in favour of the March plan.
+            dropped = session.get(Competition, "nov-2026")
+            if dropped is not None:
+                session.delete(dropped)
             session.commit()
         self.reconcile(current, cancel_missing=True)
 
@@ -512,7 +524,40 @@ class TrainingService:
                     .where(TrainingExercise.session_id == row.id)
                     .order_by(TrainingExercise.position)
                 ).all())
-                result.append(self._session_dict(row, [self._exercise_dict(item) for item in exercises]))
+                payload = self._session_dict(row, [self._exercise_dict(item) for item in exercises])
+                recorded = session.get(TrainingSessionResult, row.id)
+                actuals = list(session.scalars(
+                    select(TrainingExerciseResult).where(TrainingExerciseResult.session_id == row.id)
+                ).all())
+                metrics = list(session.scalars(
+                    select(TrainingMetric)
+                    .where(TrainingMetric.session_id == row.id)
+                    .order_by(TrainingMetric.sequence)
+                ).all())
+                names = {item.id: item.name for item in exercises}
+                payload["result"] = None if recorded is None else {
+                    "status": recorded.status,
+                    "miss_reason": recorded.miss_reason,
+                    "notes": recorded.notes,
+                    "session_rpe": recorded.session_rpe,
+                    "bjj_rounds": recorded.bjj_rounds,
+                    "perceived_intensity": recorded.perceived_intensity,
+                }
+                payload["exercise_results"] = [
+                    {
+                        "name": names.get(item.exercise_id),
+                        "exercise_id": item.exercise_id,
+                        "actual_load": item.actual_load,
+                        "actual_sets": item.actual_sets,
+                        "actual_reps": item.actual_reps,
+                        "completed": item.completed,
+                        "rpe": item.rpe,
+                        "status": item.status,
+                    }
+                    for item in actuals
+                ]
+                payload["metrics"] = [self._metric_dict(item) for item in metrics]
+                result.append(payload)
             return result
 
     def log_matching_workout(
@@ -894,6 +939,7 @@ class TrainingService:
         technical_performance: str | None = None,
         recovery_activity: str | None = None,
         exercises: list[dict] | None = None,
+        metrics: list[dict] | None = None,
         now: datetime | None = None,
     ) -> dict:
         current = self._as_utc(now or datetime.now(UTC))
@@ -955,10 +1001,21 @@ class TrainingService:
                     ))
                     if item.get("done") is not None:
                         target.done = bool(item.get("done"))
-                if row.planned_type in {WorkoutType.STRENGTH_A.value, WorkoutType.STRENGTH_B.value} and row.status in {
-                    SessionStatus.COMPLETED.value, SessionStatus.PARTIAL.value,
-                }:
-                    self._advance_strength_progress(session, row, prescribed, exercises, current)
+            if metrics:
+                session.execute(delete(TrainingMetric).where(TrainingMetric.session_id == session_id))
+                for item in metrics:
+                    session.add(TrainingMetric(
+                        session_id=session_id,
+                        metric_type=str(item["metric_type"]),
+                        sequence=item.get("sequence"),
+                        value=float(item["value"]),
+                        unit=str(item["unit"]),
+                        recorded_at=current,
+                    ))
+            if exercises and row.planned_type in {WorkoutType.STRENGTH_A.value, WorkoutType.STRENGTH_B.value} and row.status in {
+                SessionStatus.COMPLETED.value, SessionStatus.PARTIAL.value,
+            }:
+                self._advance_strength_progress(session, row, prescribed, exercises, current)
             session.commit()
         self.reconcile(current)
         result = self.session(session_id)
@@ -993,6 +1050,12 @@ class TrainingService:
                         load_unit=target.load_unit, sets=target.sets, recipe=recipe,
                     )
                 )
+                actual_load = item.get("actual_load")
+                if actual_load is not None and not recipe.load_optional:
+                    # Progress from what was really lifted, so a starting
+                    # estimate that was off corrects itself after one session.
+                    # The logged session's own prescription stays frozen.
+                    state = replace(state, load_value=float(actual_load))
                 classification = sp.classify(
                     rpe=item.get("rpe"), technique=item.get("technique"), pain=item.get("pain"),
                     sets_done=item.get("actual_sets"), sets_prescribed=target.sets,
@@ -1745,7 +1808,7 @@ class TrainingService:
                 completed["bjj"] += 1
             elif workout_type.startswith("strength_"):
                 completed["strength"] += 1
-                completed["intervals"] += workout_type == "strength_a"
+                completed["intervals"] += _has_intervals(item)
             elif workout_type == "zone_2":
                 completed["zone_2"] += 1
             elif workout_type in {"rest", "recovery"}:
@@ -1764,7 +1827,7 @@ class TrainingService:
             ),
             strength=sum(item["planned_type"].startswith("strength_") for item in active),
             zone_2=sum(item["planned_type"] == "zone_2" for item in active),
-            intervals=sum(item["planned_type"] == "strength_a" for item in active),
+            intervals=sum(_has_intervals(item) for item in active),
             rest=any(item["planned_type"] in {"rest", "recovery"} for item in active),
         ).value
 
@@ -1835,7 +1898,7 @@ class TrainingService:
                 key = "rest"
             if key:
                 counts[key] = {**counts[key], "completed": counts[key]["completed"] + 1}
-            if kind == "strength_a":
+            if _has_intervals(session):
                 counts["intervals"] = {**counts["intervals"], "completed": counts["intervals"]["completed"] + 1}
             if any(exercise.get("name") == "Towel kettlebell hold" for exercise in session.get("exercises") or []):
                 counts["grip"] = {**counts["grip"], "completed": counts["grip"]["completed"] + 1}

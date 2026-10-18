@@ -52,15 +52,15 @@ function dayBlock(training: typeof session | null) {
   }
 }
 
-test('dailyAnswersFromBriefing treats rest plus sober as closed', () => {
+test('dailyAnswersFromBriefing closes a rest day without a sober answer', () => {
   const answers = dailyAnswersFromBriefing({
     date: '2026-09-15',
     timezone: 'Asia/Tokyo',
     workout: { ...session, planned_type: 'rest', title: 'Rest', status: 'planned' },
     calendar: { status: 'ready', meetings: [] },
-    sobriety: { days: 8, answered: 'yes', note: null },
+    sobriety: { days: 8, answered: null, note: null },
     sleep: null,
-    sunday: null,
+    weekly: null,
     preview: false,
     daily_url: '/daily/2026-09-15',
   })
@@ -76,7 +76,7 @@ test('dailyAnswersFromBriefing keeps gym open until the workout is logged', () =
     calendar: { status: 'ready', meetings: [] },
     sobriety: { days: 8, answered: 'yes', note: null },
     sleep: null,
-    sunday: null,
+    weekly: null,
     preview: false,
     daily_url: '/daily/2026-09-15',
   })
@@ -92,7 +92,7 @@ test('trainingOverviewFromPlan uses tomorrow.training, not the day block', () =>
     calendar: { status: 'ready' as const, meetings: [] },
     sobriety: { days: 7, answered: null, note: null },
     sleep: null,
-    sunday: null,
+    weekly: null,
     preview: false,
     daily_url: '/daily/2026-09-14',
     today: dayBlock(session),

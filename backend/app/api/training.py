@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, date, datetime, timedelta
 import hmac
 import logging
@@ -10,6 +11,9 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core.settings import settings
+from app.domain.daily_plan import _is_rest_day
+from app.domain.garmin import recovery_hint, watch_line
+from app.domain.telegram_text import telegram_message
 from app.domain.training.adjust import CalendarAdjuster
 from app.domain.training.coach import EveningCoach
 from app.domain.training.review import local_workout_review, workout_review_prompt
@@ -456,7 +460,7 @@ async def run_training_automation(
     now = datetime.now(UTC)
     local_today = now.astimezone(request.app.state.training_service._timezone).date()
     if body.action == "morning":
-        message = f"{_daily_briefing_url(local_today)}\n\nToday's briefing is ready."
+        message = await _morning_message(request, local_today)
         return _send_once(request, message, f"daily:briefing:{local_today.isoformat()}")
     if body.action == "evening":
         coach = getattr(request.app.state, "evening_coach", None) or EveningCoach()
@@ -488,6 +492,26 @@ async def run_training_automation(
             if result["status"] == "sent":
                 sent += 1
     return {"status": "ok", "sent": sent}
+
+
+async def _morning_message(request: Request, day: date) -> str:
+    lines = ["Today's briefing is ready."]
+    garmin = getattr(request.app.state, "garmin_service", None)
+    if garmin is not None and garmin.configured():
+        # One fresh pull so last night's sleep is in, even between 30-min polls.
+        try:
+            await asyncio.to_thread(garmin.sync_day, day)
+        except Exception:
+            logger.warning("Morning Garmin sync failed: %s", garmin.last_error)
+        snapshot = garmin.snapshot(day)
+        line = watch_line(snapshot)
+        if line:
+            lines.append(line)
+            rest = _is_rest_day(request.app.state.training_service.for_date(day))
+            hint = recovery_hint(snapshot, rest_day=rest)
+            if hint:
+                lines.append(hint)
+    return telegram_message("\n".join(lines), _daily_briefing_url(day))
 
 
 def _send_once(request: Request, message: str, dedupe_key: str) -> dict:
@@ -545,7 +569,7 @@ def _tomorrow_message(session: dict | None, prescription: dict | None = None) ->
 def _reminder_message(kind: str, session: dict) -> str:
     if kind == "post_workout":
         day = datetime.fromisoformat(session["start_at"]).astimezone(ZoneInfo(settings.timezone)).date()
-        return f"{_daily_briefing_url(day)}\n\nLog today's workout when you are done."
+        return telegram_message("Log today's workout when you are done.", _daily_briefing_url(day))
     exercises = []
     for item in session.get("exercises", [])[:7]:
         detail = " × ".join(str(value) for value in (item.get("load_value"), item.get("sets"), item.get("reps")) if value is not None)

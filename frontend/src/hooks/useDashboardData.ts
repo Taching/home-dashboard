@@ -81,14 +81,14 @@ export const initialWalkingPad: WalkingPadToday = {
   total_calories: 0,
   goal_minutes: 120,
   goal_distance_km: 3,
-  goal_steps: 10_000,
+  goal_steps: 8_000,
   session_count: 0,
   goal_met: false,
   active_session: null,
 }
 export const initialWalkReminder: WalkReminder = { active: false, message: '', dedupe_key: '' }
 export const initialTraining: TrainingOverview = {
-  generated_at: '', timezone: 'Asia/Tokyo', phase: 'build_october', today: null, tomorrow: null,
+  generated_at: '', timezone: 'Asia/Tokyo', phase: 'build_march', today: null, tomorrow: null,
   week_start: '2026-09-07', week: [], upcoming: [], countdowns: [], compliance: {},
   week_quality: undefined, tomorrow_prescription: null, bjj_candidates: [],
   trends: { bike_decay: [], bjj_capacity: [], weight_7d_average: null }, readiness: null, day_flags: {},

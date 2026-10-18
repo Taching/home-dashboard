@@ -5,6 +5,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.core.settings import settings
+from app.domain import cut_plan
+from app.domain.garmin import recovery_hint
 
 
 TRAVEL_MARKERS = ("flight", "travel", "airport", "shinkansen", "train to")
@@ -109,7 +111,7 @@ def _reminders(
             snapshot = walking.today()
     if snapshot is not None:
         goal_steps = int(getattr(snapshot, "goal_steps", 0) or 0)
-        total_steps = int(getattr(snapshot, "total_steps", 0) or 0)
+        total_steps = int(getattr(snapshot, "day_steps", 0) or getattr(snapshot, "total_steps", 0) or 0)
         remaining = max(0, goal_steps - total_steps)
         if not getattr(snapshot, "goal_met", False) and remaining > 0:
             reminders.append({
@@ -324,6 +326,7 @@ class DailyPlanService:
         notion=None,
         walking=None,
         weekly=None,
+        garmin=None,
         preview_workout: str | None = None,
         now: datetime | None = None,
     ) -> dict:
@@ -404,19 +407,32 @@ class DailyPlanService:
             "bjj_candidates": overview.get("bjj_candidates") if isinstance(overview, dict) else [],
             "week_quality": overview.get("week_quality") if isinstance(overview, dict) else None,
         }
-        sunday = None
-        if weekly is not None and hasattr(weekly, "sunday_check_in"):
-            check = weekly.sunday_check_in(day, training)
+        weekly_block = None
+        if weekly is not None and hasattr(weekly, "weekly_check_in"):
+            check = weekly.weekly_check_in(day, training)
             if check is not None:
-                sunday = {
+                weekly_block = {
                     "week_start": check.week_start.isoformat(),
                     "week_ending": check.week_ending.isoformat(),
                     "weight_kg": check.weight_kg,
                     "previous_weight_kg": check.previous_weight_kg,
                     "delta_kg": check.delta_kg,
+                    "weigh_ins": check.weigh_ins,
+                    "target_kg": check.target_kg,
                     "review_note": check.review_note,
                     "submitted": check.submitted,
                     "coach_review": check.coach_review,
+                    "counts": check.counts,
+                    "sleep_average": check.sleep_average,
+                    "waist_cm": check.waist_cm,
+                    "energy": check.energy,
+                    "hunger": check.hunger,
+                    "bjj_performance": check.bjj_performance,
+                    "pain_note": check.pain_note,
+                    "kcal_adjustment": check.kcal_adjustment,
+                    "kcal_reason": check.kcal_reason,
+                    "division": check.division,
+                    "watch": check.watch,
                     "sessions": [
                         {
                             "date": session.date.isoformat(),
@@ -429,10 +445,21 @@ class DailyPlanService:
                         for session in check.sessions
                     ],
                 }
+        cut = None
+        if hasattr(wellbeing, "weights_between"):
+            adjustment = weekly.kcal_adjustment_total(day) if hasattr(weekly, "kcal_adjustment_total") else 0
+            performance_ok = weekly.latest_performance_ok(day) if hasattr(weekly, "latest_performance_ok") else None
+            cut = cut_plan.weight_status(
+                day,
+                wellbeing.weights_between(day - timedelta(days=13), day),
+                session_type=(workout or {}).get("planned_type"),
+                adjustment_kcal=adjustment,
+                performance_ok=performance_ok,
+            )
         answered = check_in.get("sober") if check_in else None
         stored_advice = check_in.get("advice") if check_in else None
         answers = daily_answers(
-            workout=workout, sunday=sunday, check_in=check_in, preview=bool(preview_workout),
+            workout=workout, weekly=weekly_block, check_in=check_in, preview=bool(preview_workout),
         )
         advice = compose_today_advice(
             stored=stored_advice,
@@ -465,7 +492,9 @@ class DailyPlanService:
                 "note": check_in.get("daily_notes") if check_in else None,
             },
             "sleep": {"hours": check_in.get("sleep_hours") if check_in else None},
-            "sunday": sunday,
+            "weekly": weekly_block,
+            "cut": cut,
+            "watch": _watch_block(garmin, day, workout),
             "check_in": check_in,
             "advice": advice,
             "preview": bool(preview_workout),
@@ -575,16 +604,28 @@ def daily_workout_required(workout: dict | None, preview: bool = False) -> bool:
     return workout.get("status") != "preview"
 
 
+def _watch_block(garmin, day: date, training: dict | None) -> dict | None:
+    """Garmin Fenix data for the phone page. Context only, never a gate."""
+    if garmin is None or not garmin.configured():
+        return None
+    snapshot = garmin.snapshot(day)
+    return {
+        "status": "ready" if snapshot else "waiting",
+        "last_error": garmin.last_error,
+        "hint": recovery_hint(snapshot, rest_day=_is_rest_day(training)),
+        **(snapshot or {}),
+    }
+
+
 def daily_answers(
     *,
     workout: dict | None,
-    sunday: dict | None,
+    weekly: dict | None,
     check_in: dict | None,
     preview: bool = False,
 ) -> dict:
     workout_needed = daily_workout_required(workout, preview)
-    sunday_needed = sunday is not None and not preview
-    sober_needed = not preview
+    weekly_needed = weekly is not None and not preview
     items = [
         {
             "id": "workout",
@@ -593,16 +634,16 @@ def daily_answers(
             "done": (not workout_needed) or str((workout or {}).get("status") or "") in WORKOUT_DONE,
         },
         {
-            "id": "sunday",
-            "label": "Sunday review",
-            "required": sunday_needed,
-            "done": (not sunday_needed) or bool((sunday or {}).get("submitted")),
+            "id": "weekly",
+            "label": "Monday check-in",
+            "required": weekly_needed,
+            "done": (not weekly_needed) or bool((weekly or {}).get("submitted")),
         },
         {
             "id": "sober",
             "label": "Sober",
-            "required": sober_needed,
-            "done": (not sober_needed) or ((check_in or {}).get("sober") is not None),
+            "required": False,
+            "done": True,
         },
     ]
     return {

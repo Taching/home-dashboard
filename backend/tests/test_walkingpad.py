@@ -40,7 +40,7 @@ class WalkingPadServiceTests(unittest.TestCase):
         self.assertEqual(snapshot.total_minutes, 30.0)
         self.assertEqual(snapshot.total_distance_km, 1.2)
         self.assertEqual(snapshot.total_steps, 2200)
-        self.assertEqual(snapshot.goal_steps, 10_000)
+        self.assertEqual(snapshot.goal_steps, 8_000)
         self.assertEqual(snapshot.session_count, 1)
         self.assertFalse(snapshot.goal_met)
 
@@ -89,7 +89,7 @@ class WalkingPadServiceTests(unittest.TestCase):
 
         self.assertTrue(reminder.active)
         self.assertIn("Standup", reminder.message)
-        self.assertIn("1,000 of 10,000 steps", reminder.message)
+        self.assertIn("1,000 of 8,000 steps", reminder.message)
         self.assertTrue(reminder.dedupe_key.startswith("walk:window:"))
 
     def test_reminder_skips_when_goal_met(self) -> None:

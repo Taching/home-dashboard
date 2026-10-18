@@ -15,10 +15,12 @@ Copy this whole file into another agent. It is enough to analyze the product wit
 
 Toshi lives in Tokyo (Minato). He trains **BJJ first**, with strength and cardio around it. Two competitions matter:
 
-- 9th All Japan Jiu-Jitsu Championship — 10–11 Oct 2026 (taper from 5 Oct)
-- ASJJF Asian Open — 7–8 Nov 2026 (taper from 2 Nov)
+- 9th All Japan Jiu-Jitsu Championship — 10–11 Oct 2026 (done; lost the final)
+- 21st All Japan Master Jiu-Jitsu Championship — 5–7 Mar 2027, Takasaki (final six weeks from 22 Jan, taper from 21 Feb). The Nov 2026 Asian Open was dropped.
 
-He is cutting toward **74 kg**. He tracks a **sober streak** (baseline 22 Aug 2026 + 7 days). He walks on a WalkingPad. The house has lights (BroadLink), a plant pump (SwitchBot), Apple Calendar, Notion tasks, Spotify, and OpenClaw/Chili on Telegram.
+The March plan (phases, Strength A/B, weight checkpoints, nutrition targets, Monday check-in) lives in `training/phases.py`, `training/policy.py` (`_campaign_targets`), `rebuild._assign_campaign`, `training/templates.py` and `domain/cut_plan.py`. The weekly review moved from Sunday to a **Monday check-in** (`POST /daily/{day}/weekly`); morning weight is an optional daily field (`POST /daily/{day}/weight`).
+
+He is cutting from 84 kg toward lightweight (76.0 kg in the gi, ~74 kg morning), with middleweight as the fallback decided 15 Jan 2027. He tracks a **sober streak** (baseline 22 Aug 2026 + 7 days). He walks on a WalkingPad. The house has lights (BroadLink), a plant pump (SwitchBot), Apple Calendar, Notion tasks, Spotify, and OpenClaw/Chili on Telegram.
 
 Workdays are often meeting-heavy. Chili must look like a work day when the calendar is packed, and like a training day on a competition Saturday.
 

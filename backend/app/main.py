@@ -32,9 +32,11 @@ from app.domain.db_read import DbReadService
 from app.domain.display import DisplayService
 from app.jobs.display_scheduler import run_display_scheduler
 from app.jobs.sensor_polling import run_sensor_poller
-from app.jobs.sunday_review import run_sunday_review_reminder
+from app.jobs.weekly_review import run_weekly_review_reminder
 from app.jobs.progress_reporting import run_progress_reporting
 from app.jobs.training_sync import run_training_sync
+from app.jobs.garmin_sync import run_garmin_sync
+from app.domain.garmin import GarminService
 
 
 @asynccontextmanager
@@ -56,7 +58,10 @@ async def lifespan(application: FastAPI):
     application.state.training_service = training_service
     training_service.bootstrap()
     application.state.training_log_service = TrainingLogService()
-    application.state.weekly_service = WeeklyService()
+    garmin_service = GarminService(wellbeing=wellbeing_service)
+    application.state.garmin_service = garmin_service
+    application.state.walkingpad_service.use_watch_steps(garmin_service.steps_for)
+    application.state.weekly_service = WeeklyService(wellbeing=wellbeing_service, garmin=garmin_service)
     application.state.db_read_service = DbReadService()
     application.state.notion_service = NotionService()
     application.state.progress_report_service = ProgressReportService()
@@ -86,21 +91,23 @@ async def lifespan(application: FastAPI):
     application.state.display_service = display_service
     poller = asyncio.create_task(run_sensor_poller(sensor_service))
     display_scheduler = asyncio.create_task(run_display_scheduler(display_service))
-    sunday_review = asyncio.create_task(run_sunday_review_reminder(application))
+    weekly_review = asyncio.create_task(run_weekly_review_reminder(application))
     progress_reporting = asyncio.create_task(run_progress_reporting(
         application.state.notion_service,
         application.state.progress_report_service,
     ))
     training_sync = asyncio.create_task(run_training_sync(application.state.training_notion_sync))
+    garmin_sync = asyncio.create_task(run_garmin_sync(garmin_service))
     try:
         yield
     finally:
         display_scheduler.cancel()
-        sunday_review.cancel()
+        weekly_review.cancel()
         poller.cancel()
         progress_reporting.cancel()
         training_sync.cancel()
-        for task in (display_scheduler, sunday_review, poller, progress_reporting, training_sync):
+        garmin_sync.cancel()
+        for task in (display_scheduler, weekly_review, poller, progress_reporting, training_sync, garmin_sync):
             try:
                 await task
             except asyncio.CancelledError:

@@ -80,15 +80,15 @@ class ApplyDecisionDoubleProgressionTests(unittest.TestCase):
         self.assertEqual(result.load_value, 52)
 
     def test_progress_at_rep_max_bumps_load_and_resets_reps(self) -> None:
-        at_max = sp.ExerciseState(**{**self.state.__dict__, "rep_target": 7})
+        at_max = sp.ExerciseState(**{**self.state.__dict__, "rep_target": 8})
         result = sp.apply_decision(at_max, sp.Decision.PROGRESS, self.recipe)
-        self.assertEqual(result.rep_target, 5)
+        self.assertEqual(result.rep_target, 6)
         self.assertEqual(result.load_value, 54.5)
 
     def test_repeat_at_rep_max_holds_load(self) -> None:
-        at_max = sp.ExerciseState(**{**self.state.__dict__, "rep_target": 7})
+        at_max = sp.ExerciseState(**{**self.state.__dict__, "rep_target": 8})
         result = sp.apply_decision(at_max, sp.Decision.REPEAT, self.recipe)
-        self.assertEqual(result.rep_target, 7)
+        self.assertEqual(result.rep_target, 8)
         self.assertEqual(result.load_value, 52)
 
     def test_load_optional_recipe_never_touches_load(self) -> None:
@@ -103,16 +103,16 @@ class ApplyDecisionDoubleProgressionTests(unittest.TestCase):
 
 
 class DeloadPrescriptionTests(unittest.TestCase):
-    def test_deload_cuts_load_10_to_20_percent_and_drops_a_set(self) -> None:
-        recipe = sp.recipe_for("Deadlift")
+    def test_deload_cuts_sets_about_40_percent_at_the_same_load(self) -> None:
+        recipe = sp.recipe_for("Trap-bar Deadlift")
         state = sp.ExerciseState(
-            workout_type="strength_b", exercise_name="Deadlift",
-            load_value=140, load_unit="kg", sets=3, rep_target=None,
+            workout_type="strength_a", exercise_name="Trap-bar Deadlift",
+            load_value=125, load_unit="kg", sets=3, rep_target=5,
         )
         result = sp.deload_prescription(state, recipe)
         self.assertEqual(result.sets, 2)
-        self.assertGreaterEqual(result.load_value, 140 * 0.80)
-        self.assertLessEqual(result.load_value, 140 * 0.90)
+        self.assertEqual(result.load_value, 125)
+        self.assertEqual(sp.deload_prescription(sp.ExerciseState(**{**state.__dict__, "sets": 2}), recipe).sets, 1)
 
     def test_deload_resets_rep_target_to_bottom_of_range(self) -> None:
         recipe = sp.recipe_for("Weighted Dips")
@@ -175,29 +175,31 @@ class EndToEndProgressionTests(unittest.TestCase):
         service = self._service()
         now = datetime(2026, 9, 13, 15, tzinfo=UTC)
         service.bootstrap(now)
-        created = service.schedule_gym(date(2026, 9, 13), "strength_b", now=now)
-        deadlift = next(item for item in created["exercises"] if item["name"] == "Deadlift")
-        self.assertEqual(deadlift["load_value"], 140)
+        created = service.schedule_gym(date(2026, 9, 13), "strength_a", now=now)
+        deadlift = next(item for item in created["exercises"] if item["name"] == "Trap-bar Deadlift")
+        self.assertEqual(deadlift["load_value"], 125)
+        self.assertEqual(deadlift["reps"], "4")
         service.log_session_result(
             created["id"], status="completed",
             exercises=[{
-                "name": "Deadlift", "actual_load": 140, "actual_sets": 3, "actual_reps": "3,3,3",
+                "name": "Trap-bar Deadlift", "actual_load": 125, "actual_sets": 3, "actual_reps": "4,4,4",
                 "rpe": 6, "technique": "clean", "pain": False, "completed": True, "done": True,
             }],
             now=now,
         )
         with service._session_factory() as session:
-            row = session.get(TrainingExerciseProgress, ("strength_b", "Deadlift"))
-            self.assertEqual(row.load_value, 142.5)
+            row = session.get(TrainingExerciseProgress, ("strength_a", "Trap-bar Deadlift"))
+            self.assertEqual(row.load_value, 125)
+            self.assertEqual(row.rep_target, 5)
             self.assertEqual(row.last_classification, "easy")
             self.assertEqual(row.last_decision, "progress")
         # And the per-exercise builder used by manual placement picks it up.
         with service._session_factory() as session:
-            exercises = service._strength_exercises_now(session, WorkoutType.STRENGTH_B)
-        next_deadlift = next(item for item in exercises if item.name == "Deadlift")
-        self.assertEqual(next_deadlift.load_value, 142.5)
+            exercises = service._strength_exercises_now(session, WorkoutType.STRENGTH_A)
+        next_deadlift = next(item for item in exercises if item.name == "Trap-bar Deadlift")
+        self.assertEqual(next_deadlift.reps, "5")
 
-    def test_too_hard_session_reduces_stored_deadlift_prescription(self) -> None:
+    def test_logged_actual_load_replaces_the_starting_estimate(self) -> None:
         from datetime import UTC, datetime
         from app.database.models import TrainingExerciseProgress
 
@@ -208,18 +210,58 @@ class EndToEndProgressionTests(unittest.TestCase):
         service.log_session_result(
             created["id"], status="completed",
             exercises=[{
-                "name": "Deadlift", "actual_load": 140, "actual_sets": 3, "actual_reps": "3,3,2",
+                "name": "Front Squat", "actual_load": 80, "actual_sets": 3, "actual_reps": "4,4,4",
+                "rpe": 8, "technique": "clean", "pain": False, "completed": True, "done": True,
+            }],
+            now=now,
+        )
+        with service._session_factory() as session:
+            row = session.get(TrainingExerciseProgress, ("strength_b", "Front Squat"))
+            self.assertEqual(row.load_value, 80)
+        logged = next(item for item in service.session(created["id"])["exercises"] if item["name"] == "Front Squat")
+        self.assertEqual(logged["load_value"], 90)
+
+    def test_too_hard_session_reduces_stored_deadlift_prescription(self) -> None:
+        from datetime import UTC, datetime
+        from app.database.models import TrainingExerciseProgress
+
+        service = self._service()
+        now = datetime(2026, 9, 13, 15, tzinfo=UTC)
+        service.bootstrap(now)
+        created = service.schedule_gym(date(2026, 9, 13), "strength_a", now=now)
+        service.log_session_result(
+            created["id"], status="completed",
+            exercises=[{
+                "name": "Trap-bar Deadlift", "actual_load": 125, "actual_sets": 3, "actual_reps": "4,4,3",
                 "rpe": 9.5, "technique": "breakdown", "pain": False, "completed": True, "done": True,
             }],
             now=now,
         )
         with service._session_factory() as session:
-            row = session.get(TrainingExerciseProgress, ("strength_b", "Deadlift"))
-            self.assertLess(row.load_value, 140)
+            row = session.get(TrainingExerciseProgress, ("strength_a", "Trap-bar Deadlift"))
+            self.assertLess(row.load_value, 125)
             self.assertEqual(row.sets, 2)
             self.assertEqual(row.last_classification, "too_hard")
             self.assertEqual(row.last_decision, "reduce")
 
+    def test_interval_watts_are_stored_on_the_session(self) -> None:
+        from datetime import UTC, datetime
+
+        service = self._service()
+        now = datetime(2026, 9, 13, 15, tzinfo=UTC)
+        service.bootstrap(now)
+        created = service.schedule_gym(date(2026, 9, 13), "strength_a", now=now)
+        logged = service.log_session_result(
+            created["id"], status="completed",
+            exercises=[{"name": "Trap-bar Deadlift", "done": True, "completed": True, "rpe": 8, "actual_load": 125}],
+            metrics=[
+                {"metric_type": "bike_watts", "sequence": 1, "value": 220, "unit": "W"},
+                {"metric_type": "bike_watts", "sequence": 2, "value": 200, "unit": "W"},
+            ],
+            now=now,
+        )
+        watts = [item for item in logged["metrics"] if item["metric_type"] == "bike_watts"]
+        self.assertEqual([item["value"] for item in watts], [220, 200])
 
 if __name__ == "__main__":
     unittest.main()

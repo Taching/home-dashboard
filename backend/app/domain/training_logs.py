@@ -21,6 +21,7 @@ from app.domain.training_plans import (
     plan_for,
     suggested_kinds_for,
 )
+from app.domain.telegram_text import telegram_message
 from app.domain.training_questions import context_question_lines, questions_for
 
 TrainingCompleted = Literal["yes", "partial", "skipped", "no"]
@@ -152,16 +153,14 @@ class TrainingService:
         names = [plan_for(kind).name if plan_for(kind) else kind for kind in snapshot.suggested]
         label = ", ".join(names) if names else "training"
         daily = self.public_url(f"/daily/{snapshot.date.isoformat()}")
-        first = snapshot.suggested[0] if snapshot.suggested else None
-        workout = self.public_url(f"/workout/{first}") if first else self.public_url("/workout")
         if snapshot.date.weekday() == 6:
-            return (
-                f"{daily}\n\n"
-                "Sunday rest. Open the page, mark what you did, and add a note if it felt easy or hard."
+            return telegram_message(
+                "Sunday rest. Mark what you did, and add a note if it felt easy or hard.",
+                daily,
             )
-        return (
-            f"{workout}\n\n"
-            f"Today: {label}. Open the page, mark what you did, and add a note if it felt easy or hard."
+        return telegram_message(
+            f"Today: {label}. The report is at the top.",
+            f"{daily}#report",
         )
 
     def public_url(self, path: str = "") -> str:
@@ -464,10 +463,10 @@ class TrainingService:
         lines = [
             f"- Training today ({snapshot.date.isoformat()}, via {snapshot.suggested_source}): {suggested}.",
             f"- Training logs today: {logged}. Sober: {sober}.",
-            "- Telegram voice: 3–5 short lines. Put the full https:// URL on its own first line. Never omit the link. Never say tick or checkbox.",
-            f"- Gym/BJJ message: first the workout URL, then “Today: {suggested}. Open the page, mark what you did, and add a note if it felt easy or hard.”",
-            f"- Evening sober message: first {daily_url}, then “Sober tonight? Answer on the daily page.”",
-            "- If the sober answer is still missing after 22:00 or the next morning, send one follow-up with the same dated /daily URL. Do not mention last-check-in dates on the wall.",
+            "- Telegram voice: the first line is the point, in one sentence. The full https:// URL is the next line. Never omit the link. Never say tick or checkbox.",
+            f"- Gym/BJJ message: “Today: {suggested}. The report is at the top.” then {daily_url}#report.",
+            "- Evening sober message: “The streak keeps going. Open this only if you drank.” then the /sober page.",
+            "- A missing sober answer is still sober. Do not send a follow-up.",
             f"- Sunday morning message: first {daily_url}, then “Sunday weigh-in and week review. Compare with last week, then say if next week needs a change.”",
             "- Do not ask sleep, weight (except Sunday), readiness, fatigue, soreness, or pain.",
             "- Sleep will come from Garmin later.",

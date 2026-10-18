@@ -12,9 +12,17 @@ html.is-workout * {
   cursor: auto;
 }
 
+.workout-program summary {
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+.workout-program .workout-checks { margin-top: .8rem; }
+
 .workout-page {
   min-height: 100dvh;
-  padding: 1.1rem 1.15rem 2.4rem;
+  padding: 1.1rem 1.15rem calc(2.4rem + env(safe-area-inset-bottom));
   background:
     radial-gradient(ellipse 70% 40% at 100% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%),
     radial-gradient(ellipse 80% 55% at 100% 0%, var(--bg-wash) 0%, var(--bg) 58%);

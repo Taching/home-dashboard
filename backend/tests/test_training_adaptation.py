@@ -55,9 +55,9 @@ class AdaptationTests(unittest.TestCase):
 
     def test_adaptation_changes_template_load(self) -> None:
         base = WORKOUT_TEMPLATES[WorkoutType.STRENGTH_B]
-        squat = next(item for item in base.exercises if item.name == "Deadlift")
+        squat = next(item for item in base.exercises if item.name == "Romanian Deadlift")
         adapted = apply_adaptation(base, WeekAdaptation(strength_load_delta=0.05))
-        deadlift = next(item for item in adapted.exercises if item.name == "Deadlift")
+        deadlift = next(item for item in adapted.exercises if item.name == "Romanian Deadlift")
         self.assertGreater(deadlift.load_value or 0, squat.load_value or 0)
 
     def test_logging_actual_load_does_not_change_prescription(self) -> None:
@@ -76,21 +76,21 @@ class AdaptationTests(unittest.TestCase):
         now = datetime(2026, 9, 13, 15, tzinfo=UTC)
         service.bootstrap(now)
         created = service.schedule_gym(date(2026, 9, 13), "strength_a", now=now)
-        squat = next(item for item in created["exercises"] if item["name"] == "Back Squat")
+        squat = next(item for item in created["exercises"] if item["name"] == "Trap-bar Deadlift")
         prescribed = squat["load_value"]
         service.log_session_result(
             created["id"],
             status="completed",
             session_rpe=6,
-            exercises=[{"name": "Back Squat", "actual_load": 140, "completed": True, "done": True}],
+            exercises=[{"name": "Trap-bar Deadlift", "actual_load": 140, "completed": True, "done": True}],
             now=now,
         )
         after = service.session(created["id"])
-        logged = next(item for item in after["exercises"] if item["name"] == "Back Squat")
+        logged = next(item for item in after["exercises"] if item["name"] == "Trap-bar Deadlift")
         self.assertEqual(logged["load_value"], prescribed)
         self.assertEqual(after["status"], "completed")
         with factory() as session:
-            row = session.scalar(select(TrainingExercise).where(TrainingExercise.session_id == created["id"]).where(TrainingExercise.name == "Back Squat"))
+            row = session.scalar(select(TrainingExercise).where(TrainingExercise.session_id == created["id"]).where(TrainingExercise.name == "Trap-bar Deadlift"))
             self.assertEqual(row.load_value, prescribed)
 
     def test_rebuild_ignores_week_adaptation_for_strength(self) -> None:
@@ -121,8 +121,8 @@ class AdaptationTests(unittest.TestCase):
             ),
         )
         strength = next(item for item in plan.sessions if item.type == WorkoutType.STRENGTH_B)
-        deadlift = next(item for item in strength.exercises if item.name == "Deadlift")
-        base = next(item for item in WORKOUT_TEMPLATES[WorkoutType.STRENGTH_B].exercises if item.name == "Deadlift")
+        deadlift = next(item for item in strength.exercises if item.name == "Front Squat")
+        base = next(item for item in WORKOUT_TEMPLATES[WorkoutType.STRENGTH_B].exercises if item.name == "Front Squat")
         self.assertEqual(deadlift.load_value, base.load_value)
 
     def test_rebuild_uses_stored_strength_progress(self) -> None:
@@ -135,7 +135,7 @@ class AdaptationTests(unittest.TestCase):
 
         tokyo = ZoneInfo("Asia/Tokyo")
         scheduler = TrainingScheduler("Asia/Tokyo")
-        base = next(item for item in WORKOUT_TEMPLATES[WorkoutType.STRENGTH_B].exercises if item.name == "Deadlift")
+        base = next(item for item in WORKOUT_TEMPLATES[WorkoutType.STRENGTH_B].exercises if item.name == "Front Squat")
         progressed_load = (base.load_value or 0) + 2.5
         plan = scheduler.plan_week(
             date(2026, 9, 14),
@@ -143,9 +143,9 @@ class AdaptationTests(unittest.TestCase):
             class_template=MITA_CLASS_TEMPLATE,
             strength_progress={
                 "strength_b": {
-                    "Deadlift": ExerciseState(
-                        workout_type="strength_b", exercise_name="Deadlift",
-                        load_value=progressed_load, load_unit="kg", sets=3, rep_target=None,
+                    "Front Squat": ExerciseState(
+                        workout_type="strength_b", exercise_name="Front Squat",
+                        load_value=progressed_load, load_unit="kg", sets=3, rep_target=5,
                     ),
                 },
             },
@@ -159,7 +159,7 @@ class AdaptationTests(unittest.TestCase):
             ),
         )
         strength = next(item for item in plan.sessions if item.type == WorkoutType.STRENGTH_B)
-        deadlift = next(item for item in strength.exercises if item.name == "Deadlift")
+        deadlift = next(item for item in strength.exercises if item.name == "Front Squat")
         self.assertEqual(deadlift.load_value, progressed_load)
 
     def test_completed_exercises_stay_frozen_after_rebuild(self) -> None:
@@ -178,22 +178,22 @@ class AdaptationTests(unittest.TestCase):
         now = datetime(2026, 9, 13, 15, tzinfo=UTC)
         service.bootstrap(now)
         created = service.schedule_gym(date(2026, 9, 13), "strength_a", now=now)
-        squat = next(item for item in created["exercises"] if item["name"] == "Back Squat")
+        squat = next(item for item in created["exercises"] if item["name"] == "Trap-bar Deadlift")
         prescribed = squat["load_value"]
         service.log_session_result(
             created["id"],
             status="completed",
             session_rpe=6,
-            exercises=[{"name": "Back Squat", "actual_load": 140, "completed": True, "done": True}],
+            exercises=[{"name": "Trap-bar Deadlift", "actual_load": 140, "completed": True, "done": True}],
             now=now,
         )
         service.reconcile(now)
         after = service.session(created["id"])
         self.assertEqual(after["status"], "completed")
-        logged = next(item for item in after["exercises"] if item["name"] == "Back Squat")
+        logged = next(item for item in after["exercises"] if item["name"] == "Trap-bar Deadlift")
         self.assertEqual(logged["load_value"], prescribed)
         with factory() as session:
-            row = session.scalar(select(TrainingExercise).where(TrainingExercise.session_id == created["id"]).where(TrainingExercise.name == "Back Squat"))
+            row = session.scalar(select(TrainingExercise).where(TrainingExercise.session_id == created["id"]).where(TrainingExercise.name == "Trap-bar Deadlift"))
             self.assertEqual(row.load_value, prescribed)
 
     def test_llm_without_key_keeps_default(self) -> None:

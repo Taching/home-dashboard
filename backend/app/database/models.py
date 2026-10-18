@@ -136,6 +136,16 @@ class WeeklyReview(Base):
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     summary: Mapped[str | None] = mapped_column(String, nullable=True)
     coach_review: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Monday check-in (March 2027 plan). weight_kg above is the seven-day
+    # average ending week_ending (the Sunday) once these are set.
+    waist_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    energy: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hunger: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bjj_performance: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pain_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    sleep_average: Mapped[float | None] = mapped_column(Float, nullable=True)
+    kcal_adjustment: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kcal_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
     source: Mapped[str] = mapped_column(String(16))
 
 
@@ -393,3 +403,23 @@ class TrainingStrengthCycle(Base):
     sessions_since_deload: Mapped[int] = mapped_column(Integer, default=0)
     force_deload: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GarminDailySnapshot(Base):
+    """One cached day of Garmin Connect data (Fenix 8 Pro). Read-only context:
+    never gates the scheduler."""
+    __tablename__ = "garmin_daily_snapshots"
+
+    local_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    steps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sleep_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sleep_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    resting_hr: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hrv_last_night: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hrv_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    body_battery_high: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    body_battery_low: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    body_battery_latest: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stress_avg: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    activities: Mapped[list | None] = mapped_column(JSON, nullable=True)

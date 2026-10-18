@@ -8,4 +8,5 @@ dist/
 data/*.db
 data/*.db-*
 data/learned-codes/
+data/garminconnect/
 .DS_Store

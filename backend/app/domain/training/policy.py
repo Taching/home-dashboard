@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from app.domain.training.types import (
+    CAMPAIGN_PHASES,
+    TAPER_PHASES,
     FatigueState,
     SessionStatus,
     TrainingPhase,
@@ -68,8 +70,10 @@ COMPLETED_STATUSES = frozenset({
 
 
 def weekly_targets(phase: TrainingPhase, *, bjj_count: int = 0) -> dict[str, int]:
-    taper = phase in {TrainingPhase.TAPER_1, TrainingPhase.TAPER_2}
     four_bjj = bjj_count >= 4
+    if phase in CAMPAIGN_PHASES:
+        return _campaign_targets(phase, four_bjj=four_bjj)
+    taper = phase in TAPER_PHASES
     return {
         "bjj": 2 if taper else 3,
         "strength": 1 if taper or four_bjj else 2,
@@ -78,6 +82,20 @@ def weekly_targets(phase: TrainingPhase, *, bjj_count: int = 0) -> dict[str, int
         "grip": 1 if taper or four_bjj else 2,
         "rest": 0,
     }
+
+
+def _campaign_targets(phase: TrainingPhase, *, four_bjj: bool) -> dict[str, int]:
+    """March 2027 plan. BJJ 3–4, strength 2, easy cardio 2 (Strength A carries
+    one 20–30 min easy-cardio finisher, so the planner only places the rest as
+    separate Zone 2), no sprint intervals, no standalone grip (carries cover
+    it), and at least one full rest day. A fourth BJJ removes the second cardio
+    first. Final six weeks: four BJJ, two short strength, cardio only if it
+    helps recovery. Taper: volume down 40–60%."""
+    if phase == TrainingPhase.PEAK_3:
+        return {"bjj": 4, "strength": 2, "zone_2": 0, "intervals": 0, "grip": 0, "rest": 1}
+    if phase == TrainingPhase.TAPER_3:
+        return {"bjj": 3, "strength": 1, "zone_2": 0, "intervals": 0, "grip": 0, "rest": 1}
+    return {"bjj": 3, "strength": 2, "zone_2": 0 if four_bjj else 1, "intervals": 0, "grip": 0, "rest": 1}
 
 
 def is_hard(workout_type: WorkoutType) -> bool:

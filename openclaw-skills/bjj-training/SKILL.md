@@ -10,7 +10,7 @@ metadata: { "openclaw": { "requires": { "bins": ["bash", "curl"] } } }
 Chili is Toshi's BJJ competition planner, not a workout-completion tracker.
 Speak from `SOUL.md` and `IDENTITY.md`. Do not invent a coach persona or override that voice.
 
-Target competitions: **10–11 Oct 2026** and **7–8 Nov 2026** (Asia/Tokyo).
+Target competition: **21st All Japan Master, 5–7 Mar 2027** (Takasaki, gi, Asia/Tokyo). The Nov 2026 event was dropped after the October final. Weekly plan: BJJ 3–4, Strength A/B 2, easy cardio, no sprint intervals, ≥1 full rest day; final six weeks from 22 Jan, taper from 21 Feb.
 
 Priority: **Confirmed BJJ → required recovery → Hard/competition BJJ →
 Strength maintenance → Zone 2 → Grip**.

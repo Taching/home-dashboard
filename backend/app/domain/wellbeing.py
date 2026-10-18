@@ -10,12 +10,13 @@ from sqlalchemy import select
 from app.core.settings import settings
 from app.database.models import DailyWellbeingCheckIn, TrainingSession
 from app.database.session import SessionLocal
+from app.domain import cut_plan
+from app.domain.training.phases import phase_for_date
+from app.domain.training.policy import weekly_targets
+from app.domain.telegram_text import telegram_message
+from app.domain.training.types import CAMPAIGN_PHASES
 
 COMPLETED_TRAINING = {"completed", "partial", "competition"}
-
-
-def _daily_url(day: date) -> str:
-    return f"{settings.public_base_url()}/daily/{day.isoformat()}"
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,8 @@ class WellbeingSummary:
     current_weight_kg: float | None
     weight_goal_kg: float
     latest_weight_date: date | None
+    weight_7d_average_kg: float | None = None
+    weight_target_kg: float | None = None
 
 
 class WellbeingService:
@@ -122,6 +125,65 @@ class WellbeingService:
             session.commit()
         return self.summary(updated_at)
 
+    def weights_between(self, start: date, end: date) -> dict[date, float]:
+        """Morning weigh-ins by local date, inclusive."""
+        with self._session_factory() as session:
+            rows = session.execute(
+                select(DailyWellbeingCheckIn.local_date, DailyWellbeingCheckIn.weight_kg)
+                .where(DailyWellbeingCheckIn.local_date >= start)
+                .where(DailyWellbeingCheckIn.local_date <= end)
+                .where(DailyWellbeingCheckIn.weight_kg.is_not(None))
+            ).all()
+        return {row[0]: float(row[1]) for row in rows}
+
+    def history(self, days: int = 90, now: datetime | None = None) -> dict:
+        span = max(7, min(days, 400))
+        today = self._as_utc(now or datetime.now(UTC)).astimezone(self._timezone).date()
+        start = today - timedelta(days=span - 1)
+        with self._session_factory() as session:
+            rows = list(session.scalars(
+                select(DailyWellbeingCheckIn)
+                .where(DailyWellbeingCheckIn.local_date <= today)
+                .order_by(DailyWellbeingCheckIn.local_date)
+            ).all())
+        weights = [
+            {"date": row.local_date.isoformat(), "kg": row.weight_kg}
+            for row in rows
+            if row.weight_kg is not None and start <= row.local_date <= today
+        ]
+        drank = {
+            row.local_date
+            for row in rows
+            if row.sober is False and self._baseline_date < row.local_date <= today
+        }
+        sober: list[dict] = []
+        streak = self._baseline_days
+        day = self._baseline_date + timedelta(days=1)
+        while day <= today:
+            drank_today = day in drank
+            streak = 0 if drank_today else streak + 1
+            if day >= start:
+                sober.append({"date": day.isoformat(), "days": streak, "drank": drank_today})
+            day += timedelta(days=1)
+        return {
+            "start": start.isoformat(),
+            "end": today.isoformat(),
+            "weights": weights,
+            "sober": sober,
+            "sober_days": streak if today > self._baseline_date else self._baseline_days,
+            "weight_goal_kg": settings.weight_goal_kg,
+        }
+
+    def sleep_between(self, start: date, end: date) -> list[float]:
+        with self._session_factory() as session:
+            rows = session.scalars(
+                select(DailyWellbeingCheckIn.sleep_hours)
+                .where(DailyWellbeingCheckIn.local_date >= start)
+                .where(DailyWellbeingCheckIn.local_date <= end)
+                .where(DailyWellbeingCheckIn.sleep_hours.is_not(None))
+            ).all()
+        return [float(value) for value in rows]
+
     def entry(self, local_date: date) -> dict | None:
         with self._session_factory() as session:
             row = session.get(DailyWellbeingCheckIn, local_date)
@@ -185,13 +247,15 @@ class WellbeingService:
                 .order_by(DailyWellbeingCheckIn.local_date)
             ).all())
 
-        sober_days = self._baseline_days
-        for row in rows:
-            if row.local_date <= self._baseline_date or row.sober is None:
-                continue
-            sober_days = sober_days + 1 if row.sober else 0
+        sober_days = self._sober_streak(rows, today)
 
         workouts, gym, jiujitsu = self._session_counts(week_start, today)
+        average, _ = cut_plan.seven_day_average(
+            {row.local_date: row.weight_kg for row in rows if row.weight_kg is not None}, today,
+        )
+        target = cut_plan.target_for(today)
+        phase = phase_for_date(today)
+        targets = weekly_targets(phase) if phase in CAMPAIGN_PHASES else {}
         checkin_rows = [
             row for row in rows
             if any(value is not None for value in (row.trained, row.gym, row.jiujitsu, row.sober))
@@ -206,15 +270,31 @@ class WellbeingService:
             workouts_this_week=workouts,
             gym_this_week=gym,
             jiujitsu_this_week=jiujitsu,
-            gym_weekly_goal=settings.gym_weekly_goal,
-            jiujitsu_weekly_goal=settings.jiujitsu_weekly_goal,
+            gym_weekly_goal=targets.get("strength") or settings.gym_weekly_goal,
+            jiujitsu_weekly_goal=targets.get("bjj") or settings.jiujitsu_weekly_goal,
             week_start=week_start,
             latest_checkin_date=latest,
             checkin_stale=latest is None or latest < expected_checkin_date,
             current_weight_kg=weight_rows[-1].weight_kg if weight_rows else None,
             weight_goal_kg=settings.weight_goal_kg,
             latest_weight_date=weight_rows[-1].local_date if weight_rows else None,
+            weight_7d_average_kg=average,
+            weight_target_kg=round(sum(target) / 2, 1),
         )
+
+    def _sober_streak(self, rows: list[DailyWellbeingCheckIn], today: date) -> int:
+        """Count every day after the baseline. Only an explicit drink resets it."""
+        drank = {
+            row.local_date
+            for row in rows
+            if row.sober is False and self._baseline_date < row.local_date <= today
+        }
+        sober_days = self._baseline_days
+        day = self._baseline_date + timedelta(days=1)
+        while day <= today:
+            sober_days = 0 if day in drank else sober_days + 1
+            day += timedelta(days=1)
+        return sober_days
 
     def sober_logged(self, local_date: date) -> bool:
         entry = self.entry(local_date)
@@ -227,19 +307,13 @@ class WellbeingService:
         nudges: list[SoberNudge] = []
         if current.hour >= 21 and not self.sober_logged(today):
             nudges.append(self._sober_nudge(today, "ask"))
-        if not self.sober_logged(yesterday) and (current.hour >= 22 or current.date() > yesterday):
-            nudges.append(self._sober_nudge(yesterday, "followup"))
         return nudges
 
     def _sober_nudge(self, day: date, kind: Literal["ask", "followup"]) -> SoberNudge:
-        url = _daily_url(day)
-        if kind == "ask":
-            message = f"{url}\n\nSober tonight? Answer on the daily page."
-        else:
-            message = (
-                f"{url}\n\n"
-                "Last night's sober check-in is still open. Answer there when you can."
-            )
+        message = telegram_message(
+            "The streak keeps going. Open this only if you drank.",
+            f"{settings.public_base_url()}/sober",
+        )
         return SoberNudge(
             day=day,
             kind=kind,

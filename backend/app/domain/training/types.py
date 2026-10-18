@@ -37,7 +37,21 @@ class TrainingPhase(StrEnum):
     BUILD_2 = "build_november"
     TAPER_2 = "taper_november"
     COMPETITION_2 = "competition_november"
+    # March 2027 campaign (21st All Japan Master). Replaced the November block
+    # after the October final; the _2 phases are kept only for stored rows.
+    BUILD_3 = "build_march"
+    PEAK_3 = "peak_march"
+    TAPER_3 = "taper_march"
+    COMPETITION_3 = "competition_march"
     POST_COMPETITION = "post_competition"
+
+
+TAPER_PHASES = frozenset({TrainingPhase.TAPER_1, TrainingPhase.TAPER_2, TrainingPhase.TAPER_3})
+COMPETITION_PHASES = frozenset({
+    TrainingPhase.COMPETITION_1, TrainingPhase.COMPETITION_2, TrainingPhase.COMPETITION_3,
+})
+# Phases planned with the per-week quotas from the March plan (rebuild.py).
+CAMPAIGN_PHASES = frozenset({TrainingPhase.BUILD_3, TrainingPhase.PEAK_3, TrainingPhase.TAPER_3})
 
 
 class ReadinessLevel(StrEnum):

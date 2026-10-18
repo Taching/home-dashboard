@@ -265,21 +265,21 @@ class DailyPlanTests(unittest.TestCase):
     def test_daily_answers_require_the_forms_on_the_phone_page(self):
         gym = daily_answers(
             workout={"planned_type": "strength_a", "status": "planned"},
-            sunday=None, check_in=None,
+            weekly=None, check_in=None,
         )
-        self.assertEqual([item["id"] for item in gym["items"] if item["required"]], ["workout", "sober"])
+        self.assertEqual([item["id"] for item in gym["items"] if item["required"]], ["workout"])
         self.assertFalse(gym["all_answered"])
 
         rest = daily_answers(
             workout={"planned_type": "rest", "status": "planned"},
-            sunday=None, check_in={"sober": True},
+            weekly=None, check_in={"sober": True},
         )
         self.assertTrue(rest["all_answered"])
         self.assertFalse(next(item for item in rest["items"] if item["id"] == "workout")["required"])
 
         bjj = daily_answers(
             workout={"planned_type": "bjj_normal", "status": "planned"},
-            sunday={"submitted": True}, check_in={"sober": True},
+            weekly={"submitted": True}, check_in={"sober": True},
         )
         self.assertTrue(bjj["all_answered"])
 

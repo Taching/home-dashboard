@@ -240,11 +240,14 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(workout.json()["status"], "logged")
         self.assertIn("Strength A", workout.json()["message"])
         self.assertTrue(workout.json()["briefing"]["answers"]["all_answered"])
-        self.assertEqual(len(self.app.state.openclaw_service.sent), 1)
-        self.assertGreaterEqual(len(self.app.state.openclaw_service.notified), 1)
+        # Workout review and day close are both local-only (no agent turn).
+        self.assertEqual(self.app.state.openclaw_service.sent, [])
+        # Two notifies: one for workout review, one for day close.
+        self.assertGreaterEqual(len(self.app.state.openclaw_service.notified), 2)
         notify = self.app.state.openclaw_service.notified[0]
         self.assertIn(f"{settings.public_base_url()}/daily/2026-09-15", notify)
         self.assertFalse(notify.startswith("http"))
+        self.assertEqual(workout.json()["briefing"]["chili_delivery"], "local")
         sober = self.client.post(
             "/api/v1/daily/2026-09-15/sober",
             json={"sober": True, "note": "evening"},
@@ -253,13 +256,14 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(sober.json()["status"], "logged")
         self.assertEqual(sober.json()["briefing"]["sobriety"]["answered"], "yes")
         self.assertTrue(sober.json()["briefing"]["answers"]["all_answered"])
-        self.assertEqual(len(self.app.state.openclaw_service.sent), 1)
-        self.assertIn("finished every answer", self.app.state.openclaw_service.sent[0])
+        # Day close is local-only (no agent turn), but it still sends a Telegram notify.
+        self.assertEqual(self.app.state.openclaw_service.sent, [])
         self.assertEqual(len(self.app.state.openclaw_service.notified), 2)
         self.assertTrue(sober.json()["briefing"]["chili_reply"])
+        self.assertEqual(sober.json()["briefing"]["chili_delivery"], "local")
         again = self.client.post("/api/v1/daily/2026-09-15/close")
         self.assertEqual(again.status_code, 200)
-        self.assertEqual(len(self.app.state.openclaw_service.sent), 1)
+        self.assertEqual(self.app.state.openclaw_service.sent, [])
         daily = self.client.get("/api/v1/daily/2026-09-13").json()
         self.assertIsNone(daily["sleep"]["hours"])
         self.assertIsNone(daily["weekly"])
@@ -309,9 +313,8 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(body["weekly"]["delta_kg"], -0.4)
         self.assertEqual(body["weekly"]["waist_cm"], 88)
         self.assertIn("down 0.4 kg", body["message"])
-        # One weekly-training-review agent turn per submission.
-        self.assertEqual(len(self.app.state.openclaw_service.sent), 1)
-        self.assertIn("Monday check-in", self.app.state.openclaw_service.sent[-1])
+        # Weekly review is local-only (no agent turn), but it still sends a Telegram notify.
+        self.assertEqual(self.app.state.openclaw_service.sent, [])
         self.assertIsNotNone(body["weekly"]["coach_review"])
         self.assertTrue(any(f"{settings.public_base_url()}/daily/2026-09-14" in item for item in self.app.state.openclaw_service.notified))
         self.assertTrue(any(item.startswith("Monday check-in saved.") for item in self.app.state.openclaw_service.notified))
@@ -339,13 +342,16 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(today["logs"][0]["kind"], "strength_a")
         self.assertTrue(today["advice"])
 
-    def test_rest_day_close_asks_chili_without_a_sober_answer(self) -> None:
+    def test_rest_day_close_uses_local_review(self) -> None:
         self.app.state.training_service.planned_type = "rest"
         closed = self.client.post("/api/v1/daily/2026-09-15/close")
         self.assertEqual(closed.status_code, 200)
         self.assertTrue(closed.json()["answers"]["all_answered"])
         self.assertTrue(closed.json()["chili_reply"])
-        self.assertEqual(len(self.app.state.openclaw_service.sent), 1)
+        # Day close is local-only (no agent turn), so sent stays empty.
+        self.assertEqual(self.app.state.openclaw_service.sent, [])
+        self.assertEqual(closed.json()["chili_delivery"], "local")
+        self.assertIn("Day is closed", closed.json()["chili_reply"])
 
     def test_daily_bjj_report_saves_rounds(self) -> None:
         self.app.state.training_service.planned_type = "bjj_normal"

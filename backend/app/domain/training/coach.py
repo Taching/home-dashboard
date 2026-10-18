@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from app.core.settings import settings
+from app.domain.telegram_text import telegram_message
 from app.domain.training.adjust import CalendarAdjuster, CalendarMutation, explain_adjustment
 from app.domain.training.scheduler import phase_for_date
 
@@ -124,7 +125,7 @@ def evening_readiness(today: date, overview: dict, meetings: list[dict]) -> dict
     candidates = overview.get("bjj_candidates") or []
     quality = overview.get("week_quality") or "acceptable"
     phase = phase_for_date(week_start)
-    countdown = next((item for item in overview.get("countdowns") or [] if item.get("id") == "oct-2026"), None)
+    countdown = next(iter(sorted(overview.get("countdowns") or [], key=lambda item: item.get("start_date") or "")), None)
     days_out = countdown.get("days_remaining") if countdown else None
     why: list[str] = []
     open_days = []
@@ -146,7 +147,7 @@ def evening_readiness(today: date, overview: dict, meetings: list[dict]) -> dict
     if candidates:
         why.append("Hard BJJ and class days stay on the template; I do not hunt leftover BJJ as a weekly quota.")
     if days_out is not None:
-        why.append(f"9th All Japan is in {days_out} days. This is a {phase.value.replace('_', ' ')} week.")
+        why.append(f"{countdown.get('name') or 'The competition'} is in {days_out} days. This is a {phase.value.replace('_', ' ')} week.")
     banner = f"Evening check. Week looks {quality.replace('_', ' ')} for the tournament."
     return {
         "quality": quality,
@@ -266,9 +267,4 @@ def _evening_notification(url: str, readiness: dict, overview: dict) -> str:
     tomorrow = str((prescription or {}).get("session") or "rest").replace("_", " ")
     if (prescription or {}).get("time"):
         tomorrow = f"{tomorrow} at {prescription['time']}"
-    lines = [url, "", readiness["banner"], "", "How", "• No calendar rewrite tonight.", "", "Why"]
-    lines.extend(f"• {item}" for item in readiness["why"])
-    lines.extend(["", f"Tomorrow: {tomorrow}."])
-    if (prescription or {}).get("why"):
-        lines.append(str(prescription["why"]))
-    return "\n".join(lines)
+    return telegram_message(f"Tomorrow: {tomorrow}.", url)

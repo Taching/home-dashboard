@@ -223,9 +223,10 @@ class TrainingServiceTests(unittest.TestCase):
         self.service.update_session(strength["id"], status="completed", now=sunday)
         morning = datetime(2026, 9, 14, 0, 30, tzinfo=tokyo)
         monday_bjj = self.service.add_bjj(datetime(2026, 9, 14, 7, 30, tzinfo=tokyo), now=morning)
-        later = datetime(2026, 9, 14, 9, 32, tzinfo=tokyo)
-        self.service.reconcile(later)
-        overview = self.service.overview(later)
+        # Session ends at 9:00 JST. Auto-skip requires local hour >= 20 (8pm).
+        evening = datetime(2026, 9, 14, 21, 0, tzinfo=tokyo)
+        self.service.reconcile(evening)
+        overview = self.service.overview(evening)
         tuesday = date(2026, 9, 15)
         tuesday_types = [
             item["planned_type"] for item in overview["week"]
@@ -324,15 +325,7 @@ class TrainingServiceTests(unittest.TestCase):
         updated = self.service.log_matching_workout(
             date(2026, 9, 13),
             kind="strength_a",
-            exercises=[
-                {"name": "Warm-up", "done": True},
-                {"name": "Back Squat", "done": True},
-                {"name": "Bench Press", "done": True},
-                {"name": "Pull-ups", "done": True},
-                {"name": "Bulgarian Split Squat", "done": True},
-                {"name": "Standing Landmine Rotation", "done": True},
-                {"name": "Stationary Bike Intervals", "done": True},
-            ],
+            exercises=[{"name": item["name"], "done": True} for item in created["exercises"]],
             note="easy lifts, hard intervals",
             now=sunday,
         )

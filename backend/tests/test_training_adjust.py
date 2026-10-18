@@ -126,8 +126,10 @@ class CalendarAdjusterTests(unittest.TestCase):
         self.assertTrue(any("Gym (Strength A)" in item for item in decision["how"]))
         self.assertTrue(any("BJJ is off" in item for item in decision["how"]))
         self.assertTrue(any("coming week" in item for item in decision["why"]))
-        self.assertIn("How", result["notification"])
-        self.assertIn("Why", result["notification"])
+        # Telegram is one line plus the link; How/Why stay on the decision.
+        self.assertTrue(result["notification"].startswith("Changed the week."))
+        self.assertNotIn("How", result["notification"])
+        self.assertIn("/daily/", result["notification"].splitlines()[1])
         self.assertEqual(result["overview"]["last_adjustment"]["id"], decision["id"])
 
     def test_unclear_instruction_without_openai_fails_closed(self) -> None:
@@ -191,7 +193,7 @@ class CalendarAdjustApiTests(unittest.TestCase):
         self.assertEqual(body["status"], "ok")
         self.assertEqual(body["analysis"]["mutations"][0]["op"], "gym_today")
         self.assertEqual(body["analysis"]["mutations"][0]["workout_type"], "strength_a")
-        self.assertIn("How", body["notification"])
+        self.assertTrue(body["notification"].startswith("Changed the week."))
         self.assertEqual(body["notify"]["status"], "not_configured")
 
 

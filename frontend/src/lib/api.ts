@@ -7,8 +7,6 @@ import type {
   NotionToday,
   Reading,
   SpotifyNowPlaying,
-  OpenClawConversation,
-  OpenClawSendResult,
   ActivityEvent,
   WeatherForecast,
   WalkReminder,
@@ -20,6 +18,7 @@ import type {
   TrainingLogResult,
   WorkoutLogPayload,
   DailyBriefing,
+  WellbeingHistory,
   TrainingSession,
   WeeklyReview,
   PlanAdjustment,
@@ -73,22 +72,6 @@ export async function fetchNotionToday() {
 
 export async function fetchSpotifyNowPlaying(signal?: AbortSignal) {
   return requireJson<SpotifyNowPlaying>(await freshGet('/api/v1/spotify/now-playing', signal))
-}
-
-export async function fetchOpenClawMessages() {
-  return requireJson<OpenClawConversation>(await fetch('/api/v1/openclaw/messages'))
-}
-
-export function openOpenClawMessageStream(
-  onConversation: (conversation: OpenClawConversation) => void,
-  onError?: () => void,
-) {
-  const stream = new EventSource('/api/v1/openclaw/messages/stream')
-  stream.addEventListener('conversation', (event) => {
-    onConversation(JSON.parse((event as MessageEvent).data) as OpenClawConversation)
-  })
-  stream.onerror = () => onError?.()
-  return stream
 }
 
 export async function fetchActivityEvents(limit = 40) {
@@ -202,6 +185,10 @@ export async function logTraining(payload: TrainingLogPayload) {
   }))
 }
 
+export async function fetchWellbeingHistory(days = 90, signal?: AbortSignal) {
+  return requireJson<WellbeingHistory>(await freshGet(`/api/v1/wellbeing/history?days=${days}`, signal))
+}
+
 export async function fetchDailyBriefing(day: string, preview?: string, signal?: AbortSignal) {
   const query = preview ? `?preview=${encodeURIComponent(preview)}` : ''
   return requireJson<DailyBriefing>(await freshGet(`/api/v1/daily/${day}${query}`, signal))
@@ -255,21 +242,29 @@ export async function closeDailyDay(day: string, force = false) {
   }))
 }
 
-export async function logSundayReview(
-  day: string,
-  payload: { weight_kg?: number; same_as_last?: boolean; note?: string },
-) {
-  return requireJson<DailyBriefing>(await fetch(`/api/v1/daily/${day}/sunday`, {
+export async function logWeight(day: string, weightKg: number) {
+  return requireJson<TrainingLogResult>(await fetch(`/api/v1/daily/${day}/weight`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ weight_kg: weightKg }),
   }))
 }
 
-export async function sendOpenClawMessage(message: string) {
-  return requireJson<OpenClawSendResult>(await fetch('/api/v1/openclaw/messages', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+export async function logWeeklyCheckIn(
+  day: string,
+  payload: {
+    energy: number
+    hunger: number
+    bjj_performance: number
+    waist_cm?: number
+    pain_note?: string
+    note?: string
+  },
+) {
+  return requireJson<DailyBriefing>(await fetch(`/api/v1/daily/${day}/weekly`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   }))
 }
 

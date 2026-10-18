@@ -98,7 +98,7 @@ class TrainingReviewTests(unittest.TestCase):
         )
         self.assertIn("BJJ 1/3", prompt)
         self.assertIn("Strength 1/2", prompt)
-        self.assertIn("Zone 2 0/1", prompt)
+        self.assertIn("Easy cardio 0/1", prompt)
         self.assertIn("Average RPE 7.5, trend up", prompt)
         self.assertIn("Logged fatigue was high", prompt)
         self.assertIn("down 1.0 kg", prompt)

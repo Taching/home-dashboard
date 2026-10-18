@@ -26,6 +26,7 @@ def test_session_factory():
 class TrainingServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         factory = test_session_factory()
+        self.factory = factory
         self.service = TrainingService(session_factory=factory)
         self.weekly = WeeklyService(session_factory=factory)
         self.tokyo = ZoneInfo("Asia/Tokyo")
@@ -95,62 +96,85 @@ class TrainingServiceTests(unittest.TestCase):
         self.assertEqual(record.kind, "sober")
         self.assertEqual(record.completed, "yes")
 
-    def test_sunday_weight_compares_with_last_week(self) -> None:
-        previous = date(2026, 9, 6)
-        sunday = date(2026, 9, 13)
-        self.weekly.save_sunday(
-            previous,
-            self.service,
-            weight_kg=82.8,
-            now=datetime(2026, 9, 6, 10, tzinfo=self.tokyo),
-        )
+    def test_monday_check_in_compares_seven_day_averages(self) -> None:
+        from app.domain.wellbeing import WellbeingService
+
+        wellbeing = WellbeingService(session_factory=self.factory)
+        for offset in range(14):
+            day = date(2026, 10, 19) + timedelta(days=offset)
+            wellbeing.record(day, weight_kg=84.0 if offset < 7 else 83.6, source="test")
         self.service.log_workout(
             kind="bjj",
             exercises=[ExerciseDone("Class", True)],
             note="normal class",
-            now=datetime(2026, 9, 7, 21, tzinfo=self.tokyo),
+            now=datetime(2026, 10, 27, 21, tzinfo=self.tokyo),
         )
-        saved = self.weekly.save_sunday(
-            sunday,
+        saved = self.weekly.save_weekly(
+            date(2026, 11, 2),
             self.service,
-            weight_kg=82.4,
+            energy=4, hunger=3, bjj_performance=3, waist_cm=88.5,
             note="maybe drop Friday if BJJ is 4x",
-            now=datetime(2026, 9, 13, 10, tzinfo=self.tokyo),
+            now=datetime(2026, 11, 2, 10, tzinfo=self.tokyo),
         )
-        self.assertEqual(saved.check_in.previous_weight_kg, 82.8)
-        self.assertEqual(saved.check_in.delta_kg, -0.4)
+        check_in = saved.check_in
+        self.assertEqual(check_in.week_ending, date(2026, 11, 1))
+        self.assertEqual(check_in.weight_kg, 83.6)
+        self.assertEqual(check_in.previous_weight_kg, 84.0)
+        self.assertEqual(check_in.delta_kg, -0.4)
+        self.assertEqual(check_in.weigh_ins, 7)
+        self.assertEqual(check_in.waist_cm, 88.5)
         self.assertIn("down 0.4 kg", saved.notify_message)
-        self.assertNotIn("This week:", saved.notify_message)
-        self.assertEqual(saved.check_in.review_note, "maybe drop Friday if BJJ is 4x")
-        self.assertIn("BJJ", WeeklyService.week_summary_text(saved.check_in.sessions))
+        self.assertEqual(check_in.review_note, "maybe drop Friday if BJJ is 4x")
+        self.assertEqual(check_in.kcal_adjustment, 0)
+        self.assertIn("BJJ", WeeklyService.week_summary_text(check_in.sessions))
+
+    def test_two_slow_weeks_cut_intake_at_the_monday_check_in(self) -> None:
+        from app.domain.wellbeing import WellbeingService
+
+        wellbeing = WellbeingService(session_factory=self.factory)
+        for offset in range(21):
+            day = date(2026, 10, 26) + timedelta(days=offset)
+            wellbeing.record(day, weight_kg=83.0 - 0.1 * (offset // 7), source="test")
+        saved = self.weekly.save_weekly(
+            date(2026, 11, 16), self.service, energy=3, hunger=3, bjj_performance=3,
+            now=datetime(2026, 11, 16, 10, tzinfo=self.tokyo),
+        )
+        self.assertEqual(saved.check_in.kcal_adjustment, -150)
+        self.assertEqual(self.weekly.kcal_adjustment_total(date(2026, 11, 17)), -150)
+        self.assertEqual(self.weekly.kcal_adjustment_total(date(2026, 11, 15)), 0)
 
     def test_nudge_messages_are_short_with_one_link(self) -> None:
         daily = self.service.nudge_message(date(2026, 9, 13))
         gym = self.service.nudge_message(date(2026, 9, 15))
+        self.assertTrue(daily.startswith("Sunday rest."))
         self.assertIn("/daily/2026-09-13", daily)
-        self.assertTrue(daily.startswith("http"))
         self.assertNotIn("tick", daily.lower())
         self.assertLess(len(daily.splitlines()), 6)
-        self.assertIn("Today: Strength A", gym)
-        self.assertIn("/workout/strength_a", gym)
-        self.assertTrue(gym.startswith("http"))
+        self.assertTrue(gym.startswith("Today: Strength A"))
+        self.assertIn("/daily/2026-09-15#report", gym)
+        self.assertNotIn("/workout/", gym)
         self.assertNotIn("tick", gym.lower())
 
-    def test_sunday_rejected_on_weekday(self) -> None:
+    def test_weekly_check_in_rejected_off_monday(self) -> None:
         with self.assertRaises(ValueError):
-            self.weekly.save_sunday(
-                date(2026, 9, 14),
-                self.service,
-                weight_kg=82.0,
-                now=datetime(2026, 9, 14, 10, tzinfo=self.tokyo),
+            self.weekly.save_weekly(
+                date(2026, 11, 1), self.service, energy=3, hunger=3, bjj_performance=3,
+                now=datetime(2026, 11, 1, 10, tzinfo=self.tokyo),
             )
 
-    def test_sunday_reminder_only_at_10(self) -> None:
-        sunday_morning = datetime(2026, 9, 13, 10, 3, tzinfo=self.tokyo)
-        saturday = datetime(2026, 9, 12, 10, 3, tzinfo=self.tokyo)
-        self.assertEqual(self.weekly.reminder_due(sunday_morning), date(2026, 9, 13))
-        self.assertIsNone(self.weekly.reminder_due(saturday))
-        self.assertIsNone(self.weekly.reminder_due(sunday_morning.replace(hour=18)))
+    def test_weekly_check_in_needs_ratings(self) -> None:
+        with self.assertRaises(ValueError):
+            self.weekly.save_weekly(
+                date(2026, 11, 2), self.service, energy=0, hunger=3, bjj_performance=3,
+                now=datetime(2026, 11, 2, 10, tzinfo=self.tokyo),
+            )
+
+    def test_weekly_reminder_only_monday_at_10(self) -> None:
+        monday_morning = datetime(2026, 11, 2, 10, 3, tzinfo=self.tokyo)
+        sunday = datetime(2026, 11, 1, 10, 3, tzinfo=self.tokyo)
+        self.assertEqual(self.weekly.reminder_due(monday_morning), date(2026, 11, 2))
+        self.assertIsNone(self.weekly.reminder_due(sunday))
+        self.assertIsNone(self.weekly.reminder_due(monday_morning.replace(hour=18)))
 
     def test_managed_calendar_plan_uses_same_program(self) -> None:
         plan = self.service.managed_calendar_plan(now=datetime(2026, 9, 14, 9, tzinfo=self.tokyo), days=1)

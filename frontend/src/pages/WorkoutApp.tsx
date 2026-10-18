@@ -1,25 +1,14 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import chiliLogo from '../assets/chili-logo.svg'
-import { fetchDailyBriefing, fetchTrainingSession, logTrainingSessionResult } from '../lib/api'
+import { fetchDailyBriefing, fetchTrainingSession } from '../lib/api'
 import { useLiveResource } from '../hooks/useLiveResource'
 import { formatDate } from '../lib/format'
-import { canLogWorkout, doneMarkLabel, slugForType, workoutAlreadyLogged, workoutFormLocked } from '../lib/workoutMatch'
-import type { PlannedExercise, PlannedWorkout } from '../types'
-import { AskCoachButton } from '../components/AskCoachButton'
+import { canLogWorkout, doneMarkLabel, slugForType, workoutAlreadyLogged } from '../lib/workoutMatch'
+import type { PlannedExercise } from '../types'
 import { AlertIcon, ListIcon, SlidersIcon } from '../components/icons'
+import { TrainingReport } from '../components/TrainingReport'
 import { PageSkeleton } from '../components/PageSkeleton'
 import '../workout.css'
-
-const MISS_REASONS = [
-  ['OVERSLEPT', 'Overslept'],
-  ['WEATHER', 'Weather'],
-  ['WORK', 'Work'],
-  ['FATIGUE', 'Fatigue'],
-  ['POOR_SLEEP', 'Poor sleep'],
-  ['INJURY', 'Injury'],
-  ['ILLNESS', 'Illness'],
-  ['USER_CANCELLED', 'Could not go'],
-] as const
 
 function workoutPath() {
   return window.location.pathname.replace(/\/+$/, '') || '/'
@@ -189,7 +178,6 @@ function SessionPage({ sessionId }: { sessionId: string }) {
     ? new Date(session.start_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' })
     : todayStamp()
   const type = session?.planned_type ?? ''
-  const saved = Boolean(session && workoutFormLocked(session.status))
   const canLog = Boolean(session && canLogWorkout(type, type))
 
   if (!session && !error) return <PageSkeleton />
@@ -206,14 +194,19 @@ function SessionPage({ sessionId }: { sessionId: string }) {
       {error && <p className="workout-status">{error}</p>}
       {session && (
         <>
+          {canLog ? (
+            <TrainingReport day={day} workout={session} coachSessionId={session.id} />
+          ) : (
+            <p className="workout-status">This session cannot be logged from here.</p>
+          )}
           <section className="workout-hero">
             <p>{session.estimated_minutes} min</p>
             <h1>{session.title}</h1>
             <span>{session.reason}</span>
             <IntensityPill intensity={session.intensity} deload={session.deload} />
           </section>
-          <section className="workout-section">
-            <h2>Prescribed</h2>
+          <details className="workout-section workout-program">
+            <summary>Program</summary>
             <div className="workout-checks">
               {session.exercises.map((item) => (
                 <div key={item.name} className={`workout-check${item.done ? ' is-checked' : ''}`}>
@@ -230,321 +223,9 @@ function SessionPage({ sessionId }: { sessionId: string }) {
                 </div>
               )}
             </div>
-          </section>
-          <SessionResultForm session={session} canLog={canLog} saved={saved} day={day} />
+          </details>
         </>
       )}
     </div>
-  )
-}
-
-function SessionResultForm({
-  session,
-  canLog,
-  saved,
-  day,
-}: {
-  session: PlannedWorkout
-  canLog: boolean
-  saved: boolean
-  day: string
-}) {
-  const type = session.planned_type
-  const isBjj = type.startsWith('bjj_') || type === 'competition'
-  const [status, setStatus] = useState(saved ? session.status : 'completed')
-  const [missReason, setMissReason] = useState(session.miss_reason ?? 'OVERSLEPT')
-  const [rpe, setRpe] = useState(String(session.session_rpe ?? session.result?.session_rpe ?? ''))
-  const [difficulty, setDifficulty] = useState(String(session.result?.difficulty ?? ''))
-  const [notes, setNotes] = useState(session.notes ?? '')
-  const [fatigue, setFatigue] = useState(session.result?.fatigue ?? 'NORMAL')
-  const [soreness, setSoreness] = useState(session.result?.soreness ?? 'NORMAL')
-  const [pain, setPain] = useState(Boolean(session.result?.pain))
-  const [pace, setPace] = useState(session.result?.perceived_intensity ?? 'easy')
-  const [bjjRounds, setBjjRounds] = useState(String(session.result?.bjj_rounds ?? session.target_rounds ?? ''))
-  const [intensity, setIntensity] = useState(session.result?.perceived_intensity ?? 'normal')
-  const [grip, setGrip] = useState(session.result?.grip_fatigue ?? 'NORMAL')
-  const [recovery, setRecovery] = useState(session.result?.recovery_activity ?? 'mobility')
-  const [actuals, setActuals] = useState<Record<string, {
-    load: string; sets: string; reps: string; duration: string
-    rpe: string; technique: 'clean' | 'shaky' | 'breakdown'; pain: boolean; skip: boolean
-  }>>(
-    Object.fromEntries(session.exercises.map((item) => [item.name, {
-      load: String(item.load_value ?? ''),
-      sets: String(item.sets ?? ''),
-      reps: String(item.reps ?? ''),
-      duration: item.duration_seconds ? String(Math.round(item.duration_seconds / 60)) : '',
-      rpe: '',
-      technique: 'clean' as const,
-      pain: false,
-      skip: false,
-    }])),
-  )
-  const [pending, setPending] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    if (pending || !canLog) return
-    const payload: Record<string, unknown> = {
-      status: status === 'skipped' ? 'skipped' : status,
-      miss_reason: status === 'skipped' ? missReason : undefined,
-      notes: notes.trim() || undefined,
-    }
-    if (isBjj) {
-      if (status !== 'skipped') {
-        payload.bjj_rounds = bjjRounds ? Number(bjjRounds) : undefined
-        payload.perceived_intensity = intensity
-      }
-    } else {
-      payload.session_rpe = rpe ? Number(rpe) : undefined
-      payload.difficulty = difficulty ? Number(difficulty) : undefined
-      payload.fatigue = fatigue
-      payload.soreness = soreness
-      payload.pain = pain
-      if (type === 'zone_2') payload.perceived_intensity = pace
-      if (type === 'recovery') payload.recovery_activity = recovery
-      if (type === 'grip') payload.grip_fatigue = grip
-      payload.exercises = session.exercises.map((item) => {
-        const actual = actuals[item.name]
-        const exerciseSkipped = status === 'skipped' || Boolean(actual?.skip)
-        return {
-          name: item.name,
-          actual_load: actual?.load ? Number(actual.load) : undefined,
-          actual_sets: actual?.sets ? Number(actual.sets) : undefined,
-          actual_reps: actual?.reps || undefined,
-          actual_duration_seconds: actual?.duration ? Number(actual.duration) * 60 : undefined,
-          completed: !exerciseSkipped,
-          done: !exerciseSkipped,
-          status: exerciseSkipped ? 'skipped' : undefined,
-          rpe: !exerciseSkipped && actual?.rpe ? Number(actual.rpe) : undefined,
-          technique: !exerciseSkipped && type.startsWith('strength_') ? actual?.technique : undefined,
-          pain: !exerciseSkipped && type.startsWith('strength_') ? Boolean(actual?.pain) : undefined,
-        }
-      })
-    }
-    setPending(true)
-    void logTrainingSessionResult(session.id, payload)
-      .then(() => {
-        window.location.assign(`/daily/${day}`)
-      })
-      .catch(() => {
-        setMessage('Could not save results.')
-        setPending(false)
-      })
-  }
-
-  if (!canLog && !saved) {
-    return <p className="workout-status">This session cannot be logged from here.</p>
-  }
-
-  return (
-    <section className="workout-section">
-      <h2>{saved ? 'Logged' : 'How it went'}</h2>
-      <form className="workout-form" onSubmit={submit}>
-        <div className="workout-choices" role="radiogroup" aria-label="How it went">
-          {([['completed', 'Completed'], ['partial', 'Partial'], ['skipped', 'Skipped']] as const).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              className={`is-${value}${status === value ? ' is-selected' : ''}`}
-              aria-pressed={status === value}
-              disabled={saved}
-              onClick={() => setStatus(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {status === 'skipped' && (
-          <label className="workout-field">
-            <span>Why missed</span>
-            <select value={missReason} onChange={(event) => setMissReason(event.target.value)} disabled={saved}>
-              {MISS_REASONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
-        )}
-        {type.startsWith('strength_') && (
-          <div className="workout-checks">
-            {session.exercises.map((item) => {
-              const actual = actuals[item.name]
-              const update = (patch: Partial<typeof actual>) =>
-                setActuals((current) => ({ ...current, [item.name]: { ...current[item.name], ...patch } }))
-              return (
-                <div key={item.name} className={`workout-check${actual?.skip ? '' : ' is-checked'}`}>
-                  <span>
-                    <strong>{item.name}</strong>
-                    <em>Prescribed {exerciseLine(item)}</em>
-                    <span className="workout-actuals workout-actuals-4">
-                      <label className="workout-stat">
-                        <span>Kg</span>
-                        <input value={actual?.load ?? ''} disabled={saved || actual?.skip} onChange={(event) => update({ load: event.target.value })} />
-                      </label>
-                      <label className="workout-stat">
-                        <span>Sets</span>
-                        <input value={actual?.sets ?? ''} disabled={saved || actual?.skip} onChange={(event) => update({ sets: event.target.value })} />
-                      </label>
-                      <label className="workout-stat">
-                        <span>Reps</span>
-                        <input value={actual?.reps ?? ''} disabled={saved || actual?.skip} onChange={(event) => update({ reps: event.target.value })} />
-                      </label>
-                      <label className="workout-stat">
-                        <span>RPE</span>
-                        <input inputMode="decimal" value={actual?.rpe ?? ''} disabled={saved || actual?.skip} onChange={(event) => update({ rpe: event.target.value })} />
-                      </label>
-                    </span>
-                    {!actual?.skip && (
-                      <div className="workout-exercise-meta">
-                        <div className="workout-choices is-compact" role="radiogroup" aria-label={`${item.name} technique`}>
-                          {(['clean', 'shaky', 'breakdown'] as const).map((value) => (
-                            <button
-                              key={value}
-                              type="button"
-                              className={`is-technique-${value}${actual?.technique === value ? ' is-selected' : ''}`}
-                              aria-pressed={actual?.technique === value}
-                              disabled={saved}
-                              onClick={() => update({ technique: value })}
-                            >
-                              {value === 'clean' ? 'Clean' : value === 'shaky' ? 'Shaky' : 'Breakdown'}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <div className="workout-chip-row">
-                      {!actual?.skip && (
-                        <button
-                          type="button"
-                          className={`workout-chip is-danger${actual?.pain ? ' is-active' : ''}`}
-                          aria-pressed={Boolean(actual?.pain)}
-                          disabled={saved}
-                          onClick={() => update({ pain: !actual?.pain })}
-                        >
-                          Pain
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className={`workout-chip${actual?.skip ? ' is-active' : ''}`}
-                        aria-pressed={Boolean(actual?.skip)}
-                        disabled={saved}
-                        onClick={() => update({ skip: !actual?.skip })}
-                      >
-                        Skip this one
-                      </button>
-                    </div>
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        )}
-        {type === 'zone_2' && (
-          <>
-            <label className="workout-field">
-              <span>Actual minutes</span>
-              <input value={actuals[session.exercises[0]?.name]?.duration ?? ''} disabled={saved} onChange={(event) => setActuals((current) => ({ ...current, [session.exercises[0]?.name]: { ...current[session.exercises[0]?.name], duration: event.target.value } }))} />
-            </label>
-            <label className="workout-field">
-              <span>Pace</span>
-              <select value={pace} disabled={saved} onChange={(event) => setPace(event.target.value)}>
-                <option value="easy">Conversation</option>
-                <option value="normal">Steady</option>
-                <option value="hard">Too hard</option>
-              </select>
-            </label>
-          </>
-        )}
-        {type === 'grip' && (
-          <>
-            <label className="workout-field">
-              <span>Actual hold load</span>
-              <input value={actuals[session.exercises[0]?.name]?.load ?? ''} disabled={saved} onChange={(event) => setActuals((current) => ({ ...current, [session.exercises[0]?.name]: { ...current[session.exercises[0]?.name], load: event.target.value } }))} />
-            </label>
-            <label className="workout-field">
-              <span>Actual hold minutes</span>
-              <input value={actuals[session.exercises[0]?.name]?.duration ?? ''} disabled={saved} onChange={(event) => setActuals((current) => ({ ...current, [session.exercises[0]?.name]: { ...current[session.exercises[0]?.name], duration: event.target.value } }))} />
-            </label>
-            <label className="workout-field">
-              <span>Grip fatigue</span>
-              <select value={grip} disabled={saved} onChange={(event) => setGrip(event.target.value)}>
-                <option value="NORMAL">Normal</option>
-                <option value="HIGH">High</option>
-              </select>
-            </label>
-          </>
-        )}
-        {isBjj && status !== 'skipped' && (
-          <>
-            <label className="workout-field">
-              <span>Rounds</span>
-              <input inputMode="numeric" value={bjjRounds} disabled={saved} onChange={(event) => setBjjRounds(event.target.value)} />
-            </label>
-            <label className="workout-field">
-              <span>Intensity</span>
-              <select value={intensity} disabled={saved} onChange={(event) => setIntensity(event.target.value)}>
-                <option value="easy">Easy</option>
-                <option value="normal">Normal</option>
-                <option value="hard">Hard</option>
-              </select>
-            </label>
-          </>
-        )}
-        {type === 'recovery' && (
-          <label className="workout-field">
-            <span>What did you do?</span>
-            <select value={recovery} disabled={saved} onChange={(event) => setRecovery(event.target.value)}>
-              <option value="mobility">Mobility</option>
-              <option value="walk">Walk</option>
-              <option value="nothing">Nothing</option>
-            </select>
-          </label>
-        )}
-        {!isBjj && (
-          <>
-            <label className="workout-field">
-              <span>Session RPE</span>
-              <input value={rpe} disabled={saved} onChange={(event) => setRpe(event.target.value)} placeholder="1–10" />
-            </label>
-            <label className="workout-field">
-              <span>Difficulty</span>
-              <input value={difficulty} disabled={saved} onChange={(event) => setDifficulty(event.target.value)} placeholder="1–10" />
-            </label>
-            <label className="workout-field">
-              <span>Fatigue</span>
-              <select value={fatigue} disabled={saved} onChange={(event) => setFatigue(event.target.value)}>
-                <option value="LOW">Low</option>
-                <option value="NORMAL">Normal</option>
-                <option value="HIGH">High</option>
-              </select>
-            </label>
-            <label className="workout-field">
-              <span>Soreness</span>
-              <select value={soreness} disabled={saved} onChange={(event) => setSoreness(event.target.value)}>
-                <option value="LOW">Low</option>
-                <option value="NORMAL">Normal</option>
-                <option value="HIGH">High</option>
-              </select>
-            </label>
-            <button
-              type="button"
-              className={`workout-chip is-danger${pain ? ' is-active' : ''}`}
-              aria-pressed={pain}
-              disabled={saved}
-              onClick={() => setPain(!pain)}
-            >
-              Pain
-            </button>
-          </>
-        )}
-        <label className="workout-field">
-          <span>Notes</span>
-          <textarea value={notes} disabled={saved} onChange={(event) => setNotes(event.target.value)} maxLength={500} />
-        </label>
-        {!saved && <button type="submit" disabled={pending}>{pending ? 'Saving…' : 'Save results'}</button>}
-        {saved && <p className="workout-done-badge">✓ {doneMarkLabel(session.status) ?? 'Logged'}</p>}
-        {message && <p className="workout-status">{message}</p>}
-      </form>
-      {saved && <AskCoachButton sessionId={session.id} />}
-    </section>
   )
 }

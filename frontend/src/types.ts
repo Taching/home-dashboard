@@ -48,6 +48,13 @@ export type WellbeingSummary = {
   current_weight_kg: number | null
   weight_goal_kg: number
   latest_weight_date: string | null
+  weight_7d_average_kg?: number | null
+  weight_target_kg?: number | null
+  watch?: {
+    sleep_hours: number
+    sleep_score: number | null
+    hrv_status: string | null
+  } | null
 }
 
 export type SystemStatus = {
@@ -149,6 +156,8 @@ export type WalkingPadToday = {
   goal_steps: number
   session_count: number
   goal_met: boolean
+  day_steps?: number
+  watch_steps?: number | null
   active_session: {
     external_id: string
     started_at: string
@@ -199,6 +208,8 @@ export type TrainingPlan = {
 export type TrainingExerciseDone = {
   name: string
   done: boolean
+  actual_load?: number
+  rpe?: number
 }
 
 export type TrainingLog = {
@@ -246,6 +257,11 @@ export type WorkoutLogPayload = {
   kind?: string
   exercises: TrainingExerciseDone[]
   note?: string
+  status?: 'completed' | 'partial' | 'skipped'
+  miss_reason?: string
+  bjj_rounds?: number
+  perceived_intensity?: 'easy' | 'normal' | 'hard'
+  interval_watts?: { round: number; watts: number }[]
 }
 
 export type DailyExercise = {
@@ -302,6 +318,7 @@ export type PlannedWorkout = {
   miss_reason?: string | null
   result?: TrainingSessionResult | null
   exercise_results?: TrainingExerciseResult[]
+  metrics?: TrainingMetric[]
   deload?: boolean
 }
 
@@ -322,7 +339,15 @@ export type TrainingSessionResult = {
   recovery_activity?: string | null
 }
 
+export type TrainingMetric = {
+  metric_type: string
+  sequence: number | null
+  value: number
+  unit: string
+}
+
 export type TrainingExerciseResult = {
+  name?: string | null
   exercise_id: number
   actual_load?: number | null
   actual_sets?: number | null
@@ -455,7 +480,7 @@ export type DailyWeekSession = {
 }
 
 export type DailyAnswerItem = {
-  id: 'workout' | 'sunday' | 'sober'
+  id: 'workout' | 'weekly' | 'sober'
   label: string
   required: boolean
   done: boolean
@@ -468,16 +493,100 @@ export type DailyAnswers = {
   chili_delivery?: string | null
 }
 
-export type DailySunday = {
+export type CutDivision = {
+  division: 'lightweight' | 'middleweight'
+  limit_gi_kg: number
+  decided: boolean
+  note: string
+}
+
+export type DailyWeekly = {
   week_start: string
   week_ending: string
   weight_kg: number | null
   previous_weight_kg: number | null
   delta_kg: number | null
+  weigh_ins: number
+  target_kg: number | null
   review_note: string | null
   submitted: boolean
   sessions: DailyWeekSession[]
   coach_review: string | null
+  counts: { bjj?: number; strength?: number; cardio?: number }
+  sleep_average: number | null
+  waist_cm: number | null
+  energy: number | null
+  hunger: number | null
+  bjj_performance: number | null
+  pain_note: string | null
+  kcal_adjustment: number | null
+  kcal_reason: string | null
+  division: CutDivision
+  watch?: WatchWeek | null
+}
+
+export type WatchWeek = {
+  days: number
+  resting_hr: number | null
+  hrv: number | null
+  sleep_score: number | null
+  sleep_hours: number | null
+  body_battery_high: number | null
+  steps: number | null
+}
+
+export type DailyWatch = {
+  status: 'ready' | 'waiting'
+  last_error: string | null
+  hint?: string | null
+  synced_at?: string
+  steps?: number | null
+  sleep_hours?: number | null
+  sleep_score?: number | null
+  resting_hr?: number | null
+  hrv_last_night?: number | null
+  hrv_status?: string | null
+  body_battery_high?: number | null
+  body_battery_low?: number | null
+  body_battery_latest?: number | null
+  activities?: {
+    name: string
+    type: string
+    start_local: string | null
+    duration_min: number
+    avg_hr: number | null
+    distance_km: number | null
+  }[]
+}
+
+export type WellbeingHistory = {
+  start: string
+  end: string
+  weights: { date: string; kg: number }[]
+  sober: { date: string; days: number; drank: boolean }[]
+  sober_days: number
+  weight_goal_kg: number | null
+}
+
+export type DailyCut = {
+  today_kg: number | null
+  seven_day_average_kg: number | null
+  weigh_ins_7d: number
+  weekly_change_kg: number | null
+  target_kg: { low: number; high: number }
+  checkpoint: { date: string; low: number; high: number } | null
+  status: 'on_trend' | 'above' | 'below' | 'unknown' | 'middleweight'
+  division: CutDivision
+  nutrition: {
+    kind: 'training' | 'rest'
+    kcal: number
+    protein_g: [number, number]
+    fat_g: [number, number]
+    carbs_g: number
+    adjustment_kcal: number
+    carb_timing: string
+  }
+  stop_rule: string
 }
 
 export type DailyPlanItem = {
@@ -531,7 +640,9 @@ export type DailyBriefing = {
     note: string | null
   }
   sleep: { hours: number | null } | null
-  sunday: DailySunday | null
+  weekly: DailyWeekly | null
+  cut?: DailyCut | null
+  watch?: DailyWatch | null
   preview: boolean
   daily_url: string
   answers?: DailyAnswers
@@ -564,27 +675,6 @@ export type TrainingLogResult = {
   log?: TrainingLog | null
   advice?: string | null
   briefing?: DailyBriefing
-}
-
-export type OpenClawMessage = {
-  id: string
-  role: 'user' | 'assistant' | 'system'
-  text: string
-  created_at: string | null
-  sender?: 'user' | 'home-dashboard-agent' | 'assistant' | 'system' | null
-}
-
-export type OpenClawConversation = {
-  status: IntegrationStatus
-  messages: OpenClawMessage[]
-  message: string | null
-}
-
-export type OpenClawSendResult = {
-  status: 'success' | 'failed'
-  delivery_status: string | null
-  reply: string | null
-  message: string | null
 }
 
 export type ActivityEventDirection = 'in' | 'out' | 'info'

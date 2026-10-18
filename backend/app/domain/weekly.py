@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -9,6 +9,9 @@ from sqlalchemy import select
 from app.core.settings import settings
 from app.database.models import WeeklyReview, WeightLog
 from app.database.session import SessionLocal
+from app.domain import cut_plan
+from app.domain.telegram_text import telegram_message
+from app.domain.wellbeing import WellbeingService
 from app.domain.training_logs import ExerciseDone, TrainingLogRecord, TrainingService
 from app.domain.training_plans import plan_for, suggested_kinds_for
 
@@ -30,127 +33,240 @@ class WeekSession:
 
 
 @dataclass(frozen=True)
-class SundayCheckIn:
+class WeeklyCheckIn:
+    """Monday check-in for the Mon–Sun week that just ended (March 2027 plan)."""
     week_start: date
     week_ending: date
+    check_in_date: date
     weight_kg: float | None
     previous_weight_kg: float | None
     delta_kg: float | None
+    weigh_ins: int
     review_note: str | None
     submitted: bool
     sessions: tuple[WeekSession, ...]
+    counts: dict[str, int] = field(default_factory=dict)
+    sleep_average: float | None = None
+    waist_cm: float | None = None
+    energy: int | None = None
+    hunger: int | None = None
+    bjj_performance: int | None = None
+    pain_note: str | None = None
+    kcal_adjustment: int | None = None
+    kcal_reason: str | None = None
+    target_kg: float | None = None
+    division: dict = field(default_factory=dict)
+    watch: dict | None = None
     coach_review: str | None = None
 
 
 @dataclass(frozen=True)
-class SundaySaveResult:
-    check_in: SundayCheckIn
+class WeeklySaveResult:
+    check_in: WeeklyCheckIn
     notify_message: str
 
 
 class WeeklyService:
-    def __init__(self, session_factory=SessionLocal) -> None:
+    def __init__(self, session_factory=SessionLocal, *, wellbeing=None, garmin=None) -> None:
         self._session_factory = session_factory
         self._timezone = ZoneInfo(settings.timezone)
+        self._wellbeing = wellbeing if wellbeing is not None else WellbeingService(session_factory)
+        self._garmin = garmin
 
-    def sunday_check_in(self, day: date, training: TrainingService) -> SundayCheckIn | None:
-        if day.weekday() != 6:
+    def weekly_check_in(self, day: date, training) -> WeeklyCheckIn | None:
+        if day.weekday() != 0:
             return None
-        week_start = day - timedelta(days=6)
-        saved = self.review_for(day)
-        previous = self.latest_weight_before(day)
-        current_kg = saved.weight_kg if saved is not None else None
-        previous_kg = (
-            saved.previous_weight_kg
-            if saved is not None and saved.previous_weight_kg is not None
-            else (previous.weight_kg if previous is not None else None)
-        )
-        delta = None
-        if current_kg is not None and previous_kg is not None:
-            delta = round(current_kg - previous_kg, 2)
-        return SundayCheckIn(
+        week_ending = day - timedelta(days=1)
+        week_start = week_ending - timedelta(days=6)
+        saved = self.review_for(week_ending)
+        weights = self._weights(week_start - timedelta(days=14), week_ending)
+        average, count = cut_plan.seven_day_average(weights, week_ending)
+        previous, _ = cut_plan.seven_day_average(weights, week_ending - timedelta(days=7))
+        sleep = self._sleep(week_start, week_ending)
+        sessions = self.week_sessions(week_ending, training)
+        if saved is not None and saved.weight_kg is not None:
+            average = saved.weight_kg
+        if saved is not None and saved.previous_weight_kg is not None:
+            previous = saved.previous_weight_kg
+        delta = round(average - previous, 2) if average is not None and previous is not None else None
+        performance_ok = None if saved is None or saved.bjj_performance is None else saved.bjj_performance >= 3
+        if saved is not None and saved.kcal_adjustment is not None:
+            adjustment, reason = saved.kcal_adjustment, saved.kcal_reason
+        else:
+            adjustment, reason = self.proposed_adjustment(day, weights)
+        return WeeklyCheckIn(
             week_start=week_start,
-            week_ending=day,
-            weight_kg=current_kg,
-            previous_weight_kg=previous_kg,
+            week_ending=week_ending,
+            check_in_date=day,
+            weight_kg=average,
+            previous_weight_kg=previous,
             delta_kg=delta,
+            weigh_ins=count,
             review_note=saved.note if saved is not None else None,
             submitted=saved is not None,
-            sessions=self.week_sessions(day, training),
+            sessions=sessions,
+            counts=self.session_counts(sessions),
+            sleep_average=round(sum(sleep) / len(sleep), 1) if sleep else None,
+            waist_cm=saved.waist_cm if saved is not None else None,
+            energy=saved.energy if saved is not None else None,
+            hunger=saved.hunger if saved is not None else None,
+            bjj_performance=saved.bjj_performance if saved is not None else None,
+            pain_note=saved.pain_note if saved is not None else None,
+            kcal_adjustment=adjustment,
+            kcal_reason=reason,
+            target_kg=round(sum(cut_plan.target_for(week_ending)) / 2, 1),
+            division=cut_plan.division_status(day, average, performance_ok=performance_ok),
+            watch=self._watch_week(week_start, week_ending),
             coach_review=saved.coach_review if saved is not None else None,
         )
 
-    def store_coach_review(self, day: date, text: str) -> None:
+    def proposed_adjustment(
+        self, day: date, weights: dict[date, float], *, performance_worse: bool = False,
+    ) -> tuple[int, str]:
+        week_ending = day - timedelta(days=1)
+        changes = [
+            cut_plan.weekly_change(weights, week_ending),
+            cut_plan.weekly_change(weights, week_ending - timedelta(days=7)),
+        ]
+        return cut_plan.intake_adjustment(
+            day, changes,
+            last_adjustment_on=self.last_adjustment_on(day),
+            performance_worse=performance_worse,
+        )
+
+    def kcal_adjustment_total(self, day: date) -> int:
+        """Sum of every intake change decided at a Monday check-in before `day`."""
         with self._session_factory() as session:
-            row = session.scalars(select(WeeklyReview).where(WeeklyReview.week_ending == day)).first()
+            rows = session.scalars(
+                select(WeeklyReview.kcal_adjustment)
+                .where(WeeklyReview.week_ending < day)
+                .where(WeeklyReview.kcal_adjustment.is_not(None))
+            ).all()
+        return int(sum(rows))
+
+    def last_adjustment_on(self, day: date) -> date | None:
+        with self._session_factory() as session:
+            row = session.scalars(
+                select(WeeklyReview)
+                .where(WeeklyReview.week_ending < day - timedelta(days=1))
+                .where(WeeklyReview.kcal_adjustment.is_not(None))
+                .where(WeeklyReview.kcal_adjustment != 0)
+                .order_by(WeeklyReview.week_ending.desc())
+            ).first()
+        return row.week_ending + timedelta(days=1) if row is not None else None
+
+    def latest_performance_ok(self, day: date) -> bool | None:
+        with self._session_factory() as session:
+            row = session.scalars(
+                select(WeeklyReview)
+                .where(WeeklyReview.week_ending < day)
+                .where(WeeklyReview.bjj_performance.is_not(None))
+                .order_by(WeeklyReview.week_ending.desc())
+            ).first()
+        return None if row is None else row.bjj_performance >= 3
+
+    def store_coach_review(self, day: date, text: str) -> None:
+        week_ending = day - timedelta(days=1) if day.weekday() == 0 else day
+        with self._session_factory() as session:
+            row = session.scalars(select(WeeklyReview).where(WeeklyReview.week_ending == week_ending)).first()
             if row is None:
                 return
             row.coach_review = text
             session.commit()
 
-    def save_sunday(
+    def save_weekly(
         self,
         day: date,
-        training: TrainingService,
+        training,
         *,
-        weight_kg: float | None,
-        same_as_last: bool = False,
+        energy: int,
+        hunger: int,
+        bjj_performance: int,
+        waist_cm: float | None = None,
+        pain_note: str | None = None,
         note: str | None = None,
         source: str = "ui",
         now: datetime | None = None,
-    ) -> SundaySaveResult:
-        if day.weekday() != 6:
-            raise ValueError("Weight and week review are Sunday only.")
+    ) -> WeeklySaveResult:
+        if day.weekday() != 0:
+            raise ValueError("The weekly check-in is on Monday.")
+        for label, value in (("Energy", energy), ("Hunger", hunger), ("BJJ performance", bjj_performance)):
+            if value is None or not 1 <= int(value) <= 5:
+                raise ValueError(f"{label} must be rated 1–5.")
+        if waist_cm is not None and not 50 <= waist_cm <= 150:
+            raise ValueError("Waist must be between 50 and 150 cm.")
         current = self._as_local(now or datetime.now(UTC))
         stamped = current if current.date() == day else datetime.combine(day, time(12, 0), tzinfo=self._timezone)
-        previous = self.latest_weight_before(day)
-        previous_kg = previous.weight_kg if previous is not None else None
-        resolved = previous_kg if same_as_last and previous_kg is not None else weight_kg
-        if resolved is None:
-            raise ValueError("Weight is required, or mark same as last week.")
-        resolved = self._normalise_weight(resolved)
-        sessions = self.week_sessions(day, training)
+        week_ending = day - timedelta(days=1)
+        weights = self._weights(week_ending - timedelta(days=20), week_ending)
+        average, _ = cut_plan.seven_day_average(weights, week_ending)
+        previous, _ = cut_plan.seven_day_average(weights, week_ending - timedelta(days=7))
+        sleep = self._sleep(week_ending - timedelta(days=6), week_ending)
+        sessions = self.week_sessions(week_ending, training)
         summary = self.week_summary_text(sessions)
         with self._session_factory() as session:
-            session.add(
-                WeightLog(
-                    logged_at=self._as_utc(stamped),
-                    weight_kg=resolved,
-                    source=source,
-                )
-            )
-            row = session.scalars(select(WeeklyReview).where(WeeklyReview.week_ending == day)).first()
+            row = session.scalars(select(WeeklyReview).where(WeeklyReview.week_ending == week_ending)).first()
             if row is None:
-                session.add(
-                    WeeklyReview(
-                        week_ending=day,
-                        logged_at=self._as_utc(stamped),
-                        weight_kg=resolved,
-                        previous_weight_kg=previous_kg,
-                        note=self._trim(note, 500),
-                        summary=summary,
-                        source=source,
-                    )
+                adjustment, reason = self.proposed_adjustment(
+                    day, weights, performance_worse=bjj_performance <= 2 and energy <= 2,
                 )
-            else:
-                row.logged_at = self._as_utc(stamped)
-                row.weight_kg = resolved
-                row.previous_weight_kg = previous_kg
-                row.note = self._trim(note, 500)
-                row.summary = summary
-                row.source = source
+                row = WeeklyReview(week_ending=week_ending, kcal_adjustment=adjustment, kcal_reason=reason[:300])
+                session.add(row)
+            row.logged_at = self._as_utc(stamped)
+            row.weight_kg = average
+            row.previous_weight_kg = previous
+            row.waist_cm = round(float(waist_cm), 1) if waist_cm is not None else None
+            row.energy = int(energy)
+            row.hunger = int(hunger)
+            row.bjj_performance = int(bjj_performance)
+            row.pain_note = self._trim(pain_note, 500)
+            row.sleep_average = round(sum(sleep) / len(sleep), 1) if sleep else None
+            row.note = self._trim(note, 500)
+            row.summary = summary
+            row.source = source
             session.commit()
-        check_in = self.sunday_check_in(day, training)
+        check_in = self.weekly_check_in(day, training)
         if check_in is None:
-            raise RuntimeError("Sunday check-in could not be loaded.")
-        return SundaySaveResult(
+            raise RuntimeError("Weekly check-in could not be loaded.")
+        return WeeklySaveResult(
             check_in=check_in,
             notify_message=self.notify_message(check_in, self.daily_url(day)),
         )
 
-    def review_for(self, sunday: date) -> WeeklyReview | None:
+    def _watch_week(self, start: date, end: date) -> dict | None:
+        if self._garmin is None or not hasattr(self._garmin, "week_summary"):
+            return None
+        try:
+            return self._garmin.week_summary(start, end)
+        except Exception:
+            return None
+
+    def _weights(self, start: date, end: date) -> dict[date, float]:
+        if self._wellbeing is None or not hasattr(self._wellbeing, "weights_between"):
+            return {}
+        return self._wellbeing.weights_between(start, end)
+
+    def _sleep(self, start: date, end: date) -> list[float]:
+        if self._wellbeing is None or not hasattr(self._wellbeing, "sleep_between"):
+            return []
+        return self._wellbeing.sleep_between(start, end)
+
+    @staticmethod
+    def session_counts(sessions: tuple[WeekSession, ...] | list[WeekSession]) -> dict[str, int]:
+        done = [item for item in sessions if item.completed in {"completed", "partial"}]
+        return {
+            "bjj": sum(item.kind.startswith("bjj") or item.kind == "competition" for item in done),
+            "strength": sum(item.kind.startswith("strength") for item in done),
+            # Zone 2 sessions plus Strength A's easy-cardio finisher when it was done.
+            "cardio": sum(item.kind in {"zone_2", "zone2"} for item in done) + sum(
+                item.kind == "strength_a" and any(ex.name == "Easy cardio" and ex.done for ex in item.exercises)
+                for item in done
+            ),
+        }
+
+    def review_for(self, week_ending: date) -> WeeklyReview | None:
         with self._session_factory() as session:
-            return session.scalars(select(WeeklyReview).where(WeeklyReview.week_ending == sunday)).first()
+            return session.scalars(select(WeeklyReview).where(WeeklyReview.week_ending == week_ending)).first()
 
     def latest_weight_before(self, day: date) -> WeightRecord | None:
         start = datetime.combine(day, time.min, tzinfo=self._timezone).astimezone(UTC)
@@ -250,31 +366,30 @@ class WeeklyService:
 
     def reminder_due(self, now: datetime | None = None) -> date | None:
         current = self._as_local(now or datetime.now(UTC))
-        if current.weekday() != 6 or current.hour != 10:
+        if current.weekday() != 0 or current.hour != 10:
             return None
         return current.date()
 
-    def reminder_message(self, sunday: date, daily_url: str) -> str:
-        previous = self.latest_weight_before(sunday)
-        if previous is not None:
-            last = f"Last Sunday was {previous.weight_kg:.1f} kg. "
-        else:
-            last = "No last-Sunday weight yet. "
-        return (
-            f"{daily_url}\n\n"
-            "Sunday weigh-in and week review.\n"
-            f"{last}Compare with this week, then say if next week needs a change."
+    def reminder_message(self, monday: date, daily_url: str) -> str:
+        week_ending = monday - timedelta(days=1)
+        average, count = cut_plan.seven_day_average(self._weights(week_ending - timedelta(days=6), week_ending), week_ending)
+        target = round(sum(cut_plan.target_for(week_ending)) / 2, 1)
+        weight = (
+            f"Seven-day average {average:.1f} kg from {count} weigh-ins (trend target {target:.1f})."
+            if average is not None else "No morning weigh-ins last week — log them on the daily page."
         )
+        return telegram_message(f"Monday check-in. {weight}", daily_url)
 
     @staticmethod
-    def notify_message(check_in: SundayCheckIn, daily_url: str) -> str:
-        weight = WeeklyService.weight_line(check_in)
-        return (
-            f"{daily_url}\n\n"
-            f"Sunday saved.\n"
-            f"{weight}\n"
-            "I'll reply if next week needs a change."
-        )
+    def notify_message(check_in: WeeklyCheckIn, daily_url: str) -> str:
+        lines = [telegram_message("Monday check-in saved.", daily_url), WeeklyService.weight_line(check_in)]
+        counts = check_in.counts
+        lines.append(f"Done: BJJ {counts.get('bjj', 0)} · Strength {counts.get('strength', 0)} · Cardio {counts.get('cardio', 0)}.")
+        if check_in.kcal_reason:
+            lines.append(f"Food: {check_in.kcal_reason}")
+        if check_in.division.get("note"):
+            lines.append(check_in.division["note"])
+        return "\n".join(lines)
 
     @staticmethod
     def week_summary_text(sessions: tuple[WeekSession, ...] | list[WeekSession]) -> str:
@@ -300,20 +415,24 @@ class WeeklyService:
         return "\n".join(lines)
 
     @staticmethod
-    def weight_line(check_in: SundayCheckIn) -> str:
+    def weight_line(check_in: WeeklyCheckIn) -> str:
         if check_in.weight_kg is None:
-            return "Weight: not logged."
-        if check_in.previous_weight_kg is None:
-            return f"Weight: {check_in.weight_kg:.1f} kg (no previous Sunday)."
-        delta = check_in.delta_kg or 0
-        if abs(delta) < 0.05:
-            return f"Weight: {check_in.weight_kg:.1f} kg, same as last week."
-        direction = "up" if delta > 0 else "down"
-        return (
-            f"Weight: {check_in.weight_kg:.1f} kg, "
-            f"{direction} {abs(delta):.1f} kg from last week "
-            f"({check_in.previous_weight_kg:.1f} kg)."
-        )
+            return "Weight: no morning weigh-ins last week."
+        line = f"Seven-day average {check_in.weight_kg:.1f} kg"
+        if check_in.weigh_ins:
+            line += f" ({check_in.weigh_ins} weigh-ins)"
+        delta = check_in.delta_kg
+        if delta is None or check_in.previous_weight_kg is None:
+            line += ", no previous week to compare"
+        elif abs(delta) < 0.05:
+            line += ", same as last week"
+        else:
+            line += f", {'up' if delta > 0 else 'down'} {abs(delta):.1f} kg from {check_in.previous_weight_kg:.1f}"
+        if check_in.target_kg is not None:
+            line += f". Trend target {check_in.target_kg:.1f} kg"
+        if check_in.waist_cm is not None:
+            line += f". Waist {check_in.waist_cm:.1f} cm"
+        return line + "."
 
     @staticmethod
     def _normalise_weight(weight_kg: float) -> float:

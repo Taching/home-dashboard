@@ -18,10 +18,11 @@ Sink #78
 class BluetoothAudioServiceTests(unittest.TestCase):
     def test_connected_bluetooth_default_output(self):
         service = BluetoothAudioService()
-        with patch.object(service, "_run", side_effect=[
-            "bluez_output.78_2B_64_77_F3_DB.1\n",
-            SAMPLE_PACTL_SINKS,
-        ]):
+        with patch("shutil.which", return_value="/usr/bin/pactl"), \
+             patch.object(service, "_run", side_effect=[
+                 "bluez_output.78_2B_64_77_F3_DB.1\n",
+                 SAMPLE_PACTL_SINKS,
+             ]):
             snapshot = service.snapshot()
 
         self.assertEqual(snapshot.status, "connected")
@@ -30,10 +31,11 @@ class BluetoothAudioServiceTests(unittest.TestCase):
 
     def test_connected_bluetooth_not_default(self):
         service = BluetoothAudioService()
-        with patch.object(service, "_run", side_effect=[
-            "alsa_output.usb-0c76_USB_Microphone-00.analog-stereo\n",
-            SAMPLE_PACTL_SINKS,
-        ]):
+        with patch("shutil.which", return_value="/usr/bin/pactl"), \
+             patch.object(service, "_run", side_effect=[
+                 "alsa_output.usb-0c76_USB_Microphone-00.analog-stereo\n",
+                 SAMPLE_PACTL_SINKS,
+             ]):
             snapshot = service.snapshot()
 
         self.assertEqual(snapshot.status, "connected")
@@ -42,10 +44,11 @@ class BluetoothAudioServiceTests(unittest.TestCase):
 
     def test_disconnected_when_no_bluetooth_sink(self):
         service = BluetoothAudioService()
-        with patch.object(service, "_run", side_effect=[
-            "alsa_output.usb-0c76_USB_Microphone-00.analog-stereo\n",
-            "Sink #66\n\tName: alsa_output.usb-0c76_USB_Microphone-00.analog-stereo\n",
-        ]):
+        with patch("shutil.which", return_value="/usr/bin/pactl"), \
+             patch.object(service, "_run", side_effect=[
+                 "alsa_output.usb-0c76_USB_Microphone-00.analog-stereo\n",
+                 "Sink #66\n\tName: alsa_output.usb-0c76_USB_Microphone-00.analog-stereo\n",
+             ]):
             snapshot = service.snapshot()
 
         self.assertEqual(snapshot.status, "disconnected")

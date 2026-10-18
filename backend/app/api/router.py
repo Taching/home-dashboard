@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime, timedelta
 import hmac
 import logging
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Header, HTTPException, Query, Request
@@ -211,6 +212,24 @@ def _wellbeing_response(request: Request) -> dict[str, object]:
         "current_weight_kg": summary.current_weight_kg,
         "weight_goal_kg": summary.weight_goal_kg,
         "latest_weight_date": summary.latest_weight_date.isoformat() if summary.latest_weight_date else None,
+        "weight_7d_average_kg": summary.weight_7d_average_kg,
+        "weight_target_kg": summary.weight_target_kg,
+        "watch": _watch_summary(request),
+    }
+
+
+def _watch_summary(request: Request) -> dict[str, object] | None:
+    # Last night's sleep for the wall header; the wall shows nothing else from the watch.
+    garmin = getattr(request.app.state, "garmin_service", None)
+    if garmin is None or not garmin.configured():
+        return None
+    snapshot = garmin.snapshot(datetime.now(ZoneInfo(settings.timezone)).date())
+    if not snapshot or snapshot.get("sleep_hours") is None:
+        return None
+    return {
+        "sleep_hours": snapshot["sleep_hours"],
+        "sleep_score": snapshot.get("sleep_score"),
+        "hrv_status": snapshot.get("hrv_status"),
     }
 
 
@@ -291,9 +310,11 @@ class WalkingPadTodayResponse(BaseModel):
     total_calories: float = 0
     goal_minutes: int = 120
     goal_distance_km: float = 3.0
-    goal_steps: int = 10_000
+    goal_steps: int = 8_000
     session_count: int = 0
     goal_met: bool = False
+    day_steps: int = 0
+    watch_steps: int | None = None
     active_session: WalkingPadActiveSessionResponse | None = None
 
 
@@ -718,6 +739,8 @@ def _walkingpad_response(snapshot) -> WalkingPadTodayResponse:
         goal_steps=snapshot.goal_steps,
         session_count=snapshot.session_count,
         goal_met=snapshot.goal_met,
+        day_steps=snapshot.day_steps,
+        watch_steps=snapshot.watch_steps,
         active_session=active,
     )
 

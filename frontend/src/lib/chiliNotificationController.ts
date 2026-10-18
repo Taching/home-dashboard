@@ -3,7 +3,6 @@ import {
   findCompletedTasks,
   findMeetingSoonEvents,
   formatMeetingSoon,
-  formatOpenClawMessageWaiting,
   formatPlanAdjusted,
   formatSpotifyPlaying,
   formatTaskCompleted,
@@ -11,7 +10,6 @@ import {
   hasSeenKey,
   hasTelegramSentKey,
   insertByPriority,
-  lastAssistantFingerprint,
   loadSeenKeys,
   loadTelegramSentKeys,
   markSeenKey,
@@ -27,7 +25,6 @@ import { notifyChili } from '../lib/api'
 import type {
   CalendarToday,
   NotionToday,
-  OpenClawConversation,
   SpotifyNowPlaying,
   WalkReminder,
   TrainingOverview,
@@ -39,7 +36,6 @@ export type NotificationInputs = {
   calendar: CalendarToday
   notion: NotionToday
   spotify: SpotifyNowPlaying
-  openclaw: OpenClawConversation
   spotifyIntentToken: number
   walkReminder: WalkReminder
   lastAdjustment?: TrainingOverview['last_adjustment']
@@ -58,8 +54,6 @@ export class ChiliNotificationController {
   private walkReminderKeysCollected = new Set<string>()
   private notionSnapshot = new Map<string, string>()
   private notionSeeded = false
-  private openClawFingerprint: string | null = null
-  private openClawSeeded = false
   private spotifyTrack: string | null = null
   private spotifyIntent = 0
   private lastSpokenId: string | null = null
@@ -115,7 +109,6 @@ export class ChiliNotificationController {
   }
 
   private speak(notification: ChiliNotification) {
-    if (notification.kind === 'openclaw_message') return
     if (notification.id === this.lastSpokenId) return
     if (typeof window === 'undefined' || !window.speechSynthesis) return
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
@@ -207,11 +200,11 @@ export class ChiliNotificationController {
         continue
       }
       this.meetingKeysCollected.add(dedupeKey)
+      // Wall banner only — Toshi turned off the Telegram ping for meetings.
       found.push(buildNotification(
         'meeting_soon',
         formatMeetingSoon(event.title, 10),
         dedupeKey,
-        { sendTelegram: true },
       ))
     }
 
@@ -247,19 +240,6 @@ export class ChiliNotificationController {
         this.notionSnapshot = tasksSnapshot(inputs.notion.tasks)
         this.lastNotionKey = notionKey
       }
-    }
-
-    const openClawFingerprint = lastAssistantFingerprint(inputs.openclaw.messages)
-    if (!this.openClawSeeded) {
-      this.openClawSeeded = true
-      this.openClawFingerprint = openClawFingerprint
-    } else if (openClawFingerprint && openClawFingerprint !== this.openClawFingerprint) {
-      this.openClawFingerprint = openClawFingerprint
-      found.push(buildNotification(
-        'openclaw_message',
-        formatOpenClawMessageWaiting(),
-        `openclaw:${openClawFingerprint}`,
-      ))
     }
 
     if (inputs.spotifyIntentToken !== 0 && inputs.spotifyIntentToken !== this.spotifyIntent) {

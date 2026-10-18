@@ -1,26 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import chiliLogo from '../assets/chili-logo.svg'
-import { closeDailyDay, fetchDailyBriefing, logDailyWorkout, logSleep, logSober, logSundayReview } from '../lib/api'
+import { closeDailyDay, fetchDailyBriefing, logSleep, logWeeklyCheckIn } from '../lib/api'
 import { dailyAnswersFromBriefing } from '../lib/dailyPlan'
 import { useLiveResource } from '../hooks/useLiveResource'
 import { doneMarkLabel, workoutFormLocked } from '../lib/workoutMatch'
-import type { DailyAnswerItem, DailyBriefing, PlannedExercise } from '../types'
+import type { DailyAnswerItem, DailyBriefing, DailyWatch } from '../types'
 import { AskCoachButton } from './AskCoachButton'
 import { AlertIcon, DumbbellIcon, SlidersIcon } from './icons'
 import { PageSkeleton } from './PageSkeleton'
+import { TrainingReport } from './TrainingReport'
 
 function formatTime(value: string, allDay = false) {
   if (allDay) return 'All day'
   return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
-}
-
-function exerciseDetail(item: PlannedExercise) {
-  return [
-    item.load_value != null && `${item.load_value}${item.load_unit ?? ''}`,
-    item.sets && `${item.sets} sets`,
-    item.reps && `${item.reps} reps`,
-    item.duration_seconds && `${item.duration_seconds}s`,
-  ].filter(Boolean).join(' · ')
 }
 
 function liveAdjustment(adjustment: { how?: string[]; why?: string[]; banner?: string } | null | undefined) {
@@ -138,9 +130,7 @@ export function DailyBriefingPage({ day }: { day: string }) {
   const showWorkoutForm = Boolean(
     workout
     && workout.planned_type !== 'rest'
-    && !briefing.preview
-    && !workout.planned_type.startsWith('bjj_')
-    && workout.planned_type !== 'competition',
+    && !briefing.preview,
   )
   const closed = answers.all_answered && !briefing.preview
 
@@ -186,7 +176,7 @@ export function DailyBriefingPage({ day }: { day: string }) {
           {briefing.preview && <span className="daily-preview-badge">Dry run · saved plan unchanged</span>}
           <DailyQuickActions />
         </div>
-        <div className="daily-streak"><strong>{briefing.sobriety.days}</strong><span>sober days</span></div>
+        <a className="daily-streak" href="/sober"><strong>{briefing.sobriety.days}</strong><span>sober days</span></a>
       </header>
 
       <div className="daily-layout">
@@ -210,7 +200,7 @@ export function DailyBriefingPage({ day }: { day: string }) {
                 )}
                 <p>{workout.reason}</p>
                 {workout.planned_type !== 'rest' && (
-                  <p><a className="daily-session-link" href={`/workout/${workout.id}`}>Open session page</a></p>
+                  <p><a className="daily-session-link" href={`/workout/${workout.id}`}>Program</a></p>
                 )}
                 {workout.coach_focus.length > 0 && <ul>{workout.coach_focus.map((focus) => <li key={focus}>{focus}</li>)}</ul>}
                 {adjustment?.how?.length ? (
@@ -276,36 +266,40 @@ export function DailyBriefingPage({ day }: { day: string }) {
           </section>
         </div>
 
-        <div className="daily-summary-stack">
-          {showWorkoutForm && (
-            <WorkoutForm
-              day={briefing.date}
-              workout={workout!}
-              storedAdvice={briefing.advice}
-              closesDay={remaining.length === 1 && remaining[0].id === 'workout'}
-              onLogged={applyBriefing}
-            />
-          )}
-          {briefing.sunday && (
-            <SundayForm
+        {showWorkoutForm && workout && (
+          <TrainingReport
+            day={briefing.date}
+            workout={workout}
+            closesDay={remaining.length === 1 && remaining[0].id === 'workout'}
+            onLogged={applyBriefing}
+          />
+        )}
+        <div className="daily-actions">
+          {briefing.weekly && (
+            <WeeklyForm
               briefing={briefing}
-              closesDay={remaining.length === 1 && remaining[0].id === 'sunday'}
+              closesDay={remaining.length === 1 && remaining[0].id === 'weekly'}
               onSaved={applyBriefing}
             />
           )}
-          <SleepForm
-            day={briefing.date}
-            hours={briefing.sleep?.hours ?? null}
-            onLogged={applyBriefing}
-          />
-          <SoberForm
-            day={briefing.date}
-            answered={briefing.sobriety.answered}
-            savedNote={briefing.sobriety.note}
-            days={briefing.sobriety.days}
-            closesDay={remaining.length === 1 && remaining[0].id === 'sober'}
-            onLogged={applyBriefing}
-          />
+          <nav className="daily-page-links" aria-label="Logs">
+            <a href="/weight">
+              <span>Morning weight</span>
+              <strong>{briefing.cut?.today_kg != null ? `${briefing.cut.today_kg.toFixed(1)} kg` : 'Log'}</strong>
+            </a>
+            <a href="/sober">
+              <span>Sober</span>
+              <strong>{briefing.sobriety.days} days</strong>
+            </a>
+          </nav>
+          {briefing.watch && <WatchCard watch={briefing.watch} />}
+          {briefing.watch?.sleep_hours == null && (
+            <SleepForm
+              day={briefing.date}
+              hours={briefing.sleep?.hours ?? null}
+              onLogged={applyBriefing}
+            />
+          )}
           {error && <p className="daily-form-error" role="alert">{error}</p>}
         </div>
       </div>
@@ -354,18 +348,24 @@ function CompleteDayPage({
               <span>{doneMarkLabel(workout.status) ?? workout.status}</span>
             </li>
           )}
-          {briefing.sunday?.submitted && (
+          {briefing.weekly?.submitted && (
             <li>
-              <strong>Sunday weigh-in</strong>
+              <strong>Monday check-in</strong>
               <span>
-                {briefing.sunday.weight_kg != null ? `${briefing.sunday.weight_kg.toFixed(1)} kg` : 'Saved'}
-                {briefing.sunday.delta_kg != null ? ` · ${briefing.sunday.delta_kg > 0 ? '+' : ''}${briefing.sunday.delta_kg.toFixed(1)} kg` : ''}
+                {briefing.weekly.weight_kg != null ? `7-day ${briefing.weekly.weight_kg.toFixed(1)} kg` : 'Saved'}
+                {briefing.weekly.delta_kg != null ? ` · ${signed(briefing.weekly.delta_kg)} kg` : ''}
               </span>
+            </li>
+          )}
+          {briefing.cut?.today_kg != null && (
+            <li>
+              <strong>Morning weight</strong>
+              <span>{briefing.cut.today_kg.toFixed(1)} kg</span>
             </li>
           )}
           <li>
             <strong>Sober</strong>
-            <span>{briefing.sobriety.answered === 'yes' ? 'Yes' : briefing.sobriety.answered === 'no' ? 'No' : 'Saved'}</span>
+            <span>{briefing.sobriety.answered === 'no' ? 'Drank' : `${briefing.sobriety.days} days`}</span>
           </li>
         </ul>
         {briefing.tomorrow && (
@@ -387,105 +387,6 @@ function CompleteDayPage({
         {error && <p className="daily-form-error" role="alert">{error}</p>}
       </section>
     </main>
-  )
-}
-
-function WorkoutForm({
-  day,
-  workout,
-  storedAdvice,
-  closesDay,
-  onLogged,
-}: {
-  day: string
-  workout: NonNullable<DailyBriefing['workout']>
-  storedAdvice?: string | null
-  closesDay?: boolean
-  onLogged: (next?: DailyBriefing) => void
-}) {
-  const [done, setDone] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(workout.exercises.map((item) => [item.name, Boolean(item.done)])),
-  )
-  const [note, setNote] = useState(workout.notes ?? '')
-  const [pending, setPending] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [advice, setAdvice] = useState<string | null>(null)
-  const sent = saved || workoutFormLocked(workout.status)
-  const [error, setError] = useState<string | null>(null)
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    if (pending || sent) return
-    setPending(true)
-    void logDailyWorkout(day, {
-      kind: workout.planned_type as never,
-      exercises: workout.exercises.map((item) => ({ name: item.name, done: Boolean(done[item.name]) })),
-      note: note.trim() || undefined,
-    })
-      .then((result) => {
-        if (result.status === 'logged') {
-          setSaved(true)
-          setAdvice(result.advice ?? null)
-          setError(null)
-          onLogged(result.briefing)
-        } else {
-          setError(result.message)
-        }
-      })
-      .catch(() => setError('Could not save workout.'))
-      .finally(() => setPending(false))
-  }
-
-  if (sent) {
-    return (
-      <section className="daily-card daily-done">
-        <div className="daily-card-title">
-          <div><span className="daily-card-label">After training</span><h2>What did you do?</h2></div>
-          <DoneBadge />
-        </div>
-        <ul className="daily-done-list">
-          {workout.exercises.map((item) => (
-            <li key={item.name} className={done[item.name] ? 'is-done' : 'is-skipped'}>
-              <span>{done[item.name] ? '✓' : '–'}</span>
-              {item.name}
-            </li>
-          ))}
-        </ul>
-        {note.trim() && <p className="daily-done-note">{note}</p>}
-        {(advice || storedAdvice) && <p className="daily-chili-reply">{advice || storedAdvice}</p>}
-      </section>
-    )
-  }
-
-  return (
-    <form className="daily-card daily-form" onSubmit={submit}>
-      <div className="daily-card-title">
-        <div><span className="daily-card-label">After training</span><h2>What did you do?</h2></div>
-      </div>
-      <div className="daily-exercises">
-        {workout.exercises.map((item) => (
-          <label key={item.name} className="daily-check">
-            <input
-              type="checkbox"
-              checked={Boolean(done[item.name])}
-              onChange={(event) => setDone((current) => ({ ...current, [item.name]: event.target.checked }))}
-            />
-            <span>
-              <strong>{item.name}</strong>
-              <small>{exerciseDetail(item) || item.notes}</small>
-            </span>
-          </label>
-        ))}
-      </div>
-      <label className="daily-field daily-wide">
-        <span>Easy or hard?</span>
-        <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} placeholder="Easy / hard, or what to change next time" />
-      </label>
-      <button className="daily-submit" type="submit" disabled={pending}>
-        {pending ? (closesDay ? 'Asking Chili…' : 'Saving…') : closesDay ? 'Submit and close the day' : 'Submit workout'}
-      </button>
-      {error && <p className="daily-form-error">{error}</p>}
-    </form>
   )
 }
 
@@ -548,85 +449,79 @@ function SleepForm({
   )
 }
 
-function SoberForm({
-  day,
-  answered,
-  savedNote,
-  days,
-  closesDay,
-  onLogged,
-}: {
-  day: string
-  answered: 'yes' | 'no' | null
-  savedNote: string | null
-  days: number
-  closesDay?: boolean
-  onLogged: (next?: DailyBriefing) => void
-}) {
-  const [sober, setSober] = useState(answered !== 'no')
-  const [note, setNote] = useState(savedNote ?? '')
-  const [pending, setPending] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const sent = saved || answered != null
-  const [error, setError] = useState<string | null>(null)
+function signed(value: number) {
+  return `${value > 0 ? '+' : ''}${value.toFixed(1)}`
+}
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    if (pending || sent) return
-    setPending(true)
-    void logSober(day, { sober, note: note.trim() || undefined })
-      .then((result) => {
-        if (result.status === 'logged') {
-          setSaved(true)
-          setError(null)
-          onLogged(result.briefing)
-        } else {
-          setError(result.message)
-        }
-      })
-      .catch(() => setError('Could not save sober check-in.'))
-      .finally(() => setPending(false))
-  }
-
-  if (sent) {
+function WatchCard({ watch }: { watch: DailyWatch }) {
+  if (watch.status === 'waiting') {
     return (
-      <section className="daily-card daily-done">
-        <div className="daily-card-title">
-          <div><span className="daily-card-label">Evening</span><h2>Sober</h2></div>
-          <DoneBadge />
-        </div>
-        <p className="daily-done-answer">{sober ? 'Yes' : 'No'}</p>
-        {note.trim() && <p className="daily-done-note">{note}</p>}
+      <section className="daily-card">
+        <span className="daily-card-label">Fenix</span>
+        <p className="daily-done-note">
+          {watch.last_error ? `Garmin sync failed: ${watch.last_error}` : 'Waiting for the first Garmin sync today.'}
+        </p>
       </section>
     )
   }
-
+  const stats = [
+    watch.sleep_hours != null && `Sleep ${watch.sleep_hours.toFixed(1)} h${watch.sleep_score != null ? ` (score ${watch.sleep_score})` : ''}`,
+    watch.resting_hr != null && `Resting HR ${watch.resting_hr}`,
+    watch.hrv_last_night != null && `HRV ${watch.hrv_last_night}${watch.hrv_status ? ` · ${watch.hrv_status}` : ''}`,
+    watch.body_battery_high != null && `Body Battery ${watch.body_battery_low ?? '?'}–${watch.body_battery_high}`,
+    watch.steps != null && `${new Intl.NumberFormat('en-US').format(watch.steps)} steps`,
+  ].filter(Boolean)
   return (
-    <form className="daily-card daily-form" onSubmit={submit}>
-      <div className="daily-card-title">
-        <div><span className="daily-card-label">Evening</span><h2>Sober</h2></div>
-      </div>
-      <p>Answer this at night. {days} day streak so far.</p>
-      <div className="daily-field">
-        <span>Stayed sober?</span>
-        <div className="daily-choices">
-          <button type="button" className={sober ? 'is-selected' : ''} onClick={() => setSober(true)}>yes</button>
-          <button type="button" className={!sober ? 'is-selected' : ''} onClick={() => setSober(false)}>no</button>
-        </div>
-      </div>
-      <label className="daily-field daily-wide">
-        <span>Note</span>
-        <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} />
-      </label>
-      <button className="daily-submit" type="submit" disabled={pending}>
-        {pending ? (closesDay ? 'Asking Chili…' : 'Saving…') : closesDay ? 'Submit and close the day' : 'Submit sober'}
-      </button>
-      {error && <p className="daily-form-error">{error}</p>}
-    </form>
+    <section className="daily-card">
+      <span className="daily-card-label">Fenix</span>
+      <p>{stats.join(' · ') || 'No data from the watch yet today.'}</p>
+      {watch.hint && <p className="daily-done-note">{watch.hint}</p>}
+      {(watch.activities ?? []).map((item) => (
+        <p key={`${item.start_local}-${item.name}`} className="daily-done-note">
+          {item.start_local?.slice(11, 16)} {item.name} · {item.duration_min} min
+          {item.avg_hr != null ? ` · avg HR ${item.avg_hr}` : ''}
+          {item.distance_km ? ` · ${item.distance_km} km` : ''}
+        </p>
+      ))}
+    </section>
   )
 }
 
-function SundayForm({
+function RatingField({
+  label,
+  low,
+  high,
+  value,
+  onChange,
+}: {
+  label: string
+  low: string
+  high: string
+  value: number | null
+  onChange: (next: number) => void
+}) {
+  return (
+    <div className="daily-field">
+      <span>{label} <small>1 {low} · 5 {high}</small></span>
+      <div className="daily-choices is-scale" role="radiogroup" aria-label={label}>
+        {[1, 2, 3, 4, 5].map((item) => (
+          <button
+            key={item}
+            type="button"
+            role="radio"
+            aria-checked={value === item}
+            className={value === item ? 'is-selected' : ''}
+            onClick={() => onChange(item)}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function WeeklyForm({
   briefing,
   closesDay,
   onSaved,
@@ -635,24 +530,45 @@ function SundayForm({
   closesDay?: boolean
   onSaved: (next?: DailyBriefing) => void
 }) {
-  const sunday = briefing.sunday!
-  const [weight, setWeight] = useState(sunday.weight_kg?.toString() ?? '')
-  const [sameAsLast, setSameAsLast] = useState(false)
-  const [note, setNote] = useState(sunday.review_note ?? '')
+  const weekly = briefing.weekly!
+  const [waist, setWaist] = useState(weekly.waist_cm?.toString() ?? '')
+  const [energy, setEnergy] = useState<number | null>(weekly.energy)
+  const [hunger, setHunger] = useState<number | null>(weekly.hunger)
+  const [performance, setPerformance] = useState<number | null>(weekly.bjj_performance)
+  const [pain, setPain] = useState(weekly.pain_note ?? '')
+  const [note, setNote] = useState(weekly.review_note ?? '')
   const [pending, setPending] = useState(false)
   const [saved, setSaved] = useState(false)
-  const sent = saved || sunday.submitted
+  const sent = saved || weekly.submitted
   const [error, setError] = useState<string | null>(null)
-  const loggedWeight = sunday.weight_kg != null ? sunday.weight_kg.toFixed(1) : weight
-  const delta = sunday.delta_kg
+  const counts = weekly.counts ?? {}
+  const ready = energy != null && hunger != null && performance != null
+  const weightText = weekly.weight_kg != null
+    ? `7-day average ${weekly.weight_kg.toFixed(1)} kg${weekly.delta_kg != null ? ` (${signed(weekly.delta_kg)} kg)` : ''}${weekly.target_kg != null ? ` · trend ${weekly.target_kg.toFixed(1)}` : ''}`
+    : 'No morning weigh-ins last week.'
+  const doneText = `BJJ ${counts.bjj ?? 0} · Strength ${counts.strength ?? 0} · Cardio ${counts.cardio ?? 0}`
+    + (weekly.sleep_average != null ? ` · Sleep ${weekly.sleep_average.toFixed(1)} h` : '')
+  const watch = weekly.watch
+  const watchText = watch
+    ? [
+        watch.resting_hr != null && `Resting HR ${watch.resting_hr}`,
+        watch.hrv != null && `HRV ${watch.hrv}`,
+        watch.sleep_score != null && `Sleep score ${watch.sleep_score}`,
+        watch.steps != null && `${new Intl.NumberFormat('en-US').format(watch.steps)} steps/day`,
+      ].filter(Boolean).join(' · ')
+    : ''
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (pending || sent) return
+    if (pending || sent || !ready) return
+    const parsedWaist = waist.trim() ? Number(waist) : undefined
     setPending(true)
-    void logSundayReview(briefing.date, {
-      weight_kg: sameAsLast || !weight ? undefined : Number(weight),
-      same_as_last: sameAsLast,
+    void logWeeklyCheckIn(briefing.date, {
+      energy: energy!,
+      hunger: hunger!,
+      bjj_performance: performance!,
+      waist_cm: parsedWaist != null && !Number.isNaN(parsedWaist) ? parsedWaist : undefined,
+      pain_note: pain.trim() || undefined,
       note: note.trim() || undefined,
     })
       .then((next) => {
@@ -660,7 +576,7 @@ function SundayForm({
         setError(null)
         onSaved(next)
       })
-      .catch(() => setError('Could not save Sunday review.'))
+      .catch(() => setError('Could not save the Monday check-in.'))
       .finally(() => setPending(false))
   }
 
@@ -668,18 +584,21 @@ function SundayForm({
     return (
       <section className="daily-card daily-done">
         <div className="daily-card-title">
-          <div><span className="daily-card-label">Sunday</span><h2>Weight and week</h2></div>
+          <div><span className="daily-card-label">Monday</span><h2>Weekly check-in</h2></div>
           <DoneBadge />
         </div>
-        <p className="daily-done-answer">
-          {loggedWeight ? `${loggedWeight} kg` : 'Weight not entered'}
-          {delta != null ? ` · ${delta > 0 ? '+' : ''}${delta.toFixed(1)} kg` : ''}
+        <p className="daily-done-answer">{weightText}</p>
+        <p className="daily-done-note">
+          {doneText}
+          {weekly.waist_cm != null ? ` · Waist ${weekly.waist_cm.toFixed(1)} cm` : ''}
         </p>
-        {note.trim() && <p className="daily-done-note">{note}</p>}
-        {sunday.coach_review && (
+        {watchText && <p className="daily-done-note">Watch: {watchText}</p>}
+        {weekly.kcal_reason && <p className="daily-done-note">Food: {weekly.kcal_reason}</p>}
+        {weekly.division?.note && <p className="daily-done-note">{weekly.division.note}</p>}
+        {weekly.coach_review && (
           <div className="coach-advice">
             <span className="coach-advice-label">Chili says</span>
-            <p className="workout-advice">{sunday.coach_review}</p>
+            <p className="workout-advice">{weekly.coach_review}</p>
           </div>
         )}
       </section>
@@ -689,42 +608,38 @@ function SundayForm({
   return (
     <form className="daily-card daily-form" onSubmit={submit}>
       <div className="daily-card-title">
-        <div><span className="daily-card-label">Sunday</span><h2>Weight and week</h2></div>
+        <div><span className="daily-card-label">Monday</span><h2>Weekly check-in</h2></div>
       </div>
-      <p>
-        {sunday.previous_weight_kg != null
-          ? `Last week: ${sunday.previous_weight_kg.toFixed(1)} kg`
-          : 'No previous Sunday weight yet.'}
-      </p>
-      {sunday.sessions.map((session) => (
-        <p key={`${session.date}-${session.kind}`}>
-          {session.date.slice(5)} {session.title}: {session.completed ?? 'not logged'}
-          {session.note ? ` · ${session.note}` : ''}
-        </p>
-      ))}
+      <p>{weightText}</p>
+      <p>Last week: {doneText}</p>
+      {watchText && <p>Watch: {watchText}</p>}
+      {weekly.kcal_reason && <p>Food: {weekly.kcal_reason}</p>}
+      {weekly.division?.note && <p>{weekly.division.note}</p>}
       <label className="daily-field">
-        <span>Weight kg</span>
+        <span>Waist at the navel, cm (optional)</span>
         <input
+          type="number"
           inputMode="decimal"
-          value={weight}
-          onChange={(event) => {
-            setSameAsLast(false)
-            setWeight(event.target.value)
-          }}
-          disabled={sameAsLast}
-          placeholder={sunday.previous_weight_kg?.toFixed(1) ?? '82.0'}
+          step="0.5"
+          min="50"
+          max="150"
+          value={waist}
+          onChange={(event) => setWaist(event.target.value)}
         />
       </label>
-      <label className="daily-check">
-        <input type="checkbox" checked={sameAsLast} onChange={(event) => setSameAsLast(event.target.checked)} />
-        <span>Same as last week</span>
+      <RatingField label="Energy" low="drained" high="great" value={energy} onChange={setEnergy} />
+      <RatingField label="Hunger" low="none" high="constant" value={hunger} onChange={setHunger} />
+      <RatingField label="BJJ performance" low="poor" high="sharp" value={performance} onChange={setPerformance} />
+      <label className="daily-field daily-wide">
+        <span>Any pain or injury?</span>
+        <textarea value={pain} onChange={(event) => setPain(event.target.value)} maxLength={500} />
       </label>
       <label className="daily-field daily-wide">
         <span>Anything to change next week?</span>
         <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} />
       </label>
-      <button className="daily-submit" type="submit" disabled={pending}>
-        {pending ? (closesDay ? 'Asking Chili…' : 'Saving…') : closesDay ? 'Submit and close the day' : 'Submit Sunday review'}
+      <button className="daily-submit" type="submit" disabled={pending || !ready}>
+        {pending ? (closesDay ? 'Asking Chili…' : 'Saving…') : closesDay ? 'Submit and close the day' : 'Submit check-in'}
       </button>
       {error && <p className="daily-form-error">{error}</p>}
     </form>

@@ -1,5 +1,5 @@
 import unittest
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import patch
 
 from fastapi import FastAPI
@@ -61,6 +61,22 @@ class FakePlanner:
             "status": "completed",
             "planned_type": self.planned_type,
             "notes": note,
+        }
+
+    def log_session_result(self, session_id, **kwargs):
+        self.last_result = kwargs
+        self.logged.append((session_id, kwargs.get("exercises"), kwargs.get("notes")))
+        self.status = kwargs.get("status") or "completed"
+        return {
+            "id": session_id,
+            "title": "BJJ Normal" if str(self.planned_type).startswith("bjj_") else "Strength A + Intervals",
+            "status": self.status,
+            "planned_type": self.planned_type,
+            "notes": kwargs.get("notes"),
+            "result": {
+                "bjj_rounds": kwargs.get("bjj_rounds"),
+                "perceived_intensity": kwargs.get("perceived_intensity"),
+            },
         }
 
     def overview(self, now=None):
@@ -223,14 +239,15 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(workout.status_code, 200)
         self.assertEqual(workout.json()["status"], "logged")
         self.assertIn("Strength A", workout.json()["message"])
-        advice = workout.json()["advice"]
-        self.assertTrue(advice)
-        self.assertNotIn("/daily/", advice)
+        self.assertTrue(workout.json()["briefing"]["answers"]["all_answered"])
+        # Workout review and day close are both local-only (no agent turn).
         self.assertEqual(self.app.state.openclaw_service.sent, [])
-        self.assertEqual(len(self.app.state.openclaw_service.notified), 1)
+        # Two notifies: one for workout review, one for day close.
+        self.assertGreaterEqual(len(self.app.state.openclaw_service.notified), 2)
         notify = self.app.state.openclaw_service.notified[0]
-        self.assertTrue(notify.startswith(f"{settings.public_base_url()}/daily/2026-09-15\n\n"))
-        self.assertIn(advice, notify)
+        self.assertIn(f"{settings.public_base_url()}/daily/2026-09-15", notify)
+        self.assertFalse(notify.startswith("http"))
+        self.assertEqual(workout.json()["briefing"]["chili_delivery"], "local")
         sober = self.client.post(
             "/api/v1/daily/2026-09-15/sober",
             json={"sober": True, "note": "evening"},
@@ -249,8 +266,10 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(self.app.state.openclaw_service.sent, [])
         daily = self.client.get("/api/v1/daily/2026-09-13").json()
         self.assertIsNone(daily["sleep"]["hours"])
-        self.assertIsNotNone(daily["sunday"])
-        self.assertEqual(daily["sunday"]["week_ending"], "2026-09-13")
+        self.assertIsNone(daily["weekly"])
+        monday = self.client.get("/api/v1/daily/2026-09-14").json()
+        self.assertIsNotNone(monday["weekly"])
+        self.assertEqual(monday["weekly"]["week_ending"], "2026-09-13")
 
     def test_daily_sleep_is_optional_and_never_closes_the_day(self) -> None:
         sleep = self.client.post(
@@ -267,25 +286,38 @@ class TrainingAutomationApiTests(unittest.TestCase):
         daily = self.client.get("/api/v1/daily/2026-09-16").json()
         self.assertEqual(daily["sleep"]["hours"], 6.5)
 
-    def test_sunday_review_compares_weight(self) -> None:
-        first = self.client.post(
-            "/api/v1/daily/2026-09-06/sunday",
-            json={"weight_kg": 82.8},
-        )
-        self.assertEqual(first.status_code, 200)
-        second = self.client.post(
-            "/api/v1/daily/2026-09-13/sunday",
-            json={"weight_kg": 82.4, "note": "keep the week as-is"},
-        )
-        self.assertEqual(second.status_code, 200)
-        body = second.json()
-        self.assertEqual(body["sunday"]["previous_weight_kg"], 82.8)
-        self.assertEqual(body["sunday"]["delta_kg"], -0.4)
-        self.assertIn("down 0.4 kg", body["message"])
-        # Sunday review is local-only (no agent turn), but it still sends a Telegram notify.
+    def test_daily_weight_is_optional_and_never_closes_the_day(self) -> None:
+        response = self.client.post("/api/v1/daily/2026-09-16/weight", json={"weight_kg": 83.64})
+        self.assertEqual(response.status_code, 200)
+        cut = response.json()["briefing"]["cut"]
+        self.assertEqual(cut["today_kg"], 83.6)
+        self.assertEqual(cut["seven_day_average_kg"], 83.6)
+        self.assertIn(cut["nutrition"]["kcal"], {2000, 2300})
         self.assertEqual(self.app.state.openclaw_service.sent, [])
-        self.assertIsNotNone(body["sunday"]["coach_review"])
-        self.assertTrue(any(item.startswith(f"{settings.public_base_url()}/daily/2026-09-13") for item in self.app.state.openclaw_service.notified))
+        self.assertEqual(self.app.state.openclaw_service.notified, [])
+        self.assertEqual(self.client.post("/api/v1/daily/2026-09-16/weight", json={"weight_kg": 10}).status_code, 422)
+
+    def test_monday_check_in_compares_seven_day_averages(self) -> None:
+        for offset in range(14):
+            day = date(2026, 8, 31) + timedelta(days=offset)
+            weight = 82.8 if offset < 7 else 82.4
+            self.assertEqual(self.client.post(f"/api/v1/daily/{day.isoformat()}/weight", json={"weight_kg": weight}).status_code, 200)
+        self.assertEqual(self.client.post("/api/v1/daily/2026-09-13/weekly", json={"energy": 3, "hunger": 3, "bjj_performance": 3}).status_code, 400)
+        response = self.client.post(
+            "/api/v1/daily/2026-09-14/weekly",
+            json={"energy": 4, "hunger": 3, "bjj_performance": 4, "waist_cm": 88, "note": "keep the week as-is"},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["weekly"]["previous_weight_kg"], 82.8)
+        self.assertEqual(body["weekly"]["delta_kg"], -0.4)
+        self.assertEqual(body["weekly"]["waist_cm"], 88)
+        self.assertIn("down 0.4 kg", body["message"])
+        # Weekly review is local-only (no agent turn), but it still sends a Telegram notify.
+        self.assertEqual(self.app.state.openclaw_service.sent, [])
+        self.assertIsNotNone(body["weekly"]["coach_review"])
+        self.assertTrue(any(f"{settings.public_base_url()}/daily/2026-09-14" in item for item in self.app.state.openclaw_service.notified))
+        self.assertTrue(any(item.startswith("Monday check-in saved.") for item in self.app.state.openclaw_service.notified))
         self.assertNotEqual(body["advice"], body["message"])
         self.assertNotIn("/daily/", body["advice"] or "")
 
@@ -310,23 +342,65 @@ class TrainingAutomationApiTests(unittest.TestCase):
         self.assertEqual(today["logs"][0]["kind"], "strength_a")
         self.assertTrue(today["advice"])
 
-    def test_rest_day_close_uses_local_review_after_sober(self) -> None:
+    def test_rest_day_close_uses_local_review(self) -> None:
         self.app.state.training_service.planned_type = "rest"
-        too_soon = self.client.post("/api/v1/daily/2026-09-15/close")
-        self.assertEqual(too_soon.status_code, 200)
-        self.assertFalse(too_soon.json()["answers"]["all_answered"])
-        self.assertEqual(self.app.state.openclaw_service.sent, [])
-        sober = self.client.post(
-            "/api/v1/daily/2026-09-15/sober",
-            json={"sober": True},
-        )
-        self.assertEqual(sober.status_code, 200)
-        self.assertTrue(sober.json()["briefing"]["answers"]["all_answered"])
-        self.assertTrue(sober.json()["briefing"]["chili_reply"])
+        closed = self.client.post("/api/v1/daily/2026-09-15/close")
+        self.assertEqual(closed.status_code, 200)
+        self.assertTrue(closed.json()["answers"]["all_answered"])
+        self.assertTrue(closed.json()["chili_reply"])
         # Day close is local-only (no agent turn), so sent stays empty.
         self.assertEqual(self.app.state.openclaw_service.sent, [])
-        self.assertEqual(sober.json()["briefing"]["chili_delivery"], "local")
-        self.assertIn("Day is closed", sober.json()["briefing"]["chili_reply"])
+        self.assertEqual(closed.json()["chili_delivery"], "local")
+        self.assertIn("Day is closed", closed.json()["chili_reply"])
+
+    def test_daily_bjj_report_saves_rounds(self) -> None:
+        self.app.state.training_service.planned_type = "bjj_normal"
+        response = self.client.post(
+            "/api/v1/daily/2026-09-15/workout",
+            json={
+                "kind": "bjj_normal",
+                "status": "completed",
+                "bjj_rounds": 5,
+                "perceived_intensity": "hard",
+                "note": "grip was fried",
+                "exercises": [{"name": "Live rounds", "done": True}],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "logged")
+        self.assertEqual(body["workout"]["status"], "completed")
+        self.assertEqual(body["workout"]["result"]["bjj_rounds"], 5)
+        self.assertEqual(body["workout"]["result"]["perceived_intensity"], "hard")
+        self.assertEqual(self.app.state.training_service.logged[0][2], "grip was fried")
+
+    def test_daily_strength_report_saves_load_rpe_and_intervals(self) -> None:
+        response = self.client.post(
+            "/api/v1/daily/2026-09-15/workout",
+            json={
+                "kind": "strength_a",
+                "status": "completed",
+                "exercises": [
+                    {"name": "Back Squat", "done": True, "actual_load": 125, "rpe": 8},
+                    {"name": "Bench Press", "done": False, "actual_load": 90, "rpe": 9},
+                ],
+                "interval_watts": [{"round": 1, "watts": 220}, {"round": 2, "watts": 200}],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        kwargs = self.app.state.training_service.last_result
+        squat = next(item for item in kwargs["exercises"] if item["name"] == "Back Squat")
+        bench = next(item for item in kwargs["exercises"] if item["name"] == "Bench Press")
+        self.assertEqual(squat["actual_load"], 125)
+        self.assertEqual(squat["rpe"], 8)
+        self.assertEqual(squat["status"], "completed")
+        self.assertNotIn("actual_load", bench)
+        self.assertEqual(bench["status"], "skipped")
+        self.assertEqual(kwargs["session_rpe"], 8)
+        self.assertEqual(kwargs["metrics"], [
+            {"metric_type": "bike_watts", "sequence": 1, "value": 220, "unit": "W"},
+            {"metric_type": "bike_watts", "sequence": 2, "value": 200, "unit": "W"},
+        ])
 
     def test_daily_workout_rejects_mismatched_kind(self) -> None:
         response = self.client.post(

@@ -9,8 +9,12 @@ from app.domain.training.constraints import (
     needs_rest,
     recovery_penalty,
 )
+from app.domain.training.phases import MARCH_COMPETITION_START, phase_for_date
+from app.domain.training.policy import weekly_targets
 from app.domain.training.ranker import close_set, deterministic_reason, pick_default, score_session, valid_candidates
 from app.domain.training.types import (
+    CAMPAIGN_PHASES,
+    COMPETITION_PHASES,
     DayPlan,
     RecordStatus,
     RebuildResult,
@@ -70,6 +74,13 @@ def rebuild_schedule(inp: SchedulerInput, *, use_llm: bool = False) -> RebuildRe
     zone2_remaining = True
     extra_rest = bool(inp.adaptation and inp.adaptation.extra_rest_before_hard_bjj)
     reduce_strength = bool(inp.adaptation and inp.adaptation.reduce_preceding_strength)
+
+    campaign_days = [
+        day for day in future_days
+        if day not in assigned and phase_for_date(day) in CAMPAIGN_PHASES | COMPETITION_PHASES
+    ]
+    if campaign_days:
+        _assign_campaign(campaign_days, assigned, avail, inp, next_type=strength_type)
 
     for day in future_days:
         if day in assigned:
@@ -137,7 +148,7 @@ def rebuild_schedule(inp: SchedulerInput, *, use_llm: bool = False) -> RebuildRe
     # Keep distinct fallback work on BJJ-gym closure days. On ordinary days,
     # avoid filling open calendar space with extra low-priority sessions.
     closure_days = {day for day, item in avail.items() if not item.gym_open}
-    _drop_extra_accessories(assigned, future_days, closure_days)
+    _drop_extra_accessories(assigned, [day for day in future_days if day not in campaign_days], closure_days)
 
     for day in future_days:
         item = avail[day]
@@ -169,6 +180,119 @@ def rebuild_schedule(inp: SchedulerInput, *, use_llm: bool = False) -> RebuildRe
             status="planned",
         )
     return RebuildResult(days)
+
+
+# Default BJJ days when the week needs fewer sessions than there are classes:
+# Saturday competition class first, then Mon / Wed (Thu as the fourth), which
+# leaves Tue/Thu for Strength A/B and Friday as rest before Saturday.
+BJJ_WEEKDAY_PREFERENCE = (5, 0, 2, 3, 1, 4, 6)
+
+
+def _assign_campaign(
+    days: list[date],
+    assigned: dict[date, WorkoutType | None],
+    avail: dict,
+    inp: SchedulerInput,
+    *,
+    next_type: WorkoutType,
+) -> None:
+    """March 2027 plan as per-week quotas instead of "best session per day".
+
+    BJJ fills the weekly target (calendar-confirmed BJJ always counts and always
+    stays), Strength A/B alternate up to the target on non-adjacent days and
+    never the day before hard BJJ, easy cardio fills what is left only while the
+    week keeps its full rest day. A skipped lift counts as decided for the week;
+    a missed BJJ class may be replaced on a later class day."""
+    weeks: dict[date, list[date]] = {}
+    for day in days:
+        weeks.setdefault(day - timedelta(days=day.weekday()), []).append(day)
+    pinned = dict(inp.pinned_bjj)
+    for week_start, week_days in sorted(weeks.items()):
+        week_days.sort()
+        week = [week_start + timedelta(days=offset) for offset in range(7)]
+        targets = dict(weekly_targets(phase_for_date(week_start)))
+        if week_start <= MARCH_COMPETITION_START < week_start + timedelta(days=7):
+            targets.update(bjj=2, strength=1, zone_2=0)
+        logged = [item for item in inp.history if item.date in week]
+        bjj_left = targets["bjj"] - sum(
+            item.status == RecordStatus.COMPLETED and item.session in BJJ_TYPES for item in logged
+        ) - sum(assigned.get(day) in BJJ_TYPES for day in week)
+        strength_left = targets["strength"] - sum(item.session in STRENGTH_TYPES for item in logged) - sum(
+            assigned.get(day) in STRENGTH_TYPES for day in week
+        )
+        zone2_left = targets["zone_2"] - sum(
+            item.status == RecordStatus.COMPLETED and item.session == WorkoutType.ZONE_2 for item in logged
+        ) - sum(assigned.get(day) == WorkoutType.ZONE_2 for day in week)
+
+        def open_days() -> list[date]:
+            return [day for day in week_days if day not in assigned]
+
+        for day in open_days():
+            if phase_for_date(day) in COMPETITION_PHASES:
+                assigned[day] = WorkoutType.COMPETITION
+            elif day + timedelta(days=1) == MARCH_COMPETITION_START:
+                assigned[day] = WorkoutType.REST
+            elif not avail[day].user_available:
+                assigned[day] = None
+            elif needs_rest(inp.athlete_state) and day in {inp.today, inp.today + timedelta(days=1)}:
+                assigned[day] = WorkoutType.REST
+        for day in open_days():
+            kind = pinned.get(day)
+            if kind is not None and avail[day].allows(WorkoutType.BJJ_NORMAL):
+                assigned[day] = kind if avail[day].allows(kind) else WorkoutType.BJJ_NORMAL
+                bjj_left -= 1
+
+        bjj_options = [
+            day for day in open_days()
+            if avail[day].allows(WorkoutType.BJJ_NORMAL) and not _slot_already_ended(day, WorkoutType.BJJ_NORMAL, inp)
+        ]
+        bjj_options.sort(key=lambda day: (
+            not avail[day].allows(WorkoutType.BJJ_HARD), BJJ_WEEKDAY_PREFERENCE.index(day.weekday()), day,
+        ))
+        for day in bjj_options[:max(0, bjj_left)]:
+            assigned[day] = WorkoutType.BJJ_HARD if avail[day].allows(WorkoutType.BJJ_HARD) else WorkoutType.BJJ_NORMAL
+
+        hard_days = {day for day, kind in assigned.items() if kind == WorkoutType.BJJ_HARD}
+        hard_days |= {day for day, kind in pinned.items() if kind == WorkoutType.BJJ_HARD}
+        if inp.upcoming_hard_bjj is not None:
+            hard_days.add(inp.upcoming_hard_bjj)
+        for day in open_days():
+            if day + timedelta(days=1) in hard_days:
+                assigned[day] = WorkoutType.REST
+
+        strength_days = {item.date for item in inp.history if item.session in STRENGTH_TYPES}
+        strength_days |= {day for day, kind in assigned.items() if kind in STRENGTH_TYPES}
+        for day in open_days():
+            if strength_left <= 0:
+                break
+            if not avail[day].allows(next_type) or _slot_already_ended(day, next_type, inp):
+                continue
+            if day - timedelta(days=1) in strength_days or day + timedelta(days=1) in strength_days:
+                continue
+            assigned[day] = next_type
+            strength_days.add(day)
+            strength_left -= 1
+            next_type = WorkoutType.STRENGTH_B if next_type == WorkoutType.STRENGTH_A else WorkoutType.STRENGTH_A
+
+        trained = {item.date for item in logged if item.status == RecordStatus.COMPLETED}
+
+        def rest_days() -> int:
+            return sum(
+                1 for day in week
+                if day not in trained and assigned.get(day, None) in {None, WorkoutType.REST}
+            )
+
+        for day in open_days():
+            if zone2_left <= 0:
+                break
+            if not avail[day].allows(WorkoutType.ZONE_2) or _slot_already_ended(day, WorkoutType.ZONE_2, inp):
+                continue
+            if rest_days() - 1 < targets["rest"]:
+                break
+            assigned[day] = WorkoutType.ZONE_2
+            zone2_left -= 1
+        for day in open_days():
+            assigned[day] = None
 
 
 def _history_plan(record: TrainingRecord, penalty: float) -> DayPlan:

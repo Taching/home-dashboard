@@ -126,9 +126,14 @@ class TrainingSchedulerTests(unittest.TestCase):
             date(2026, 10, 5): TrainingPhase.TAPER_1,
             date(2026, 10, 10): TrainingPhase.COMPETITION_1,
             date(2026, 10, 12): TrainingPhase.RECOVERY_1,
-            date(2026, 10, 15): TrainingPhase.BUILD_2,
-            date(2026, 11, 7): TrainingPhase.COMPETITION_2,
-            date(2026, 11, 9): TrainingPhase.POST_COMPETITION,
+            date(2026, 10, 15): TrainingPhase.BUILD_3,
+            date(2026, 11, 7): TrainingPhase.BUILD_3,
+            date(2027, 1, 21): TrainingPhase.BUILD_3,
+            date(2027, 1, 22): TrainingPhase.PEAK_3,
+            date(2027, 2, 21): TrainingPhase.TAPER_3,
+            date(2027, 3, 5): TrainingPhase.COMPETITION_3,
+            date(2027, 3, 7): TrainingPhase.COMPETITION_3,
+            date(2027, 3, 8): TrainingPhase.POST_COMPETITION,
         }
         for day, expected in cases.items():
             with self.subTest(day=day):

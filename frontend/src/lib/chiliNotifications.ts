@@ -1,11 +1,10 @@
-import type { CalendarEvent, CalendarToday, NotionTask, OpenClawMessage } from '../types'
+import type { CalendarEvent, CalendarToday, NotionTask } from '../types'
 
 export type NotificationKind =
   | 'meeting_soon'
   | 'plan_adjusted'
   | 'walk_reminder'
   | 'task_completed'
-  | 'openclaw_message'
   | 'spotify_playing'
 
 export type ChiliNotification = {
@@ -33,8 +32,7 @@ const PRIORITY: Record<NotificationKind, number> = {
   plan_adjusted: 2,
   walk_reminder: 3,
   task_completed: 4,
-  openclaw_message: 5,
-  spotify_playing: 6,
+  spotify_playing: 5,
 }
 
 export function notificationPriority(kind: NotificationKind): number {
@@ -51,10 +49,6 @@ export function formatTaskCompleted(title: string): string {
 
 export function formatMeetingSoon(title: string, minutes: number): string {
   return `${title} starts in ${minutes} minutes`
-}
-
-export function formatOpenClawMessageWaiting(): string {
-  return 'New message from Chili on Telegram'
 }
 
 export function loadSeenKeys(): Set<string> {
@@ -152,19 +146,6 @@ export function findCompletedTasks(
   return completed
 }
 
-export function findNewAssistantMessages(
-  previousIds: Set<string>,
-  messages: OpenClawMessage[],
-): OpenClawMessage[] {
-  return messages.filter((message) => message.role === 'assistant' && !previousIds.has(message.id))
-}
-
-export function lastAssistantFingerprint(messages: OpenClawMessage[]): string | null {
-  const last = [...messages].reverse().find((message) => message.role === 'assistant')
-  if (!last) return null
-  return `${last.created_at ?? ''}|${last.text}`
-}
-
 export function formatPlanAdjusted(banner: string): string {
   const text = banner.trim()
   return text || 'Changed the week. Check How and Why.'
@@ -199,8 +180,4 @@ export function tasksFingerprint(tasks: NotionTask[]): string {
 
 export function tasksSnapshot(tasks: NotionTask[]): Map<string, string> {
   return new Map(tasks.map((task) => [task.id, task.title]))
-}
-
-export function assistantMessageIds(messages: OpenClawMessage[]): Set<string> {
-  return new Set(messages.filter((message) => message.role === 'assistant').map((message) => message.id))
 }

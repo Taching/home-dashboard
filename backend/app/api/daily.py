@@ -9,14 +9,16 @@ from pydantic import BaseModel, Field
 
 from app.core.settings import settings
 from app.domain.daily_plan import DailyPlanService, preview_workout_dict
+from app.domain.telegram_text import telegram_message
 from app.domain.training.adjust import CalendarAdjuster
 from app.domain.training.review import (
     kinds_match,
     local_close_day_review,
     local_weekly_training_review,
     local_workout_review,
+    weekly_check_in_line,
 )
-from app.domain.weekly import SundayCheckIn, WeeklyService
+from app.domain.weekly import WeeklyCheckIn, WeeklyService
 
 
 daily_router = APIRouter()
@@ -41,6 +43,13 @@ class DailyCheckInRequest(BaseModel):
 class DailyExerciseDone(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     done: bool = False
+    actual_load: float | None = Field(default=None, ge=0, le=500)
+    rpe: float | None = Field(default=None, ge=1, le=10)
+
+
+class IntervalWatt(BaseModel):
+    round: int = Field(ge=1, le=20)
+    watts: float = Field(ge=1, le=2000)
 
 
 class DailyWorkoutRequest(BaseModel):
@@ -50,6 +59,9 @@ class DailyWorkoutRequest(BaseModel):
     status: Literal["completed", "partial", "skipped"] | None = None
     miss_reason: str | None = Field(default=None, max_length=32)
     session_rpe: float | None = Field(default=None, ge=1, le=10)
+    bjj_rounds: int | None = Field(default=None, ge=0, le=20)
+    perceived_intensity: Literal["easy", "normal", "hard"] | None = None
+    interval_watts: list[IntervalWatt] = Field(default_factory=list, max_length=20)
 
 
 class DailyConstraintRequest(BaseModel):
@@ -67,9 +79,16 @@ class DailySleepRequest(BaseModel):
     hours: float = Field(ge=0, le=24)
 
 
-class DailySundayRequest(BaseModel):
-    weight_kg: float | None = Field(default=None, ge=30, le=250)
-    same_as_last: bool = False
+class DailyWeightRequest(BaseModel):
+    weight_kg: float = Field(ge=30, le=250)
+
+
+class DailyWeeklyRequest(BaseModel):
+    energy: int = Field(ge=1, le=5)
+    hunger: int = Field(ge=1, le=5)
+    bjj_performance: int = Field(ge=1, le=5)
+    waist_cm: float | None = Field(default=None, ge=50, le=150)
+    pain_note: str | None = Field(default=None, max_length=500)
     note: str | None = Field(default=None, max_length=500)
 
 
@@ -92,6 +111,20 @@ class PlanCommandRequest(BaseModel):
     fatigue_state: Literal["normal", "tired", "very_fatigued", "pain"] | None = None
     workout_type: Literal["strength_a", "strength_b"] | None = None
     instruction: str | None = Field(default=None, max_length=2000)
+
+
+def _logged_exercise(item: DailyExerciseDone) -> dict:
+    payload: dict = {
+        "name": item.name,
+        "done": item.done,
+        "completed": item.done,
+        "status": "completed" if item.done else "skipped",
+    }
+    if item.done and item.actual_load is not None:
+        payload["actual_load"] = item.actual_load
+    if item.done and item.rpe is not None:
+        payload["rpe"] = item.rpe
+    return payload
 
 
 def _adjuster(request: Request) -> CalendarAdjuster:
@@ -127,6 +160,7 @@ def _briefing(request: Request, day: date, preview_workout: str | None = None) -
         notion=getattr(request.app.state, "notion_service", None),
         walking=getattr(request.app.state, "walkingpad_service", None),
         weekly=getattr(request.app.state, "weekly_service", None),
+        garmin=getattr(request.app.state, "garmin_service", None),
         preview_workout=preview_workout,
     )
 
@@ -149,7 +183,7 @@ def review_logged_workout(
     if wellbeing is not None:
         wellbeing.store_advice(day, advice)
     session_id = (session or {}).get("id") or day.isoformat()
-    _notify_chili(request, f"{_daily_url(day)}\n\n{advice}", f"workout-review:{session_id}")
+    _notify_chili(request, telegram_message(advice.split("\n", 1)[0], _daily_url(day)), f"workout-review:{session_id}")
     return advice
 
 
@@ -168,7 +202,7 @@ def _close_day(request: Request, day: date, *, force: bool = False, briefing: di
     if force and notify_service is not None and hasattr(notify_service, "forget"):
         notify_service.forget(notify_key)
     text = local_close_day_review(briefing=briefing)
-    _notify_chili(request, f"{_daily_url(day)}\n\n{text}", notify_key)
+    _notify_chili(request, telegram_message(text.split("\n", 1)[0], _daily_url(day)), notify_key)
     wellbeing = getattr(request.app.state, "wellbeing_service", None)
     if wellbeing is not None and hasattr(wellbeing, "store_chili_close"):
         wellbeing.store_chili_close(day, text, "local")
@@ -208,6 +242,14 @@ def _notify_chili(request: Request, message: str, dedupe_key: str) -> None:
         notify_service.release(dedupe_key)
 
 
+@daily_router.get("/wellbeing/history")
+def wellbeing_history(
+    request: Request,
+    days: int = Query(default=90, ge=7, le=400),
+) -> dict:
+    return request.app.state.wellbeing_service.history(days)
+
+
 @daily_router.get("/daily/{day}")
 def daily_briefing(
     request: Request, day: date,
@@ -234,6 +276,8 @@ def daily_workout(request: Request, day: date, body: DailyWorkoutRequest) -> dic
             status_code=400,
             detail="That is not today's session. Change the plan first, then log it.",
         )
+    kind = str(workout.get("planned_type") or "")
+    is_bjj = kind.startswith("bjj_") or kind == "competition"
     try:
         if body.status == "skipped" or body.miss_reason:
             updated = request.app.state.training_service.log_session_result(
@@ -243,13 +287,36 @@ def daily_workout(request: Request, day: date, body: DailyWorkoutRequest) -> dic
                 notes=body.note,
                 session_rpe=body.session_rpe,
             )
-        elif body.session_rpe is not None:
+        elif is_bjj or body.bjj_rounds is not None or body.perceived_intensity:
+            exercises = [
+                {"name": item.name, "done": item.done, "completed": item.done}
+                for item in body.exercises
+            ]
             updated = request.app.state.training_service.log_session_result(
                 workout["id"],
                 status=body.status or "completed",
                 notes=body.note,
-                session_rpe=body.session_rpe,
-                exercises=[{"name": item.name, "done": item.done} for item in body.exercises],
+                bjj_rounds=body.bjj_rounds,
+                perceived_intensity=body.perceived_intensity,
+                exercises=exercises or None,
+            )
+        elif body.session_rpe is not None or any(
+            item.actual_load is not None or item.rpe is not None for item in body.exercises
+        ) or body.interval_watts:
+            rpes = [item.rpe for item in body.exercises if item.done and item.rpe is not None]
+            session_rpe = body.session_rpe
+            if session_rpe is None and rpes:
+                session_rpe = round(sum(rpes) / len(rpes), 1)
+            updated = request.app.state.training_service.log_session_result(
+                workout["id"],
+                status=body.status or "completed",
+                notes=body.note,
+                session_rpe=session_rpe,
+                exercises=[_logged_exercise(item) for item in body.exercises],
+                metrics=[
+                    {"metric_type": "bike_watts", "sequence": item.round, "value": item.watts, "unit": "W"}
+                    for item in body.interval_watts
+                ] or None,
             )
         else:
             updated = request.app.state.training_service.log_workout_check(
@@ -329,39 +396,49 @@ def daily_sleep(request: Request, day: date, body: DailySleepRequest) -> dict:
     }
 
 
-@daily_router.post("/daily/{day}/sunday")
-def daily_sunday(request: Request, day: date, body: DailySundayRequest) -> dict:
+@daily_router.post("/daily/{day}/weight")
+def daily_weight(request: Request, day: date, body: DailyWeightRequest) -> dict:
+    # Optional morning weigh-in, like sleep — never gates closing the day.
+    weight = round(body.weight_kg, 1)
+    request.app.state.wellbeing_service.record(day, weight_kg=weight, source="daily-page")
+    return {
+        "status": "logged",
+        "message": f"Logged weight: {weight:.1f} kg.",
+        "briefing": _briefing(request, day),
+    }
+
+
+@daily_router.post("/daily/{day}/weekly")
+def daily_weekly(request: Request, day: date, body: DailyWeeklyRequest) -> dict:
     weekly = request.app.state.weekly_service
     try:
-        saved = weekly.save_sunday(
+        saved = weekly.save_weekly(
             day,
             request.app.state.training_service,
-            weight_kg=body.weight_kg,
-            same_as_last=body.same_as_last,
+            energy=body.energy,
+            hunger=body.hunger,
+            bjj_performance=body.bjj_performance,
+            waist_cm=body.waist_cm,
+            pain_note=body.pain_note,
             note=body.note,
             source="ui",
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    request.app.state.wellbeing_service.record(
-        day,
-        weight_kg=saved.check_in.weight_kg,
-        daily_notes=body.note,
-        source="daily-page",
-    )
     review_text = _weekly_training_review(request, day, saved.check_in)
     weekly.store_coach_review(day, review_text)
-    _notify_chili(request, f"{saved.notify_message}\n\n{review_text}", f"sunday-saved-{day.isoformat()}")
+    _notify_chili(request, f"{saved.notify_message}\n\n{review_text}", f"weekly-saved-{day.isoformat()}")
     payload = _maybe_close_day(request, day, _briefing(request, day))
     payload["message"] = saved.notify_message
     return payload
 
 
-def _weekly_training_review(request: Request, day: date, check_in: SundayCheckIn) -> str:
+def _weekly_training_review(request: Request, day: date, check_in: WeeklyCheckIn) -> str:
     training = request.app.state.training_service
     week_review = training.week_review(check_in.week_start) if hasattr(training, "week_review") else {}
     weight_line = WeeklyService.weight_line(check_in)
-    return local_weekly_training_review(week_review=week_review, weight_line=weight_line)
+    check_in_line = weekly_check_in_line(check_in)
+    return local_weekly_training_review(week_review=week_review, weight_line=weight_line, check_in_line=check_in_line)
 
 
 @daily_router.post("/daily/{day}/close")

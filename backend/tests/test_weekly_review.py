@@ -10,7 +10,7 @@ from app.database.session import Base
 from app.domain.chili_notify import ChiliNotifyService
 from app.domain.training_logs import TrainingService
 from app.domain.weekly import WeeklyService
-from app.jobs.sunday_review import maybe_send_sunday_review
+from app.jobs.weekly_review import maybe_send_weekly_review
 
 
 def test_session_factory():
@@ -35,7 +35,7 @@ class FakeOpenClaw:
         return {"delivery_status": "sent"}
 
 
-class SundayReviewJobTests(unittest.TestCase):
+class WeeklyReviewJobTests(unittest.TestCase):
     def setUp(self) -> None:
         factory = test_session_factory()
         self.weekly = WeeklyService(session_factory=factory)
@@ -44,16 +44,16 @@ class SundayReviewJobTests(unittest.TestCase):
         self.openclaw = FakeOpenClaw()
         self.tokyo = ZoneInfo("Asia/Tokyo")
 
-    def test_sends_once_on_sunday_morning(self) -> None:
-        now = datetime(2026, 9, 13, 10, 4, tzinfo=self.tokyo)
-        first = maybe_send_sunday_review(
+    def test_sends_once_on_monday_morning(self) -> None:
+        now = datetime(2026, 11, 2, 10, 4, tzinfo=self.tokyo)
+        first = maybe_send_weekly_review(
             weekly=self.weekly,
             notify_service=self.notify,
             openclaw=self.openclaw,
             public_url=self.training.public_url,
             now=now,
         )
-        second = maybe_send_sunday_review(
+        second = maybe_send_weekly_review(
             weekly=self.weekly,
             notify_service=self.notify,
             openclaw=self.openclaw,
@@ -63,18 +63,18 @@ class SundayReviewJobTests(unittest.TestCase):
         self.assertEqual(first, "sent")
         self.assertIsNone(second)
         self.assertEqual(len(self.openclaw.messages), 1)
-        self.assertIn("/daily/2026-09-13", self.openclaw.messages[0])
-        self.assertIn("weigh-in", self.openclaw.messages[0])
+        self.assertIn("/daily/2026-11-02", self.openclaw.messages[0])
+        self.assertIn("Monday check-in", self.openclaw.messages[0])
 
-    def test_skips_after_sunday_is_saved(self) -> None:
-        now = datetime(2026, 9, 13, 10, 4, tzinfo=self.tokyo)
-        self.weekly.save_sunday(
+    def test_skips_after_check_in_is_saved(self) -> None:
+        now = datetime(2026, 11, 2, 10, 4, tzinfo=self.tokyo)
+        self.weekly.save_weekly(
             now.date(),
             self.training,
-            weight_kg=82.4,
+            energy=3, hunger=3, bjj_performance=4,
             now=now,
         )
-        result = maybe_send_sunday_review(
+        result = maybe_send_weekly_review(
             weekly=self.weekly,
             notify_service=self.notify,
             openclaw=self.openclaw,

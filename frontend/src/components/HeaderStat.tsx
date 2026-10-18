@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-export type HeaderStatTone = 'sober' | 'bjj' | 'strength' | 'weight' | 'walk' | 'weather' | 'clock'
+export type HeaderStatTone = 'sober' | 'bjj' | 'strength' | 'weight' | 'sleep' | 'walk' | 'weather' | 'clock'
 
 type HeaderStatProps = {
   label: string

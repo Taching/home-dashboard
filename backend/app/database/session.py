@@ -57,6 +57,17 @@ def initialise_database() -> None:
     _ensure_column("training_exercise_results", "pain", "BOOLEAN")
     _ensure_column("training_exercise_results", "status", "VARCHAR(16)")
     _ensure_column("weekly_reviews", "coach_review", "TEXT")
+    for name, sql_type in {
+        "waist_cm": "FLOAT",
+        "energy": "INTEGER",
+        "hunger": "INTEGER",
+        "bjj_performance": "INTEGER",
+        "pain_note": "VARCHAR(500)",
+        "sleep_average": "FLOAT",
+        "kcal_adjustment": "INTEGER",
+        "kcal_reason": "VARCHAR(300)",
+    }.items():
+        _ensure_column("weekly_reviews", name, sql_type)
 
 
 def _ensure_column(table: str, name: str, ddl: str) -> None:

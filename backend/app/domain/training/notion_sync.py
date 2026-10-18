@@ -38,14 +38,27 @@ class TrainingNotionSync:
             page_id = row.notion_page_id
             if row.status == "cancelled":
                 if page_id:
-                    self._request("PATCH", f"https://api.notion.com/v1/pages/{page_id}", {"in_trash": True})
+                    try:
+                        self._request("PATCH", f"https://api.notion.com/v1/pages/{page_id}", {"in_trash": True})
+                    except httpx.HTTPStatusError as error:
+                        # Already deleted in Notion: nothing left to trash. Any
+                        # other failure still stops the batch for a retry.
+                        if error.response.status_code != 404:
+                            raise
                 self._mark_synced(row.id, page_id)
                 synced += 1
                 continue
             page_id = page_id or self._find_page(row.id)
             payload = {"properties": self._properties(row)}
             if page_id:
-                self._request("PATCH", f"https://api.notion.com/v1/pages/{page_id}", payload)
+                try:
+                    self._request("PATCH", f"https://api.notion.com/v1/pages/{page_id}", payload)
+                except httpx.HTTPStatusError as error:
+                    if error.response.status_code != 404:
+                        raise
+                    # Deleted in Notion by hand: respect that, forget the link
+                    # and keep the rest of the queue moving.
+                    page_id = None
             else:
                 payload.update({
                     "parent": {"type": "data_source_id", "data_source_id": settings.notion_training_data_source_id},

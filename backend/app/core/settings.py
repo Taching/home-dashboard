@@ -57,7 +57,13 @@ class Settings(BaseSettings):
     walkingpad_bridge_token: str | None = None
     walkingpad_goal_minutes: int = 120
     walkingpad_goal_distance_km: float = 3.0
-    walkingpad_goal_steps: int = 10_000
+    walkingpad_goal_steps: int = 8_000
+    # Garmin Connect (Fenix 8 Pro) via the unofficial garminconnect library.
+    # Log in once with `python -m app.jobs.garmin_login`; tokens persist here.
+    garmin_email: str | None = None
+    garmin_password: str | None = None
+    garmin_token_dir: str = "/data/garminconnect"
+    garmin_poll_seconds: int = 1800
     walkingpad_reminder_start_hour: int = 10
     walkingpad_reminder_end_hour: int = 20
     walkingpad_min_gap_before_meeting_min: int = 60

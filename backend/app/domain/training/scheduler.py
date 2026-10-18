@@ -7,15 +7,26 @@ from app.domain.training.policy import (
     BJJ_TYPES,
     COMPLETED_STATUSES,
 )
+from app.domain.training.phases import (  # noqa: F401 - re-exported for callers
+    MARCH_COMPETITION_END,
+    MARCH_COMPETITION_START,
+    OCTOBER_COMPETITION_END,
+    OCTOBER_COMPETITION_START,
+    bjj_round_target,
+    phase_for_date,
+)
 from app.domain.training.rebuild import rebuild_schedule
 from app.domain.training.strength_progress import ExerciseState
 from app.domain.training.templates import (
     WORKOUT_TEMPLATES,
     apply_adaptation,
     build_strength_exercises,
-    reduced_template,
+    peak_strength,
+    taper_strength,
 )
 from app.domain.training.types import (
+    COMPETITION_PHASES,
+    TAPER_PHASES,
     AthleteState,
     ExistingSession,
     ExercisePrescription,
@@ -42,29 +53,6 @@ from app.domain.training.types import (
     WorkoutTemplate,
     WorkoutType,
 )
-
-OCTOBER_COMPETITION_START = date(2026, 10, 10)
-OCTOBER_COMPETITION_END = date(2026, 10, 11)
-NOVEMBER_COMPETITION_START = date(2026, 11, 7)
-NOVEMBER_COMPETITION_END = date(2026, 11, 8)
-
-
-def phase_for_date(day: date) -> TrainingPhase:
-    if day <= date(2026, 10, 4):
-        return TrainingPhase.BUILD_1
-    if day < OCTOBER_COMPETITION_START:
-        return TrainingPhase.TAPER_1
-    if day <= OCTOBER_COMPETITION_END:
-        return TrainingPhase.COMPETITION_1
-    if day <= date(2026, 10, 14):
-        return TrainingPhase.RECOVERY_1
-    if day <= date(2026, 11, 1):
-        return TrainingPhase.BUILD_2
-    if day <= date(2026, 11, 6):
-        return TrainingPhase.TAPER_2
-    if day <= NOVEMBER_COMPETITION_END:
-        return TrainingPhase.COMPETITION_2
-    return TrainingPhase.POST_COMPETITION
 
 
 def assess_readiness(value: ReadinessInput | None) -> ReadinessAssessment:
@@ -95,23 +83,16 @@ def assess_readiness(value: ReadinessInput | None) -> ReadinessAssessment:
     )
 
 
-def bjj_round_target(day: date) -> tuple[int, int]:
-    if day <= date(2026, 9, 20):
-        return 3, 120
-    if day <= date(2026, 9, 27):
-        return 4, 120
-    if day <= date(2026, 10, 4):
-        return 5, 90
-    if day <= date(2026, 10, 10):
-        return 3, 120
-    if day <= date(2026, 10, 18):
-        return 3, 120
-    if day <= date(2026, 10, 25):
-        return 4, 120
-    if day <= date(2026, 11, 1):
-        return 5, 90
-    return 3, 120
-
+_CHAIN = "Competition chain: opening grip → takedown or guard entry → pass or sweep → control → submission."
+_LOSS = "Positional rounds from the position that lost the October final."
+_HEAVY = "Heavier partners, controlled: frames, angles, inside position; leave bottom pressure early."
+_SIM = "Competition-style 5-minute round (white belt, Master 2 match time); record it and review one or two decisive mistakes."
+# BJJ priorities from the March plan, keyed by weekday ("hard" = Saturday competition class).
+CAMPAIGN_FOCUS: dict[TrainingPhase, dict] = {
+    TrainingPhase.BUILD_3: {0: (_CHAIN,), 2: (_LOSS, _HEAVY), "hard": (_SIM, _CHAIN), "default": (_HEAVY,)},
+    TrainingPhase.PEAK_3: {0: (_CHAIN,), 2: (_LOSS,), 3: (_CHAIN,), "hard": (_SIM,), "default": (_CHAIN,)},
+    TrainingPhase.TAPER_3: {"hard": ("Last hard simulation. Short, sharp, then volume comes down.",), "default": ("Sharp drilling of the A-game chain; leave fresh.",)},
+}
 
 TRAVEL_MARKERS = ("flight", "travel", "airport", "shinkansen", "train to")
 DINNER_MARKERS = ("dinner", "izakaya")
@@ -210,9 +191,7 @@ class TrainingScheduler:
         for day, plan in sorted(result.items()):
             if day < today or plan.status != "planned" or plan.session is None:
                 continue
-            if week_start <= day < week_start + timedelta(days=7) and phase_for_date(day) in {
-                TrainingPhase.COMPETITION_1, TrainingPhase.COMPETITION_2,
-            }:
+            if week_start <= day < week_start + timedelta(days=7) and phase_for_date(day) in COMPETITION_PHASES:
                 planned.append(self._all_day(day, WorkoutType.COMPETITION, phase_for_date(day), plan.reason))
                 continue
             event = by_event.get(day) if plan.session in BJJ_TYPES else None
@@ -264,7 +243,7 @@ class TrainingScheduler:
             hard_bjj=any(item.type == WorkoutType.BJJ_HARD for item in sessions),
             strength=sum(item.type in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B} for item in sessions),
             zone_2=sum(item.type == WorkoutType.ZONE_2 for item in sessions),
-            intervals=sum(item.type == WorkoutType.STRENGTH_A for item in sessions),
+            intervals=sum(any(exercise.name == "Stationary bike intervals" for exercise in item.exercises) for item in sessions),
             rest=any(item.type in {WorkoutType.REST, WorkoutType.RECOVERY} for item in sessions),
         )
 
@@ -278,7 +257,7 @@ class TrainingScheduler:
 
     def _bjj_type(self, day: date) -> WorkoutType:
         phase = phase_for_date(day)
-        if phase in {TrainingPhase.TAPER_1, TrainingPhase.TAPER_2}:
+        if phase in TAPER_PHASES:
             return WorkoutType.BJJ_NORMAL if day.weekday() <= 1 else WorkoutType.BJJ_TECHNICAL
         return WorkoutType.BJJ_HARD if day.weekday() == 5 else WorkoutType.BJJ_NORMAL
 
@@ -290,12 +269,18 @@ class TrainingScheduler:
         rounds, rest = bjj_round_target(day)
         if adaptation is not None:
             rounds = max(2, rounds + adaptation.bjj_rounds_delta)
-        focuses = (
-            ("Guard retention: establish frames before strength against the knee cut.",)
-            if day.weekday() in {0, 1}
-            else (("Spider → De La Riva transition.",) if day.weekday() in {3, 4}
-                  else ("DLR → X guard → sweep.", "Establish top pressure efficiently."))
-        )
+        if phase_for_date(day) in CAMPAIGN_FOCUS:
+            focuses = CAMPAIGN_FOCUS[phase_for_date(day)].get(
+                "hard" if workout_type == WorkoutType.BJJ_HARD else day.weekday(),
+                CAMPAIGN_FOCUS[phase_for_date(day)]["default"],
+            )
+        else:
+            focuses = (
+                ("Guard retention: establish frames before strength against the knee cut.",)
+                if day.weekday() in {0, 1}
+                else (("Spider → De La Riva transition.",) if day.weekday() in {3, 4}
+                      else ("DLR → X guard → sweep.", "Establish top pressure efficiently."))
+            )
         if workout_type == WorkoutType.BJJ_TECHNICAL:
             rounds = min(rounds, 2)
         text = reason or (
@@ -323,21 +308,25 @@ class TrainingScheduler:
         strength_deload: dict[str, bool] | None = None,
     ) -> PlannedSession:
         phase = phase_for_date(day)
-        taper = phase in {TrainingPhase.TAPER_1, TrainingPhase.TAPER_2}
+        taper = phase in TAPER_PHASES
         is_strength = workout_type in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B}
         is_deload = False
-        if is_strength and not taper:
-            is_deload = bool((strength_deload or {}).get(workout_type.value))
+        if is_strength:
+            is_deload = not taper and bool((strength_deload or {}).get(workout_type.value))
             progress_map = (strength_progress or {}).get(workout_type.value, {})
             exercises = build_strength_exercises(workout_type, progress_map, deload=is_deload)
-            template = WorkoutTemplate(
-                workout_type, WORKOUT_TEMPLATES[workout_type].title,
-                WORKOUT_TEMPLATES[workout_type].estimated_minutes, WORKOUT_TEMPLATES[workout_type].intensity,
-                exercises, WORKOUT_TEMPLATES[workout_type].conditioning,
-            )
+            if taper:
+                template = taper_strength(workout_type, exercises)
+            else:
+                if phase == TrainingPhase.PEAK_3:
+                    exercises = peak_strength(exercises)
+                template = WorkoutTemplate(
+                    workout_type, WORKOUT_TEMPLATES[workout_type].title,
+                    WORKOUT_TEMPLATES[workout_type].estimated_minutes, WORKOUT_TEMPLATES[workout_type].intensity,
+                    exercises, WORKOUT_TEMPLATES[workout_type].conditioning,
+                )
         else:
-            template = reduced_template(workout_type) if taper and is_strength else WORKOUT_TEMPLATES[workout_type]
-            template = apply_adaptation(template, adaptation)
+            template = apply_adaptation(WORKOUT_TEMPLATES[workout_type], adaptation)
         text = reason or "Placed around BJJ with enough recovery before the hardest mat session."
         if fatigue in {FatigueState.PAIN, FatigueState.VERY_FATIGUED}:
             return self._recovery_session(day, start, fatigue)
@@ -371,7 +360,7 @@ class TrainingScheduler:
     def _tired_exercises(exercises: tuple[ExercisePrescription, ...]) -> tuple[ExercisePrescription, ...]:
         shortened: list[ExercisePrescription] = []
         for item in exercises:
-            if item.name == "Stationary bike intervals":
+            if item.name in {"Stationary bike intervals", "Easy cardio"}:
                 continue
             duration = item.duration_seconds
             if duration and item.name.startswith("Zone 2"):
@@ -531,7 +520,7 @@ class TrainingScheduler:
     @staticmethod
     def _strength_too_late_for_taper(day: date) -> bool:
         phase = phase_for_date(day)
-        return phase in {TrainingPhase.TAPER_1, TrainingPhase.TAPER_2} and day.weekday() > 1
+        return phase in TAPER_PHASES and day.weekday() > 1
 
     def _all_day(self, day: date, workout_type: WorkoutType, phase: TrainingPhase, reason: str) -> PlannedSession:
         start = datetime.combine(day, time.min, self.timezone)

@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from app.core.dry_run import guard_external_call, is_dry_run
 from app.core.settings import settings
 from app.domain.daily_plan import DailyPlanService
 
@@ -200,6 +201,9 @@ class CalendarAdjuster:
             return fast
         if not self._api_key:
             raise ValueError("Calendar adjust needs a clearer instruction, or OpenAI is not configured.")
+        if is_dry_run():
+            guard_external_call("OpenAI", f"interpret({instruction[:60]!r}...)")
+            raise ValueError("Calendar adjust needs a clearer instruction (dry-run blocks GPT).")
         logger.info("→ openai POST /v1/responses model=%s instruction=%s", self._model, instruction[:160])
         response = httpx.post(
             "https://api.openai.com/v1/responses",
@@ -363,6 +367,9 @@ class CalendarAdjuster:
         drafted = str(decision.get("notification") or "")
         personality = load_chili_personality()
         if not self._api_key or not personality:
+            return drafted
+        if is_dry_run():
+            guard_external_call("OpenAI", "_voice_notification(...)")
             return drafted
         try:
             response = httpx.post(

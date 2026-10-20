@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
+from app.core.dry_run import guard_external_call, is_dry_run
 from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -159,6 +160,9 @@ class DisplayService:
             logger.warning("Display power control unavailable; UI blanking only")
             return
         action = "on" if state == "visible" else "off"
+        if is_dry_run():
+            guard_external_call("Display", f"power {action}")
+            return
         command = self._power_command(action)
         try:
             result = subprocess.run(

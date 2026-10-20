@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from websockets.sync.client import connect
 
+from app.core.dry_run import guard_external_call, is_dry_run
 from app.core.settings import settings
 from app.domain.json_types import JsonDict, JsonValue, as_dict, as_list
 
@@ -70,6 +71,9 @@ class OpenClawService:
     def send(
         self, message: str, *, await_reply_seconds: float = 25.0, poll_interval: float = 3.0,
     ) -> dict[str, str | None]:
+        if is_dry_run():
+            guard_external_call("OpenClaw", f"send({message[:100]!r}...)")
+            return {"delivery_status": "dry_run", "reply": None}
         try:
             wrapped = self._message_with_context(message)
             payload = self._request(
@@ -127,6 +131,9 @@ class OpenClawService:
 
     def notify_user(self, message: str) -> dict[str, str | None]:
         """Push text to Telegram. Does not run the agent or use chat.send."""
+        if is_dry_run():
+            guard_external_call("Telegram", f"notify_user({message[:100]!r}...)")
+            return {"delivery_status": "dry_run", "reply": None}
         channel, target = self._notify_route()
         try:
             payload = self._request(

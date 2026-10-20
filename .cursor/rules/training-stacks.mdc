@@ -1,0 +1,15 @@
+---
+description: Do not collapse the two TrainingService classes
+alwaysApply: true
+---
+
+# Two TrainingService classes
+
+Two classes named `TrainingService` coexist on purpose:
+
+| Name | Module | Job |
+| --- | --- | --- |
+| Planner | `app.domain.training.TrainingService` | Sessions, wall overview, daily workout ticks |
+| Legacy log | `app.domain.training_logs.TrainingService` | `/workout`, `/training/plans`, program text |
+
+Do not collapse them without checking `docs/agent-handoff-chili.md` and `docs/agent-handoff-efficiency.md` (Cut 5).

@@ -7,6 +7,7 @@ from typing import Literal, Protocol
 
 from sqlalchemy import select
 
+from app.core.dry_run import guard_external_call, is_dry_run
 from app.core.settings import settings
 from app.database.models import WaterPumpRun
 from app.database.session import SessionLocal
@@ -80,6 +81,13 @@ class WaterPumpService:
         )
 
     async def start_pulse(self, source: str) -> WaterPumpRunResult:
+        if is_dry_run():
+            guard_external_call("SwitchBot", f"start_pulse(source={source!r})")
+            return WaterPumpRunResult(
+                status="success",
+                message="[DRY-RUN] Plant pump would start.",
+                water_pump=self.snapshot(),
+            )
         if not self._adapter.available:
             return WaterPumpRunResult(
                 status="failed",
@@ -106,6 +114,13 @@ class WaterPumpService:
         )
 
     async def run_pulse(self, source: str) -> WaterPumpRunResult:
+        if is_dry_run():
+            guard_external_call("SwitchBot", f"run_pulse(source={source!r})")
+            return WaterPumpRunResult(
+                status="success",
+                message=f"[DRY-RUN] Plant pump would run for {self._duration_seconds()} seconds.",
+                water_pump=self.snapshot(),
+            )
         if not self._adapter.available:
             return WaterPumpRunResult(
                 status="failed",

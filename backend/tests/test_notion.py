@@ -53,6 +53,11 @@ def page(page_id, title, due, done=False, task_type=None, status=None, priority=
 
 
 class NotionServiceTests(unittest.TestCase):
+    def setUp(self):
+        self.dry_run_patcher = patch("app.domain.notion.is_dry_run", return_value=False)
+        self.dry_run_patcher.start()
+        self.addCleanup(self.dry_run_patcher.stop)
+
     @patch("app.domain.notion.settings.notion_token", "secret")
     @patch("app.domain.notion.settings.notion_database_id", "database")
     @patch("app.domain.notion.settings.notion_data_source_id", None)

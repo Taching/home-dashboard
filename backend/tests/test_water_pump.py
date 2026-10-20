@@ -17,11 +17,12 @@ class FakeAdapter:
         self.calls.append(on)
 
 
+@patch("app.domain.water_pump.is_dry_run", return_value=False)
 class WaterPumpServiceTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         initialise_database()
 
-    async def test_run_pulse_turns_on_then_off(self):
+    async def test_run_pulse_turns_on_then_off(self, mock_dry_run):
         adapter = FakeAdapter()
         service = WaterPumpService(adapter=adapter)
 
@@ -32,7 +33,7 @@ class WaterPumpServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(adapter.calls, [True, False])
         self.assertEqual(service.snapshot().state, "idle")
 
-    async def test_start_pulse_skips_when_already_running(self):
+    async def test_start_pulse_skips_when_already_running(self, mock_dry_run):
         adapter = FakeAdapter()
         service = WaterPumpService(adapter=adapter)
         service._state = "running"
@@ -42,7 +43,7 @@ class WaterPumpServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, "skipped")
         self.assertEqual(adapter.calls, [])
 
-    async def test_stop_cancels_running_pulse(self):
+    async def test_stop_cancels_running_pulse(self, mock_dry_run):
         adapter = FakeAdapter()
         service = WaterPumpService(adapter=adapter)
 
@@ -57,7 +58,7 @@ class WaterPumpServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(adapter.power)
         self.assertEqual(service.snapshot().state, "idle")
 
-    async def test_unavailable_when_not_configured(self):
+    async def test_unavailable_when_not_configured(self, mock_dry_run):
         service = WaterPumpService(adapter=FakeAdapter(available=False))
         result = await service.run_pulse("ui")
         self.assertEqual(result.status, "failed")

@@ -94,6 +94,10 @@ class CalendarAdjusterTests(unittest.TestCase):
         self.now = datetime(2026, 9, 13, 3, tzinfo=UTC)  # Sunday 12:00 JST
         self.training = TrainingService(self.factory, timezone_name="Asia/Tokyo")
         self.training.bootstrap(self.now)
+        # Disable dry-run for tests that mock httpx.post
+        self.dry_run_patcher = patch("app.domain.training.adjust.is_dry_run", return_value=False)
+        self.dry_run_patcher.start()
+        self.addCleanup(self.dry_run_patcher.stop)
         self.adjuster = CalendarAdjuster(timezone_name="Asia/Tokyo", api_key="")
 
     def test_strength_a_today_updates_plan_and_calendar(self) -> None:
@@ -212,6 +216,10 @@ class ScheduleChangeApiTests(unittest.TestCase):
         self.app.state.calendar_bridge_service = type("Cal", (), {"configured": lambda self: False})()
         self.app.state.training_preferences_service = TrainingPreferencesService(self.factory)
         self.client = TestClient(self.app)
+        # Disable dry-run for tests that mock httpx.post
+        self.dry_run_patcher = patch("app.domain.training.adjust.is_dry_run", return_value=False)
+        self.dry_run_patcher.start()
+        self.addCleanup(self.dry_run_patcher.stop)
 
     def test_fast_path_instruction_applies_and_returns_decision(self) -> None:
         response = self.client.post("/api/v1/training/replan", json={"instruction": "I want Strength A today"})

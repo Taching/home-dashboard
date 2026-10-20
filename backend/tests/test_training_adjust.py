@@ -22,6 +22,19 @@ def factory():
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 
+def _make_frozen_datetime(frozen_time: datetime):
+    """datetime subclass whose now() always returns frozen_time (see test_daily_briefing)."""
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return frozen_time.replace(tzinfo=None)
+            return frozen_time.astimezone(tz)
+
+    return FrozenDatetime
+
+
 class CalendarAdjustFastPathTests(unittest.TestCase):
     def setUp(self) -> None:
         self.today = date(2026, 9, 13)
@@ -183,6 +196,13 @@ class CalendarAdjustApiTests(unittest.TestCase):
         self.app.state.training_notion_sync = type("Sync", (), {"sync_due": lambda self, limit=25: 1})()
         self.app.state.calendar_bridge_service = type("Cal", (), {"configured": lambda self: False})()
         self.client = TestClient(self.app)
+        # API handlers call adjust() without now=; freeze wall clock to the bootstrap instant.
+        self.time_patcher = patch(
+            "app.domain.training.adjust.datetime",
+            _make_frozen_datetime(self.now),
+        )
+        self.time_patcher.start()
+        self.addCleanup(self.time_patcher.stop)
 
     @patch("app.api.training.settings")
     def test_training_adjust_endpoint(self, settings) -> None:
@@ -197,6 +217,7 @@ class CalendarAdjustApiTests(unittest.TestCase):
         self.assertEqual(body["status"], "ok")
         self.assertEqual(body["analysis"]["mutations"][0]["op"], "gym_today")
         self.assertEqual(body["analysis"]["mutations"][0]["workout_type"], "strength_a")
+        self.assertEqual(body["analysis"]["mutations"][0]["date"], "2026-09-13")
         self.assertTrue(body["notification"].startswith("Changed the week."))
         self.assertEqual(body["notify"]["status"], "not_configured")
 
@@ -220,6 +241,13 @@ class ScheduleChangeApiTests(unittest.TestCase):
         self.dry_run_patcher = patch("app.domain.training.adjust.is_dry_run", return_value=False)
         self.dry_run_patcher.start()
         self.addCleanup(self.dry_run_patcher.stop)
+        # API handlers call adjust() without now=; freeze wall clock to the bootstrap instant.
+        self.time_patcher = patch(
+            "app.domain.training.adjust.datetime",
+            _make_frozen_datetime(self.now),
+        )
+        self.time_patcher.start()
+        self.addCleanup(self.time_patcher.stop)
 
     def test_fast_path_instruction_applies_and_returns_decision(self) -> None:
         response = self.client.post("/api/v1/training/replan", json={"instruction": "I want Strength A today"})
@@ -230,6 +258,7 @@ class ScheduleChangeApiTests(unittest.TestCase):
         self.assertIn("why", decision)
         self.assertIn("banner", decision)
         self.assertEqual(body["overview"]["today"]["planned_type"], "strength_a")
+        self.assertEqual(body["analysis"]["mutations"][0]["date"], "2026-09-13")
 
     def test_unclear_instruction_returns_clean_400_not_500(self) -> None:
         response = self.client.post("/api/v1/training/replan", json={"instruction": "hmm maybe later"})

@@ -1309,6 +1309,92 @@ class TrainingService:
         assert result is not None
         return result
 
+    def move_session(
+        self,
+        session_id: str,
+        new_day: date,
+        *,
+        reason: str | None = None,
+        now: datetime | None = None,
+    ) -> dict:
+        """Move a planned session to another day in the same Mon–Sun week.
+
+        Used by rain handling. Preserves time-of-day. Refuses slots that would
+        remove the only rest day or create two hard sessions on one day.
+        """
+        current = self._as_utc(now or datetime.now(UTC))
+        with self._session_factory() as session:
+            row = session.get(TrainingSession, session_id)
+            if row is None:
+                raise KeyError(session_id)
+            local_start = self._as_utc(row.start_at).astimezone(self._timezone)
+            week_start = local_start.date() - timedelta(days=local_start.date().weekday())
+            week_end = week_start + timedelta(days=6)
+            if not (week_start <= new_day <= week_end):
+                raise ValueError("Can only move within the same Monday–Sunday week.")
+            if new_day == local_start.date():
+                result = self.session(session_id)
+                assert result is not None
+                return result
+
+            same_day = [
+                other for other in session.scalars(
+                    select(TrainingSession)
+                    .where(TrainingSession.start_at >= datetime.combine(new_day, time.min, self._timezone).astimezone(UTC))
+                    .where(TrainingSession.start_at < datetime.combine(new_day + timedelta(days=1), time.min, self._timezone).astimezone(UTC))
+                    .where(TrainingSession.id != session_id)
+                    .where(TrainingSession.status.not_in([SessionStatus.CANCELLED.value, SessionStatus.SKIPPED.value]))
+                ).all()
+            ]
+            hard_types = {
+                WorkoutType.BJJ_HARD.value, WorkoutType.STRENGTH_A.value, WorkoutType.COMPETITION.value,
+            }
+            moving_hard = row.planned_type in hard_types or row.intensity == "hard"
+            if moving_hard and any(
+                other.planned_type in hard_types or other.intensity == "hard" for other in same_day
+            ):
+                raise ValueError("Moving here would create two hard sessions on one day.")
+
+            # Rest-day guard: after the move, the original week must still have ≥1 rest day.
+            week_rows = list(session.scalars(
+                select(TrainingSession)
+                .where(TrainingSession.start_at >= datetime.combine(week_start, time.min, self._timezone).astimezone(UTC))
+                .where(TrainingSession.start_at < datetime.combine(week_end + timedelta(days=1), time.min, self._timezone).astimezone(UTC))
+                .where(TrainingSession.status.not_in([SessionStatus.CANCELLED.value, SessionStatus.SKIPPED.value]))
+            ).all())
+            occupied = {
+                self._as_utc(other.start_at).astimezone(self._timezone).date()
+                for other in week_rows if other.id != session_id
+            }
+            occupied.add(new_day)
+            rest_days = sum(1 for offset in range(7) if (week_start + timedelta(days=offset)) not in occupied)
+            # Also count explicit rest sessions
+            rest_sessions = sum(
+                1 for other in week_rows
+                if other.id != session_id and other.planned_type == WorkoutType.REST.value
+            )
+            if rest_days + rest_sessions < 1 and row.planned_type != WorkoutType.REST.value:
+                # If every calendar day has a non-rest session, refuse.
+                if len(occupied) >= 7:
+                    raise ValueError("No safe same-week slot that preserves a full rest day.")
+
+            duration = self._as_utc(row.end_at) - self._as_utc(row.start_at)
+            new_start = datetime.combine(new_day, local_start.timetz()).astimezone(UTC)
+            row.start_at = new_start
+            row.end_at = new_start + duration
+            row.planned_week_start = week_start
+            row.revision += 1
+            row.updated_at = current
+            if reason:
+                row.reason = f"{row.reason}\nMoved for {reason}." if row.reason else f"Moved for {reason}."
+            if reason == "weather_blocked":
+                row.cancellation_reason = None  # still planned; just relocated
+            session.commit()
+        self.reconcile(current)
+        result = self.session(session_id)
+        assert result is not None
+        return result
+
     def calendar_plan(self, now: datetime | None = None, days: int = 30) -> list[dict]:
         current = self._as_utc(now or datetime.now(UTC))
         end = current + timedelta(days=days)
@@ -1711,8 +1797,9 @@ class TrainingService:
         )
 
     def _apply_plan(self, row: TrainingSession, item, now: datetime) -> bool:
+        planned_type = item.type.value
         values = {
-            "planned_type": item.type.value, "status": SessionStatus.PLANNED.value,
+            "planned_type": planned_type, "status": SessionStatus.PLANNED.value,
             "phase": item.phase.value, "start_at": item.start_at.astimezone(UTC), "end_at": item.end_at.astimezone(UTC),
             "planned_week_start": item.local_date - timedelta(days=item.local_date.weekday()),
             "is_all_day": item.is_all_day, "estimated_minutes": round((item.end_at - item.start_at).total_seconds() / 60),
@@ -1721,6 +1808,7 @@ class TrainingService:
             "round_length_seconds": item.round_length_seconds, "rest_seconds": item.rest_seconds,
             "source": item.source, "pinned": item.pinned, "source_calendar_event_id": item.source_calendar_event_id,
             "deload": item.deload,
+            "requires_travel": planned_type.startswith("bjj_") or planned_type == "competition",
         }
         changed = any(
             self._as_utc(getattr(row, key)) != value
@@ -1781,6 +1869,13 @@ class TrainingService:
             "calendar_event_id": row.apple_event_id or row.source_calendar_event_id,
             "source": row.source, "pinned": bool(row.pinned), "miss_reason": row.miss_reason,
             "deload": bool(row.deload),
+            "requires_travel": bool(getattr(row, "requires_travel", False)),
+            "cancellation_reason": getattr(row, "cancellation_reason", None),
+            "replacement_for_training_session_id": getattr(row, "replacement_for_training_session_id", None),
+            "rain_prompted_at": (
+                self._as_utc(row.rain_prompted_at).isoformat()
+                if getattr(row, "rain_prompted_at", None) is not None else None
+            ),
         }
 
     @staticmethod

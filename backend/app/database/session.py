@@ -68,6 +68,11 @@ def initialise_database() -> None:
         "kcal_reason": "VARCHAR(300)",
     }.items():
         _ensure_column("weekly_reviews", name, sql_type)
+    # M2 rain/travel metadata on TrainingSession (spec 6.4).
+    _ensure_column("training_sessions", "requires_travel", "BOOLEAN NOT NULL DEFAULT 0")
+    _ensure_column("training_sessions", "cancellation_reason", "VARCHAR(32)")
+    _ensure_column("training_sessions", "replacement_for_training_session_id", "VARCHAR(36)")
+    _ensure_column("training_sessions", "rain_prompted_at", "DATETIME")
 
 
 def _ensure_column(table: str, name: str, ddl: str) -> None:

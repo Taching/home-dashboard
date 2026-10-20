@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 import hmac
+import logging
 from typing import Literal
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
@@ -23,6 +24,7 @@ from app.domain.weekly import WeeklyCheckIn, WeeklyService
 
 daily_router = APIRouter()
 _plan = DailyPlanService()
+logger = logging.getLogger(__name__)
 
 
 class DailyCheckInRequest(BaseModel):
@@ -427,6 +429,14 @@ def daily_weekly(request: Request, day: date, body: DailyWeeklyRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(error)) from error
     review_text = _weekly_training_review(request, day, saved.check_in)
     weekly.store_coach_review(day, review_text)
+    # Spec 15: after Monday check-in, FastAPI deterministically recomputes the
+    # previous Monday–Sunday analyzer report (no AI call).
+    analyzer = getattr(request.app.state, "weekly_analyzer_service", None)
+    if analyzer is not None:
+        try:
+            analyzer.recompute(saved.check_in.week_start)
+        except Exception:  # noqa: BLE001 — check-in must still succeed
+            logger.exception("Weekly analyzer recompute failed for %s", saved.check_in.week_start)
     _notify_chili(request, f"{saved.notify_message}\n\n{review_text}", f"weekly-saved-{day.isoformat()}")
     payload = _maybe_close_day(request, day, _briefing(request, day))
     payload["message"] = saved.notify_message

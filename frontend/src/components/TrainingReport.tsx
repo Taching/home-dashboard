@@ -1,8 +1,37 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { logDailyWorkout } from '../lib/api'
+import { logDailyWorkout, putBjjAnalysis, putExerciseResults } from '../lib/api'
 import { doneMarkLabel, workoutFormLocked } from '../lib/workoutMatch'
 import type { DailyBriefing, PlannedExercise, PlannedWorkout } from '../types'
 import { AskCoachButton } from './AskCoachButton'
+
+const TECHNIQUE = [
+  ['good', 'Good'],
+  ['shaky', 'Shaky'],
+  ['breakdown', 'Breakdown'],
+] as const
+
+const BJJ_FAILURES = [
+  ['grip_lost', 'Grip lost'],
+  ['frame_late', 'Frame late'],
+  ['posture_broken', 'Posture broken'],
+  ['bad_angle', 'Bad angle'],
+  ['off_balance_failed', 'Could not off-balance'],
+  ['technique_forgotten', 'Technique forgotten'],
+  ['poor_decision', 'Poor decision'],
+  ['strength_limited', 'Strength limited'],
+  ['cardio_limited', 'Cardio limited'],
+  ['grip_fatigue', 'Grip fatigue'],
+  ['opponent_skill', 'Opponent better'],
+  ['other', 'Other'],
+] as const
+
+function parseReps(value: string): number[] {
+  return value
+    .split(/[\/,\s]+/)
+    .map((part) => Number(part))
+    .filter((n) => Number.isFinite(n) && n > 0 && n <= 100)
+    .slice(0, 20)
+}
 
 const MISS_REASONS = [
   ['OVERSLEPT', 'Overslept'],
@@ -82,9 +111,13 @@ function initialLifts(workout: PlannedWorkout) {
   return Object.fromEntries(workout.exercises.filter(isTrackedLift).map((item) => {
     const previous = saved.get(item.name)
     const load = previous?.actual_load ?? item.load_value
+    const technique = previous?.technique === 'clean' ? 'good' : (previous?.technique ?? 'good')
     return [item.name, {
       load: load == null ? '' : formatLoad(load),
       rpe: previous?.rpe != null ? String(previous.rpe) : '8',
+      reps: previous?.actual_reps ?? (item.sets && item.reps ? Array.from({ length: item.sets }, () => String(item.reps).split('-').pop()).join(' / ') : ''),
+      technique,
+      pain: Boolean(previous?.pain),
     }]
   }))
 }
@@ -135,11 +168,16 @@ export function TrainingReport({
   const [liftReport, setLiftReport] = useState(initialLifts(workout))
   const [watts, setWatts] = useState(initialWatts(workout))
   const [note, setNote] = useState(locked ? (workout.notes ?? '') : '')
+  const [mainFocus, setMainFocus] = useState('')
+  const [problemPosition, setProblemPosition] = useState('')
+  const [primaryFailure, setPrimaryFailure] = useState('')
+  const [showBjjExtra, setShowBjjExtra] = useState(false)
   const [pending, setPending] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const sent = saved || locked
   const showDetails = !bjj && status !== 'skipped'
+  const sessionId = coachSessionId || workout.id
 
   useEffect(() => {
     if (window.location.hash !== '#report') return
@@ -203,10 +241,41 @@ export function TrainingReport({
       perceived_intensity: bjj && status !== 'skipped' ? intensity : undefined,
       interval_watts: intervalWatts,
     })
-      .then((result) => {
+      .then(async (result) => {
         if (result.status !== 'logged') {
           setError(result.message)
           return
+        }
+        // M2 structured logs (compact reps/technique/pain + optional BJJ analysis).
+        // Missing optional fields stay absent — never invent zeros.
+        if (!bjj && status !== 'skipped') {
+          const structured = lifts.map((item, index) => {
+            const included = status === 'completed' ? true : Boolean(done[item.name])
+            const report = liftReport[item.name]
+            const load = report ? Number(report.load) : NaN
+            const rpe = report ? Number(report.rpe) : NaN
+            const reps = report?.reps ? parseReps(report.reps) : []
+            return {
+              sort_order: index,
+              planned_exercise_name: item.name,
+              performed_exercise_name: item.name,
+              planned_sets: item.sets ?? undefined,
+              reps_per_set: included && reps.length ? reps : undefined,
+              load_kg: included && item.load_value != null && Number.isFinite(load) ? load : undefined,
+              rpe: included && Number.isFinite(rpe) ? rpe : undefined,
+              technique_quality: included ? (report?.technique || undefined) : undefined,
+              pain_flag: included ? Boolean(report?.pain) : false,
+              status: included ? 'completed' : 'skipped',
+            }
+          })
+          await putExerciseResults(sessionId, structured).catch(() => undefined)
+        }
+        if (bjj && status !== 'skipped' && (mainFocus || problemPosition || primaryFailure)) {
+          await putBjjAnalysis(sessionId, {
+            main_focus: mainFocus.trim() || undefined,
+            problem_position: problemPosition.trim() || undefined,
+            primary_failure_code: primaryFailure || undefined,
+          }).catch(() => undefined)
         }
         setSaved(true)
         onLogged?.(result.briefing)
@@ -280,7 +349,7 @@ export function TrainingReport({
         ))}
       </div>
 
-      {bjj && status !== 'skipped' && (
+          {bjj && status !== 'skipped' && (
         <>
           <div className="daily-field">
             <span>Rounds</span>
@@ -311,6 +380,42 @@ export function TrainingReport({
               ))}
             </div>
           </div>
+          <button
+            type="button"
+            className="daily-report-hint"
+            onClick={() => setShowBjjExtra((current) => !current)}
+          >
+            {showBjjExtra ? 'Hide optional BJJ review' : 'Optional BJJ review (focus / failure)'}
+          </button>
+          {showBjjExtra && (
+            <>
+              <label className="daily-field">
+                <span>Main focus</span>
+                <input
+                  value={mainFocus}
+                  onChange={(event) => setMainFocus(event.target.value.slice(0, 200))}
+                  placeholder="e.g. half guard sweeps"
+                />
+              </label>
+              <label className="daily-field">
+                <span>Problem position</span>
+                <input
+                  value={problemPosition}
+                  onChange={(event) => setProblemPosition(event.target.value.slice(0, 100))}
+                  placeholder="e.g. bottom half guard"
+                />
+              </label>
+              <label className="daily-field">
+                <span>Primary failure</span>
+                <select value={primaryFailure} onChange={(event) => setPrimaryFailure(event.target.value)}>
+                  <option value="">—</option>
+                  {BJJ_FAILURES.map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
         </>
       )}
 
@@ -359,6 +464,19 @@ export function TrainingReport({
                   </div>
                 </div>
               )}
+              <label className="daily-field">
+                <span>Reps (e.g. 8 / 8 / 7)</span>
+                <input
+                  inputMode="text"
+                  aria-label={`${item.name} reps`}
+                  value={liftReport[item.name]?.reps ?? ''}
+                  placeholder={item.sets ? Array.from({ length: item.sets }, () => item.reps ?? '8').join(' / ') : '8 / 8 / 7'}
+                  onChange={(event) => {
+                    const reps = event.target.value.slice(0, 40)
+                    setLiftReport((current) => ({ ...current, [item.name]: { ...current[item.name], reps } }))
+                  }}
+                />
+              </label>
               <div className="daily-field">
                 <span>RPE</span>
                 <div className="daily-report-choices daily-rpe" role="radiogroup" aria-label={`${item.name} RPE`}>
@@ -378,6 +496,36 @@ export function TrainingReport({
                   ))}
                 </div>
               </div>
+              <div className="daily-field">
+                <span>Technique</span>
+                <div className="daily-report-choices" role="radiogroup" aria-label={`${item.name} technique`}>
+                  {TECHNIQUE.map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={liftReport[item.name]?.technique === value ? 'is-selected' : ''}
+                      aria-pressed={liftReport[item.name]?.technique === value}
+                      onClick={() => setLiftReport((current) => ({
+                        ...current,
+                        [item.name]: { ...current[item.name], technique: value },
+                      }))}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <label className="daily-check">
+                <input
+                  type="checkbox"
+                  checked={Boolean(liftReport[item.name]?.pain)}
+                  onChange={(event) => setLiftReport((current) => ({
+                    ...current,
+                    [item.name]: { ...current[item.name], pain: event.target.checked },
+                  }))}
+                />
+                <span>Pain during this exercise</span>
+              </label>
             </div>
           ))}
         </div>

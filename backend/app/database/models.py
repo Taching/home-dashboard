@@ -553,3 +553,27 @@ class ExerciseSubstitutionOverride(Base):
     __table_args__ = (
         UniqueConstraint("source_exercise_slug", "target_exercise_slug", name="uq_substitution_override"),
     )
+
+
+class TrainingWeeklyAnalysis(Base):
+    """Deterministic weekly training analysis (spec section 6.4 weekly reviews).
+
+    Separate from Monday check-in `weekly_reviews` (weight/energy/kcal), which
+    remains the wellbeing check-in table.
+    """
+    __tablename__ = "training_weekly_analyses"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    week_start: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    week_end: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(16), default="ready")
+    data_confidence: Mapped[str] = mapped_column(String(16), default="low")
+    facts_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    deterministic_report_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    rule_version: Mapped[str] = mapped_column(String(32), default="v1.2")
+    coach_report_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    coach_model_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    coach_prompt_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    coach_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

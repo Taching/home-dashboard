@@ -1,0 +1,21 @@
+---
+description: Keep docs/what-chili-does.md aligned with every user-visible change
+alwaysApply: true
+---
+
+# Update the overview doc with every commit
+
+`docs/what-chili-does.md` is Toshi's plain-language overview of what the dashboard does and what it is for.
+
+Before committing a change that adds, removes, or changes anything user-visible, such as:
+
+- a wall or phone surface, or what it shows
+- a Telegram message, reminder, or its timing
+- training templates, progression, deload, or weekly targets
+- weight-cut targets or nutrition rules
+- an integration (Garmin, calendar, Notion, WalkingPad, Spotify, home devices) or a schedule
+
+1. Update the affected section of `docs/what-chili-does.md` in the **same commit**.
+2. Bump the `_Last updated_` date at the top.
+
+Pure refactors, test-only changes, and internal fixes with no visible effect don't need an update. When unsure, re-read the doc against the change.

@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from app.domain.openclaw import OpenClawError, OpenClawMessage, OpenClawService
 
@@ -18,6 +19,10 @@ class FakeOpenClawService(OpenClawService):
 
 
 class OpenClawServiceTests(unittest.TestCase):
+    def setUp(self):
+        self.dry_run_patcher = patch("app.domain.openclaw.is_dry_run", return_value=False)
+        self.dry_run_patcher.start()
+        self.addCleanup(self.dry_run_patcher.stop)
     def test_history_normalises_gateway_content(self):
         service = FakeOpenClawService([{
             "messages": [

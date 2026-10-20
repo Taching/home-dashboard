@@ -6,6 +6,7 @@ import logging
 
 import httpx
 
+from app.core.dry_run import guard_external_call, is_dry_run
 from app.core.settings import settings
 from app.domain.training.types import SchedulerInput, WorkoutType
 
@@ -33,6 +34,9 @@ def rerank_and_explain(
         return default, fallback_reason
     api_key = settings.openai_api_key
     if not api_key:
+        return default, fallback_reason
+    if is_dry_run():
+        guard_external_call("OpenAI", f"rerank_and_explain(day={day}, default={default})")
         return default, fallback_reason
     allowed = {item.value for item in close}
     payload = {

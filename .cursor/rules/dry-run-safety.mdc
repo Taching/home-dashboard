@@ -1,0 +1,17 @@
+---
+description: External side effects require production mode opt-in
+alwaysApply: true
+---
+
+# Dry-run safety
+
+By default, `CHILI_PRODUCTION_MODE=false`. External side effects are blocked and logged:
+
+- Telegram messages (`notify_user`, `send`)
+- Notion writes (`complete`, `publish_progress`, training sync)
+- Device control (BroadLink, SwitchBot, display power)
+- LLM API calls (OpenAI)
+
+**Never set `CHILI_PRODUCTION_MODE=true` without explicit owner approval in the chat.**
+
+The Pi's production `.env` enables it. CI, agent environments, and fresh checkouts are always in dry-run mode.

@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from sqlalchemy import select
 
+from app.core.dry_run import guard_external_call, is_dry_run
 from app.core.settings import settings
 from app.database.models import DailyWellbeingCheckIn, TrainingExercise, TrainingMetric, TrainingSession
 from app.database.session import SessionLocal
@@ -22,6 +23,9 @@ class TrainingNotionSync:
 
     def sync_due(self, limit: int = 25) -> int:
         if not self.configured():
+            return 0
+        if is_dry_run():
+            guard_external_call("Notion", f"sync_due(limit={limit})")
             return 0
         with self._session_factory() as session:
             rows = list(session.scalars(

@@ -1,0 +1,7 @@
+{
+  "install": "cd backend && pip install -e . && cd ../frontend && npm ci",
+  "start": null,
+  "terminals": {
+    "check": "make check"
+  }
+}

@@ -1,0 +1,17 @@
+---
+description: Do not restyle the kiosk wall or add features speculatively
+alwaysApply: true
+---
+
+# Kiosk wall is read-only
+
+The wall is a read-only glance driven by the Daily Plan. It is not:
+
+- A second Notion
+- A four-widget dashboard
+- A voice-first interface (that was deprecated)
+- An interactive control surface
+
+Do not add features, redesign the layout, or put the OpenClaw transcript back on the wall without explicit owner approval.
+
+Changes that look like a redesign or new surface: confirm with the owner first.

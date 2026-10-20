@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from app.core.dry_run import guard_external_call, is_dry_run
 from app.core.settings import settings
 from app.domain.json_types import JsonDict, as_dict, as_list
 from app.domain.progress_reports import ProgressReport
@@ -57,6 +58,9 @@ class NotionService:
     def publish_progress(self, report: ProgressReport) -> str:
         if not self.progress_configured():
             raise ValueError("Notion progress reporting is not configured.")
+        if is_dry_run():
+            guard_external_call("Notion", f"publish_progress({report.title!r})")
+            return "dry-run-page-id"
         weight = "Not recorded" if report.weight_kg is None else f"{report.weight_kg:.1f} kg"
         change = "No comparison yet" if report.weight_change_kg is None else f"{report.weight_change_kg:+.1f} kg"
         content = (
@@ -153,6 +157,9 @@ class NotionService:
     def complete(self, page_id: str) -> None:
         if not self.configured():
             raise ValueError("Notion is not configured.")
+        if is_dry_run():
+            guard_external_call("Notion", f"complete({page_id!r})")
+            return
         done_status = settings.notion_done_statuses.split(",")[0].strip() or "Done"
         properties: JsonDict = {}
         if settings.notion_done_property:

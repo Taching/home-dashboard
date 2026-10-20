@@ -24,6 +24,11 @@ def _row(session_id: str, status: str, page_id: str | None, start: datetime) -> 
 
 
 class TrainingNotionSyncTests(unittest.TestCase):
+    def setUp(self):
+        self.dry_run_patcher = patch("app.domain.training.notion_sync.is_dry_run", return_value=False)
+        self.dry_run_patcher.start()
+        self.addCleanup(self.dry_run_patcher.stop)
+
     def test_cancelled_session_whose_page_is_gone_does_not_block_the_batch(self) -> None:
         engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         Base.metadata.create_all(engine)

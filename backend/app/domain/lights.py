@@ -7,9 +7,10 @@ from typing import Literal, Protocol
 
 from sqlalchemy import select
 
+from app.core.dry_run import guard_external_call, is_dry_run
+from app.core.settings import settings
 from app.database.models import LightCommand
 from app.database.session import SessionLocal
-from app.core.settings import settings
 
 LightCommandState = Literal["on", "off", "unknown"]
 
@@ -139,6 +140,13 @@ class LightService:
     def set_state(
         self, state: Literal["on", "off"], source: str
     ) -> LightCommandResult:
+        if is_dry_run():
+            guard_external_call("BroadLink", f"set_state({state!r}, source={source!r})")
+            return LightCommandResult(
+                status="success",
+                message=f"[DRY-RUN] Light would be set {state}.",
+                light=self.snapshot(),
+            )
         if not self._adapter.available:
             return LightCommandResult(
                 status="failed",

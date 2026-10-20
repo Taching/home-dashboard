@@ -5,6 +5,13 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "Chili Home Dashboard"
+
+    # Production mode: controls whether external side effects are real.
+    # Default is False (dry-run): Telegram, Notion writes, device control, and
+    # LLM calls log what they would do but do not perform the action.
+    # Set CHILI_PRODUCTION_MODE=true only on the Pi's .env. Agents must never
+    # set this without the owner's explicit approval.
+    production_mode: bool = False
     database_url: str = "sqlite:////data/chili.db"
     timezone: str = "Asia/Tokyo"
     weather_latitude: float | None = 35.6581

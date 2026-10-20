@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(make check)",
+      "Bash(make *)",
+      "Bash(npm run *)",
+      "Bash(npm test)",
+      "Bash(npm ci)",
+      "Bash(pip install *)",
+      "Bash(python -m unittest *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git branch *)",
+      "Bash(git checkout *)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(cd *)"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(git push --force *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(curl *chili-dashboard*)",
+      "Bash(curl *tail*)",
+      "Bash(docker *)",
+      "Bash(systemctl *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./data/*)",
+      "Edit(./.env)",
+      "Edit(./.env.*)",
+      "Write(./.env)",
+      "Write(./.env.*)",
+      "Bash(export CHILI_PRODUCTION_MODE=true)",
+      "Bash(*CHILI_PRODUCTION_MODE=true*)"
+    ]
+  }
+}

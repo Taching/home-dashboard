@@ -1,7 +1,7 @@
 # Chili Home Dashboard — unified verification command.
 # Run `make check` before committing. CI uses the same command.
 
-.PHONY: check test-backend test-frontend lint build test-pr-stack pr-stack help
+.PHONY: check test-backend test-frontend lint build test-pr-stack pr-stack uat-v1 help
 
 # Default: run all checks
 check: test-backend test-frontend lint build test-pr-stack
@@ -50,4 +50,8 @@ help:
 	@echo "  build         Build frontend (typecheck + bundle)"
 	@echo "  test-pr-stack Offline smoke test for create-pr-stack.sh"
 	@echo "  pr-stack      Show create-pr-stack.sh usage (open stacked PRs)"
+	@echo "  uat-v1        Automated UAT for workout library V1 (M1–M4)"
 	@echo "  help          Show this help"
+
+uat-v1:
+	@scripts/verify_uat_v1.sh

@@ -129,6 +129,61 @@ class TrainingPreferencesRequest(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
 
 
+# M2: Exercise-level logging request models
+class ExerciseLogItem(BaseModel):
+    """Single exercise log entry for structured workout logging."""
+    sort_order: int = Field(ge=0, le=20)
+    planned_exercise_name: str = Field(min_length=1, max_length=120)
+    planned_exercise_slug: str | None = Field(default=None, max_length=80)
+    performed_exercise_name: str | None = Field(default=None, max_length=120)
+    performed_exercise_slug: str | None = Field(default=None, max_length=80)
+    planned_sets: int | None = Field(default=None, ge=1, le=20)
+    reps_per_set: list[int] | None = Field(default=None, max_length=20)
+    load_kg: float | None = Field(default=None, ge=0, le=500)
+    load_per_side: bool = False
+    load_note: str | None = Field(default=None, max_length=100)
+    rpe: float | None = Field(default=None, ge=1, le=10)
+    technique_quality: Literal["good", "shaky", "breakdown"] | None = None
+    pain_flag: bool = False
+    status: Literal["completed", "partial", "skipped"] = "completed"
+    substitution_reason: str | None = Field(default=None, max_length=200)
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class ExerciseResultsRequest(BaseModel):
+    """Request to log structured exercise results for a session."""
+    exercises: list[ExerciseLogItem] = Field(min_length=1, max_length=20)
+
+
+class BjjAnalysisRequest(BaseModel):
+    """Request to log BJJ session analysis."""
+    main_focus: str | None = Field(default=None, max_length=200)
+    problem_position: str | None = Field(default=None, max_length=100)
+    key_failure_text: str | None = Field(default=None, max_length=500)
+    technique_practiced: str | None = Field(default=None, max_length=200)
+    success_count: int | None = Field(default=None, ge=0, le=100)
+    attempt_count: int | None = Field(default=None, ge=0, le=100)
+    primary_failure_code: str | None = Field(default=None, max_length=32)
+    additional_failure_codes: list[str] | None = Field(default=None, max_length=5)
+    failure_notes: dict[str, str] | None = None
+
+
+class RainActionRequest(BaseModel):
+    """Request to handle a rain warning action."""
+    action: Literal["move_session", "use_home_fallback", "keep_original_plan"]
+    move_to_date: date | None = None
+
+
+class CancellationRequest(BaseModel):
+    """Request to set a session cancellation reason."""
+    reason: Literal[
+        "weather_blocked", "pain", "illness", 
+        "schedule_conflict", "user_cancelled", "other"
+    ]
+    replacement_session_id: str | None = None
+
+
+
 class AutomationRunRequest(BaseModel):
     action: Literal["morning", "evening", "dispatch"]
 
@@ -575,3 +630,318 @@ def _reminder_message(kind: str, session: dict) -> str:
         detail = " × ".join(str(value) for value in (item.get("load_value"), item.get("sets"), item.get("reps")) if value is not None)
         exercises.append(f"{item['name']}{': ' + detail if detail else ''}")
     return f"{session['title']} in 60 minutes.\n" + "\n".join(exercises) + "\nTarget: finish with energy left."
+
+
+# M2: Exercise-level logging endpoints (spec section 14)
+
+@training_router.put("/training-sessions/{session_id}/exercise-results")
+async def log_exercise_results(
+    request: Request, 
+    session_id: str, 
+    body: ExerciseResultsRequest,
+) -> dict:
+    """Log structured exercise-level results for a training session.
+    
+    Implements spec section 9.1 (Strength logging):
+    - One compact result per exercise (not set-by-set)
+    - Preserves planned vs performed exercise history
+    - Stores compact reps_per_set like [8, 8, 7]
+    """
+    service = getattr(request.app.state, "workout_logging_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="Workout logging service not configured.")
+    
+    from app.domain.workout_logging import ExerciseLogInput
+    
+    try:
+        inputs = [
+            ExerciseLogInput(
+                sort_order=item.sort_order,
+                planned_exercise_name=item.planned_exercise_name,
+                planned_exercise_slug=item.planned_exercise_slug,
+                performed_exercise_name=item.performed_exercise_name,
+                performed_exercise_slug=item.performed_exercise_slug,
+                planned_sets=item.planned_sets,
+                reps_per_set=item.reps_per_set,
+                load_kg=item.load_kg,
+                load_per_side=item.load_per_side,
+                load_note=item.load_note,
+                rpe=item.rpe,
+                technique_quality=item.technique_quality,
+                pain_flag=item.pain_flag,
+                status=item.status,
+                substitution_reason=item.substitution_reason,
+                notes=item.notes,
+            )
+            for item in body.exercises
+        ]
+        results = service.log_exercise_results(session_id, inputs)
+        return {
+            "status": "logged",
+            "session_id": session_id,
+            "exercise_count": len(results),
+            "exercises": [
+                {
+                    "id": r.id,
+                    "sort_order": r.sort_order,
+                    "planned_exercise_name": r.planned_exercise_name,
+                    "performed_exercise_name": r.performed_exercise_name,
+                    "status": r.status,
+                    "load_kg": r.load_kg,
+                    "reps_per_set": r.reps_per_set,
+                    "rpe": r.rpe,
+                    "technique_quality": r.technique_quality,
+                    "pain_flag": r.pain_flag,
+                }
+                for r in results
+            ],
+        }
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Training session not found.") from None
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+
+
+@training_router.get("/training-sessions/{session_id}/exercise-results")
+async def get_exercise_results(request: Request, session_id: str) -> dict:
+    """Get exercise-level results for a training session."""
+    service = getattr(request.app.state, "workout_logging_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="Workout logging service not configured.")
+    
+    training_service = request.app.state.training_service
+    session = training_service.session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Training session not found.")
+    
+    logs = service.get_exercise_logs(session_id)
+    return {
+        "session_id": session_id,
+        "exercises": logs,
+        "count": len(logs),
+    }
+
+
+@training_router.put("/training-sessions/{session_id}/bjj-analysis")
+async def log_bjj_analysis(
+    request: Request,
+    session_id: str,
+    body: BjjAnalysisRequest,
+) -> dict:
+    """Log optional BJJ analysis fields for a training session.
+    
+    Implements spec section 9.2 (BJJ quick review):
+    - Optional main focus, problem position, failure tags
+    - Links to the seeded 12 failure types from M1
+    - Should be completable in under 60 seconds
+    """
+    service = getattr(request.app.state, "workout_logging_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="Workout logging service not configured.")
+    
+    from app.domain.workout_logging import BjjAnalysisInput
+    
+    try:
+        analysis_input = BjjAnalysisInput(
+            main_focus=body.main_focus,
+            problem_position=body.problem_position,
+            key_failure_text=body.key_failure_text,
+            technique_practiced=body.technique_practiced,
+            success_count=body.success_count,
+            attempt_count=body.attempt_count,
+            primary_failure_code=body.primary_failure_code,
+            additional_failure_codes=body.additional_failure_codes,
+            failure_notes=body.failure_notes,
+        )
+        result = service.log_bjj_analysis(session_id, analysis_input)
+        return {
+            "status": "logged",
+            "training_session_id": result.training_session_id,
+            "main_focus": result.main_focus,
+            "problem_position": result.problem_position,
+            "primary_failure": result.primary_failure,
+            "failure_codes": result.failure_codes,
+        }
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Training session not found.") from None
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+
+
+@training_router.get("/training-sessions/{session_id}/bjj-analysis")
+async def get_bjj_analysis(request: Request, session_id: str) -> dict:
+    """Get BJJ analysis for a training session."""
+    service = getattr(request.app.state, "workout_logging_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="Workout logging service not configured.")
+    
+    training_service = request.app.state.training_service
+    session = training_service.session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Training session not found.")
+    
+    analysis = service.get_bjj_analysis(session_id)
+    if analysis is None:
+        return {"session_id": session_id, "analysis": None}
+    return {"session_id": session_id, "analysis": analysis}
+
+
+@training_router.post("/training-sessions/{session_id}/rain-action")
+async def handle_rain_action(
+    request: Request,
+    session_id: str,
+    body: RainActionRequest,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    """Handle a rain warning action for a session.
+    
+    Implements spec section 10.5:
+    - Move session: reschedule within this week
+    - Use home fallback: record weather_blocked and create home session
+    - Keep original plan: no change
+    """
+    _require_auth(authorization)
+    
+    training_service = request.app.state.training_service
+    session = training_service.session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Training session not found.")
+    
+    workout_logging_service = getattr(request.app.state, "workout_logging_service", None)
+    
+    if body.action == "keep_original_plan":
+        return {"status": "unchanged", "session_id": session_id, "message": "Plan kept as is."}
+    
+    if body.action == "move_session":
+        if body.move_to_date is None:
+            raise HTTPException(status_code=400, detail="move_to_date required for move_session action.")
+        try:
+            result = training_service.move_session(
+                session_id, 
+                body.move_to_date,
+                reason="weather_blocked",
+            )
+            return {
+                "status": "moved",
+                "session_id": session_id,
+                "new_date": body.move_to_date.isoformat(),
+                "result": result,
+            }
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+    
+    if body.action == "use_home_fallback":
+        from app.domain.rain_handling import get_home_alternative
+        
+        session_type = session.get("planned_type", "")
+        alternative = get_home_alternative(session_type)
+        
+        if workout_logging_service:
+            workout_logging_service.set_cancellation_reason(
+                session_id, 
+                "weather_blocked",
+            )
+        
+        return {
+            "status": "home_fallback",
+            "session_id": session_id,
+            "original_type": alternative.original_session_type,
+            "alternative_type": alternative.alternative_type,
+            "description": alternative.description,
+            "counts_as": alternative.counts_as,
+        }
+    
+    raise HTTPException(status_code=400, detail=f"Unknown action: {body.action}")
+
+
+@training_router.post("/training-sessions/{session_id}/cancellation")
+async def set_session_cancellation(
+    request: Request,
+    session_id: str,
+    body: CancellationRequest,
+) -> dict:
+    """Set a cancellation reason for a training session.
+    
+    Per spec: weather_blocked is stored only after explicit athlete confirmation.
+    """
+    service = getattr(request.app.state, "workout_logging_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="Workout logging service not configured.")
+    
+    try:
+        service.set_cancellation_reason(
+            session_id,
+            body.reason,
+            body.replacement_session_id,
+        )
+        return {
+            "status": "updated",
+            "session_id": session_id,
+            "cancellation_reason": body.reason,
+        }
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Training session not found.") from None
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+
+
+@training_router.get("/training-sessions/{session_id}/rain-check")
+async def check_rain_risk(request: Request, session_id: str) -> dict:
+    """Check rain risk for a session requiring travel.
+    
+    This is used by the pre-workout flow to determine if a rain warning
+    should be shown.
+    """
+    training_service = request.app.state.training_service
+    session = training_service.session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Training session not found.")
+    
+    if not session.get("requires_travel", False):
+        return {
+            "session_id": session_id,
+            "requires_travel": False,
+            "at_risk": False,
+            "message": "This session does not require travel.",
+        }
+    
+    weather_service = getattr(request.app.state, "weather_service", None)
+    if weather_service is None or not weather_service.configured():
+        return {
+            "session_id": session_id,
+            "requires_travel": True,
+            "at_risk": False,
+            "message": "Weather service not configured.",
+        }
+    
+    from app.domain.rain_handling import assess_rain_risk, build_rain_prompt, format_rain_warning
+    
+    session_start = datetime.fromisoformat(session["start_at"])
+    travel_conditions = weather_service.travel_conditions()
+    
+    assessment = assess_rain_risk(
+        session_start,
+        travel_conditions,
+        departure_buffer_minutes=30,
+    )
+    
+    response = {
+        "session_id": session_id,
+        "requires_travel": True,
+        "at_risk": assessment.at_risk,
+        "precipitation_probability": assessment.precipitation_probability,
+        "precipitation_mm": assessment.precipitation_mm,
+        "message": assessment.message,
+    }
+    
+    if assessment.at_risk:
+        prompt = build_rain_prompt(
+            session_id,
+            session.get("title", "Training"),
+            session_start,
+            assessment,
+        )
+        response["warning_text"] = format_rain_warning(prompt)
+        response["actions"] = list(prompt.actions)
+    
+    return response

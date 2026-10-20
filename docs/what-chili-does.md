@@ -1,6 +1,6 @@
 # Chili — what this dashboard is and what it does
 
-_Last updated: 20 Oct 2026_
+_Last updated: 20 Oct 2026 (M2: trustworthy logging)_
 
 ## What it is for
 
@@ -139,6 +139,46 @@ forward. The taper replaces deloads from 21 Feb.
   rest of the week and sends a one-line summary plus the daily link.
 - Fatigue is one of four states (normal / tired / very fatigued / pain). There
   is no morning questionnaire.
+
+### Workout logging
+
+Each exercise has **one compact result** (not set-by-set):
+- Load in kg, or a note like "BW + 5 kg" or "stack 8"
+- Reps per set as a compact list: `8 / 8 / 7`
+- Overall exercise RPE (optional)
+- Technique: good, shaky, or breakdown
+- Pain flag
+- Status: completed, partial, or skipped
+
+If I swap an exercise using the alternatives engine, both the **planned** and
+**performed** exercise are recorded together with the substitution reason.
+A plain "done" tick holds the weight — I must log an RPE to advance the load.
+
+### BJJ session review
+
+After BJJ I log:
+- **Rounds** and **intensity** (required, as before)
+- **Main focus** — e.g., "half guard sweeps" (optional)
+- **Problem position** — e.g., "bottom half guard" (optional)
+- **Primary failure tag** — from a fixed list of 12 (optional)
+- **Success/attempt count** — only if the focus was measurable
+
+This should take under 60 seconds. No technique statistics are required on
+every session. The weekly analyzer will surface recurring failures.
+
+### Rain handling
+
+BJJ at the academy **requires travel**. When rain is at risk (precipitation
+probability ≥50% or rain currently reported), the pre-workout message shows
+a warning with three actions:
+
+- **Move session** — reschedule to another day this week
+- **Use home fallback** — solo drills or home cardio instead
+- **Keep original plan** — go anyway
+
+No response keeps the plan unchanged. **Weather never silently cancels a
+session.** A rain-blocked miss counts as `weather_blocked`, not an execution
+failure, and is excluded from "controllable adherence."
 
 ---
 

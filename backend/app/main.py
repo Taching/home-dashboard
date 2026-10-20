@@ -31,6 +31,7 @@ from app.domain.progress_reports import ProgressReportService
 from app.domain.db_read import DbReadService
 from app.domain.display import DisplayService
 from app.domain.exercise_library import ExerciseLibraryService
+from app.domain.workout_logging import WorkoutLoggingService
 from app.jobs.display_scheduler import run_display_scheduler
 from app.jobs.sensor_polling import run_sensor_poller
 from app.jobs.weekly_review import run_weekly_review_reminder
@@ -58,6 +59,8 @@ async def lifespan(application: FastAPI):
     exercise_library_service = ExerciseLibraryService(session_factory=SessionLocal)
     exercise_library_service.seed_if_empty()
     application.state.exercise_library_service = exercise_library_service
+    workout_logging_service = WorkoutLoggingService(session_factory=SessionLocal)
+    application.state.workout_logging_service = workout_logging_service
     application.state.weather_service = WeatherService()
     training_service = TrainingService(weather_service=application.state.weather_service)
     application.state.training_service = training_service

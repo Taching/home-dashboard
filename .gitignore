@@ -10,3 +10,4 @@ data/*.db-*
 data/learned-codes/
 data/garminconnect/
 .DS_Store
+frontend/tsconfig.app.tsbuildinfo

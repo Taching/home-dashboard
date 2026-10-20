@@ -261,6 +261,13 @@ class TrainingSession(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     miss_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     deload: Mapped[bool] = mapped_column(Boolean, default=False)
+    # M2: rain/travel handling (spec section 6.4)
+    requires_travel: Mapped[bool] = mapped_column(Boolean, default=False)
+    cancellation_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    replacement_for_training_session_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("training_sessions.id"), nullable=True
+    )
+    rain_prompted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
@@ -423,6 +430,75 @@ class GarminDailySnapshot(Base):
     body_battery_latest: Mapped[int | None] = mapped_column(Integer, nullable=True)
     stress_avg: Mapped[int | None] = mapped_column(Integer, nullable=True)
     activities: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+
+# M2: Structured exercise-level logging (spec section 6.2)
+class TrainingSessionExerciseLog(Base):
+    """Per-exercise compact result for a training session. Spec section 6.2."""
+    __tablename__ = "training_session_exercise_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    training_session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("training_sessions.id"), nullable=False, index=True
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    planned_exercise_slug: Mapped[str | None] = mapped_column(
+        String(80), ForeignKey("exercises.slug"), nullable=True, index=True
+    )
+    performed_exercise_slug: Mapped[str | None] = mapped_column(
+        String(80), ForeignKey("exercises.slug"), nullable=True, index=True
+    )
+    planned_exercise_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    performed_exercise_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    planned_sets: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reps_per_set: Mapped[list[int]] = mapped_column(JSON, default=list)
+    load_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    load_per_side: Mapped[bool] = mapped_column(Boolean, default=False)
+    load_note: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    rpe: Mapped[float | None] = mapped_column(Float, nullable=True)
+    technique_quality: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    pain_flag: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="completed")
+    substitution_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("training_session_id", "sort_order", name="uq_exercise_log_order"),
+    )
+
+
+# M2: BJJ session analysis (spec section 6.3)
+class BjjSessionAnalysis(Base):
+    """Optional BJJ analysis fields for a training session. Spec section 6.3."""
+    __tablename__ = "bjj_session_analysis"
+
+    training_session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("training_sessions.id"), primary_key=True
+    )
+    main_focus: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    problem_position: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    key_failure_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    technique_practiced: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    success_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    attempt_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class BjjSessionFailure(Base):
+    """Failure tags for a BJJ session. Spec section 6.3."""
+    __tablename__ = "bjj_session_failures"
+
+    training_session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("bjj_session_analysis.training_session_id", ondelete="CASCADE"),
+        primary_key=True
+    )
+    failure_code: Mapped[str] = mapped_column(
+        String(32), ForeignKey("bjj_failure_types.code"),
+        primary_key=True
+    )
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Exercise(Base):

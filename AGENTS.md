@@ -35,6 +35,25 @@ The Pi's production `.env` sets `CHILI_PRODUCTION_MODE=true`.
 4. **Never collapse the two TrainingService classes** — they coexist on purpose.
 5. **Always run `make check`** before committing.
 6. **Restart the kiosk after frontend changes** — see `.cursor/rules/restart-kiosk-after-frontend.mdc`.
+7. **Never open draft PRs** — create them ready for review. Multi-step work must be one stacked set (see below).
+
+## Pull requests / stacks
+
+- **Single change** → one ready PR to `master` (`gh pr create`, no `--draft`).
+- **Ordered milestones** → one linear branch stack, then create **all** PRs in one go with `scripts/create-pr-stack.sh`.
+  - Branch N contains Branch N-1's tip.
+  - PR 1 bases on `master`; PR N bases on Branch N-1.
+  - Do not open duplicate PRs that each target `master` with overlapping commits.
+- **Merge bottom-up.** After merging a lower PR, delete its head (preferred) or `gh pr edit <next> --base master` before merging the tip — otherwise the tip merges into a dead feature branch and never lands on `master`.
+
+```sh
+# After all stack branches are pushed:
+scripts/create-pr-stack.sh --base master \
+  --step 'cursor/m2|feat: M2 logging|## Summary'$'\n''- trustworthy logging' \
+  --step 'cursor/m3|feat: M3 analyzer|## Summary'$'\n''- weekly review'
+```
+
+See `.cursor/rules/pr-stack.mdc`.
 
 ## Layout
 

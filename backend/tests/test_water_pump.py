@@ -66,7 +66,7 @@ class WaterPumpServiceTests(unittest.IsolatedAsyncioTestCase):
 
 class SwitchBotPlugAdapterTests(unittest.TestCase):
     def test_available_requires_device_id(self):
-        with patch("app.domain.switchbot.SwitchBotClient") as client_cls:
+        with patch("app.domain.water_pump.SwitchBotClient") as client_cls:
             client_cls.return_value.configured = False
             adapter = SwitchBotPlugAdapter()
             self.assertFalse(adapter.available)

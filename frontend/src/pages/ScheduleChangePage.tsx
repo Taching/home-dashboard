@@ -63,7 +63,10 @@ function ThisWeek() {
 type Phase = 'idle' | 'sent' | 'done' | 'error'
 
 export function ScheduleChangePage() {
-  const [instruction, setInstruction] = useState('')
+  const [instruction, setInstruction] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('prefill') ?? ''
+  })
   const [phase, setPhase] = useState<Phase>('idle')
   const [sentText, setSentText] = useState('')
   const [decision, setDecision] = useState<PlanAdjustment | null>(null)

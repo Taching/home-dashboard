@@ -1,6 +1,6 @@
 # Chili — what this dashboard is and what it does
 
-_Last updated: 20 Oct 2026 (M2: trustworthy logging)_
+_Last updated: 20 Oct 2026 (weekly analyzer + Ask coach)_
 
 ## What it is for
 
@@ -30,7 +30,8 @@ is never on the public internet.
 | **Phone: daily page** (`/daily/YYYY-MM-DD`) | Closing the loop for today: tick the workout, log sleep/weight, answer sober, Monday check-in. |
 | **Phone: workout** (`/workout/…`) | The gym program for today's session, logged per exercise (load, RPE, technique, pain). |
 | **Phone: schedule change** (`/schedule-change`) | Tell Chili in plain words what changed; it replans the week. |
-| **Phone: weekly** (`/weekly`) | The week's review. |
+| **Phone: weekly** (`/weekly`) | Deterministic weekly training analysis, evidence, and optional Ask coach. |
+| **Phone: exercises** (`/training/exercises`) | Exercise library, filters, and alternatives. |
 | **Phone: weight / sober** (`/weight`, `/sober`) | History and trend pages. |
 | **Phone: training preferences** (`/training/preferences`) | Free-text notes that give the coach context. They never change the schedule. |
 | **Telegram (Chili via OpenClaw)** | Morning/evening messages, reminders, and plain-language commands. |
@@ -164,7 +165,24 @@ After BJJ I log:
 - **Success/attempt count** — only if the focus was measurable
 
 This should take under 60 seconds. No technique statistics are required on
-every session. The weekly analyzer will surface recurring failures.
+every session. The weekly analyzer surfaces recurring failures.
+
+### Weekly analyzer (`/weekly`)
+
+After the Monday check-in (or when I open `/weekly`), Chili recomputes a
+**deterministic** Mon–Sun report with no AI call:
+
+- Adherence (ordinary vs controllable when rain blocked a leave-home session)
+- Strength trends (e1RM only within the same exercise slug; plain “done” holds load)
+- Recurring BJJ failures / problem positions across distinct sessions
+- Recovery context from sleep, fatigue state, pain flags, and Garmin wording
+- A main bottleneck with a cause code (`execution`, `recovery`,
+  `weather_constraint`, `technical_recurrence`, `possible_program_issue`, …)
+  and expandable evidence keys
+
+**Ask coach about this week** is a separate button. It explains the saved
+facts only, never invents metrics, and never submits a schedule change.
+**Use in schedule change** prefills `/schedule-change` so I still confirm.
 
 ### Rain handling
 

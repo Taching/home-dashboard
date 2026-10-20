@@ -219,7 +219,7 @@ export function DailyBriefingPage({ day }: { day: string }) {
           </section>
 
           <section className="daily-card">
-            <div className="daily-card-title"><span className="daily-card-label">Meetings</span><span>{briefing.calendar.status}</span></div>
+            <div className="daily-card-title"><span className="daily-card-label">Meetings</span><span>{calendarSyncLabel(briefing.calendar)}</span></div>
             {briefing.calendar.meetings.length > 0 ? (
               <div className="daily-meetings">
                 {briefing.calendar.meetings.map((meeting) => (
@@ -451,6 +451,14 @@ function SleepForm({
 
 function signed(value: number) {
   return `${value > 0 ? '+' : ''}${value.toFixed(1)}`
+}
+
+function calendarSyncLabel(calendar: { status: string, synced_at?: string | null }) {
+  if (calendar.status === 'ready' || !calendar.synced_at) return calendar.status
+  const synced = new Date(calendar.synced_at).toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo',
+  })
+  return `Cached · updated ${synced}`
 }
 
 function WatchCard({ watch }: { watch: DailyWatch }) {

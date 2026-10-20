@@ -204,12 +204,13 @@ function SetupState({ service, status, emptyLabel }: { service: string, status: 
 
 function syncAge(value: string | null) {
   if (!value) return 'Cached schedule'
-  const minutes = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60_000))
-  if (minutes < 2) return 'Last synced just now'
-  if (minutes < 60) return `Last synced ${minutes} min ago`
+  const synced = new Date(value)
+  const clock = synced.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  const minutes = Math.max(0, Math.floor((Date.now() - synced.getTime()) / 60_000))
+  if (minutes < 60) return `Last updated ${clock} (${minutes} min ago)`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `Last synced ${hours} hr ago`
-  return `Last synced ${Math.floor(hours / 24)} d ago`
+  if (hours < 24) return `Last updated ${clock} (${hours} hr ago)`
+  return `Last updated ${synced.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} ${clock}`
 }
 
 function CalendarSchedule({
@@ -275,7 +276,7 @@ function CalendarSchedule({
 
       {calendar.status === 'stale' && (
         <p className="calendar-stale-notice" role="status">
-          Using cached events · {syncAge(calendar.synced_at)} · waiting for the Mac bridge
+          Cached events · {syncAge(calendar.synced_at)} · waiting for the Mac
         </p>
       )}
 

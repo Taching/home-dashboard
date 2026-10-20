@@ -187,7 +187,8 @@ class CalendarBridgeService:
             if sync is None:
                 return "not_configured", None
             synced_at = self._as_utc(sync.synced_at)
-            status = "ready" if datetime.now(UTC) - synced_at <= STALE_AFTER else "unavailable"
+            # Past the window the cached events still show, flagged with their sync time.
+            status = "ready" if datetime.now(UTC) - synced_at <= STALE_AFTER else "stale"
             return status, synced_at
 
     def _range_bounds(self, start_date: date, days: int) -> tuple[datetime, datetime]:

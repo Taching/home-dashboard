@@ -1,10 +1,12 @@
 from datetime import UTC, date, datetime, timedelta
 import unittest
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.api.router import _calendar_response
+from app.core.settings import settings
 from app.database.session import Base
 from app.domain.calendar_bridge import CalendarBridgeService, CalendarEvent
 
@@ -18,6 +20,8 @@ class CalendarBridgeServiceTests(unittest.TestCase):
             session_factory=self.session_factory, bridge_token="test-token"
         )
         self.now = datetime.now(UTC)
+        # The service reads days in local time; the UTC date is yesterday before 09:00 JST.
+        self.today = self.now.astimezone(ZoneInfo(settings.timezone)).date()
 
     def test_snapshot_preserves_all_day_and_timed_events_in_requested_range(self) -> None:
         self.service.replace_snapshot(
@@ -53,7 +57,7 @@ class CalendarBridgeServiceTests(unittest.TestCase):
             self.now,
         )
 
-        _, _, events = self.service.events_for_range(self.now.date(), 1)
+        _, _, events = self.service.events_for_range(self.today, 1)
 
         self.assertEqual(events[0].calendar_title, "wada.takatoshi@asuene.com")
 
@@ -65,19 +69,19 @@ class CalendarBridgeServiceTests(unittest.TestCase):
             [CalendarEvent("new", "New", self.now, self.now + timedelta(hours=1))], self.now
         )
 
-        _, _, events = self.service.events_for_range(self.now.date(), 1)
+        _, _, events = self.service.events_for_range(self.today, 1)
 
         self.assertEqual([event.external_id for event in events], ["new"])
 
-    def test_stale_snapshot_is_marked_unavailable_but_kept_visible(self) -> None:
+    def test_stale_snapshot_is_marked_stale_and_kept_visible(self) -> None:
         self.service.replace_snapshot(
             [CalendarEvent("event", "Event", self.now, self.now + timedelta(hours=1))],
             self.now - timedelta(minutes=16),
         )
 
-        status, _, events = self.service.events_for_range(self.now.date(), 1)
+        status, _, events = self.service.events_for_range(self.today, 1)
 
-        self.assertEqual(status, "unavailable")
+        self.assertEqual(status, "stale")
         self.assertEqual(len(events), 1)
 
     def test_sync_and_fetch_log_cache_skip_unchanged_snapshots(self) -> None:

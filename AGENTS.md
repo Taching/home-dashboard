@@ -70,9 +70,11 @@ cd frontend && npm run build  # Typecheck + bundle
 
 ## Key conventions
 
+- **Keep `docs/what-chili-does.md` in sync with every commit.** It is Toshi's plain-language overview of what the dashboard does. Before committing any change that adds, removes, or changes user-visible behavior (a wall or phone surface, a Telegram message or its timing, training templates/progression/deload, cut targets, integrations, schedules), update the affected section in the same commit and bump the `_Last updated_` date. Pure refactors, test-only, and internal fixes with no visible effect don't need it. If unsure, check the doc against the change and say in the commit message that it was reviewed. (See `.cursor/rules/update-what-chili-does.mdc`.)
 - **Daily Plan is the single read model.** Don't invent a parallel store.
 - **Secrets stay backend-only.** Never send tokens to the browser.
 - **Never expose to public internet.** Remote access is Tailscale only.
 - **LLM calls are bounded**: on-demand coach, once-daily, once-weekly. No automatic per-request calls.
+- **`data/` and learned IR codes are gitignored** — don't commit `data/chili.db` or `data/learned-codes/*`.
 
 See `docs/agent-handoff-chili.md` for full product context and `docs/agent-handoff-efficiency.md` for architecture cuts.

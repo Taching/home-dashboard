@@ -40,6 +40,7 @@ from app.domain.training.scheduler import TrainingScheduler, assess_readiness, p
 from app.domain.training.review import exercise_done, kinds_match
 from app.domain.training.templates import STRENGTH_SKIP, WORKOUT_TEMPLATES, build_strength_exercises
 from app.domain.training.types import (
+    TAPER_PHASES,
     ExistingSession,
     FatigueState,
     FixedBjjEvent,
@@ -62,6 +63,17 @@ STRENGTH_PROGRESSION_GATE_PHASES = {
     TrainingPhase.COMPETITION_1, TrainingPhase.COMPETITION_2, TrainingPhase.COMPETITION_3,
     TrainingPhase.PEAK_3, TrainingPhase.POST_COMPETITION,
 }
+
+
+def _current_program(row: TrainingExerciseProgress) -> bool:
+    """Progress saved before the October 2026 program belongs to the old
+    exercise list; the new program starts from its own starting targets."""
+    updated = row.updated_at
+    if updated is None:
+        return False
+    if updated.tzinfo is None:
+        updated = updated.replace(tzinfo=UTC)
+    return updated.date() >= sp.PROGRAM_START
 
 
 def _has_intervals(session: dict) -> bool:
@@ -664,26 +676,19 @@ class TrainingService:
                     source="manual", pinned=True, revision=1, created_at=current, updated_at=current,
                 )
                 session.add(row)
-                self._replace_exercises(session, row.id, self._strength_exercises_now(session, target))
+                self._replace_exercises(session, row.id, self._strength_exercises_now(session, target, day))
             session.commit()
         self.reconcile(current)
         result = self.session(session_id)
         assert result is not None
         return result
 
-    def _strength_exercises_now(self, session, target: WorkoutType) -> tuple:
-        progress = {
-            row.exercise_name: sp.ExerciseState(
-                workout_type=row.workout_type, exercise_name=row.exercise_name,
-                load_value=row.load_value, load_unit=row.load_unit,
-                sets=row.sets, rep_target=row.rep_target,
-            )
-            for row in session.scalars(
-                select(TrainingExerciseProgress).where(TrainingExerciseProgress.workout_type == target.value)
-            ).all()
-        }
+    def _strength_exercises_now(self, session, target: WorkoutType, day: date) -> tuple:
+        progress = self._load_strength_progress(session).get(target.value, {})
         cycle = session.get(TrainingStrengthCycle, target.value)
-        deload = bool(cycle and (cycle.force_deload or cycle.sessions_since_deload >= 3))
+        deload = phase_for_date(day) not in TAPER_PHASES and (
+            sp.is_deload_week(day) or bool(cycle and cycle.force_deload)
+        )
         return build_strength_exercises(target, progress, deload=deload)
 
     def place_session(self, day: date, workout_type: str, *, now: datetime | None = None, pinned: bool = False) -> dict:
@@ -764,7 +769,7 @@ class TrainingService:
                 )
                 session.add(row)
                 exercises = (
-                    self._strength_exercises_now(session, target)
+                    self._strength_exercises_now(session, target, day)
                     if target in STRENGTH_WORKOUT_TYPES else template.exercises
                 )
                 self._replace_exercises(session, row.id, exercises)
@@ -1038,13 +1043,14 @@ class TrainingService:
                     continue
                 recipe = sp.recipe_for(name)
                 progress_row = session.get(TrainingExerciseProgress, (workout_type, name))
+                current_row = progress_row if progress_row is not None and _current_program(progress_row) else None
                 state = (
                     sp.ExerciseState(
                         workout_type=workout_type, exercise_name=name,
-                        load_value=progress_row.load_value, load_unit=progress_row.load_unit,
-                        sets=progress_row.sets, rep_target=progress_row.rep_target,
+                        load_value=current_row.load_value, load_unit=current_row.load_unit,
+                        sets=current_row.sets, rep_target=current_row.rep_target,
                     )
-                    if progress_row is not None else
+                    if current_row is not None else
                     sp.seed_state(
                         workout_type, name=name, load_value=target.load_value,
                         load_unit=target.load_unit, sets=target.sets, recipe=recipe,
@@ -1060,10 +1066,10 @@ class TrainingService:
                     rpe=item.get("rpe"), technique=item.get("technique"), pain=item.get("pain"),
                     sets_done=item.get("actual_sets"), sets_prescribed=target.sets,
                 )
-                decision = sp.decide(classification)
+                decision = sp.decide(classification, rpe=item.get("rpe"))
                 if gate_progress and decision == sp.Decision.PROGRESS:
                     decision = sp.Decision.REPEAT
-                new_state = sp.apply_decision(state, decision, recipe)
+                new_state = sp.apply_decision(state, decision, recipe, rpe=item.get("rpe"))
                 if progress_row is None:
                     progress_row = TrainingExerciseProgress(workout_type=workout_type, exercise_name=name)
                     session.add(progress_row)
@@ -1249,7 +1255,11 @@ class TrainingService:
                 row.estimated_minutes = template.estimated_minutes
                 row.end_at = row.start_at + timedelta(minutes=template.estimated_minutes)
                 row.intensity = template.intensity
-                self._replace_exercises(session, row.id, template.exercises)
+                exercises = template.exercises
+                if target in STRENGTH_WORKOUT_TYPES:
+                    day = self._as_utc(row.start_at).astimezone(self._timezone).date()
+                    exercises = self._strength_exercises_now(session, target, day)
+                self._replace_exercises(session, row.id, exercises)
             elif target in {WorkoutType.RECOVERY, WorkoutType.REST}:
                 row.estimated_minutes = 30 if target == WorkoutType.RECOVERY else 0
                 row.end_at = row.start_at + timedelta(minutes=max(15, row.estimated_minutes))
@@ -1653,6 +1663,8 @@ class TrainingService:
     def _load_strength_progress(session) -> dict[str, dict[str, sp.ExerciseState]]:
         result: dict[str, dict[str, sp.ExerciseState]] = {item.value: {} for item in STRENGTH_WORKOUT_TYPES}
         for row in session.scalars(select(TrainingExerciseProgress)).all():
+            if not _current_program(row):
+                continue
             result.setdefault(row.workout_type, {})[row.exercise_name] = sp.ExerciseState(
                 workout_type=row.workout_type, exercise_name=row.exercise_name,
                 load_value=row.load_value, load_unit=row.load_unit,
@@ -1664,7 +1676,9 @@ class TrainingService:
     def _load_strength_deload(session) -> dict[str, bool]:
         result = {item.value: False for item in STRENGTH_WORKOUT_TYPES}
         for row in session.scalars(select(TrainingStrengthCycle)).all():
-            result[row.workout_type] = bool(row.force_deload) or row.sessions_since_deload >= 3
+            # Scheduled deloads come from the calendar (sp.is_deload_week); this
+            # is only the early deload the weekly fatigue triggers ask for.
+            result[row.workout_type] = bool(row.force_deload)
         return result
 
     def _weather_conditions(self) -> tuple[WeatherCondition, ...]:

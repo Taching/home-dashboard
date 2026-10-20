@@ -24,3 +24,4 @@ Notion writes, device control, LLM calls) are blocked and logged.
 - Never restyle the kiosk wall
 - Never collapse the two TrainingService classes
 - Always run `make check` before committing
+- Keep `docs/what-chili-does.md` in sync with visible behavior changes

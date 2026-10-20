@@ -535,7 +535,7 @@ async def run_training_automation(
         return review
     sent = 0
     for reminder, session in request.app.state.training_service.due_reminders(now):
-        message = _reminder_message(reminder.kind, session)
+        message = _reminder_message(reminder.kind, session, request=request)
         result = _send_once(request, message, reminder.dedupe_key)
         if result["status"] in {"sent", "skipped"}:
             request.app.state.training_service.mark_reminder_sent(reminder.id, now)
@@ -621,7 +621,7 @@ def _tomorrow_message(session: dict | None, prescription: dict | None = None) ->
     return "\n".join(lines)
 
 
-def _reminder_message(kind: str, session: dict) -> str:
+def _reminder_message(kind: str, session: dict, *, request: Request | None = None) -> str:
     if kind == "post_workout":
         day = datetime.fromisoformat(session["start_at"]).astimezone(ZoneInfo(settings.timezone)).date()
         return telegram_message("Log today's workout when you are done.", _daily_briefing_url(day))
@@ -629,7 +629,43 @@ def _reminder_message(kind: str, session: dict) -> str:
     for item in session.get("exercises", [])[:7]:
         detail = " × ".join(str(value) for value in (item.get("load_value"), item.get("sets"), item.get("reps")) if value is not None)
         exercises.append(f"{item['name']}{': ' + detail if detail else ''}")
-    return f"{session['title']} in 60 minutes.\n" + "\n".join(exercises) + "\nTarget: finish with energy left."
+    message = f"{session['title']} in 60 minutes.\n" + "\n".join(exercises) + "\nTarget: finish with energy left."
+    # Spec 10.5 / 15: append three-action rain warning to existing pre-workout flow.
+    if request is not None and session.get("requires_travel"):
+        rain_line = _rain_warning_for_session(request, session)
+        if rain_line:
+            message = f"{message}\n\n{rain_line}"
+    return message
+
+
+def _rain_warning_for_session(request: Request, session: dict) -> str | None:
+    weather_service = getattr(request.app.state, "weather_service", None)
+    if weather_service is None or not weather_service.configured():
+        return None
+    from app.domain.rain_handling import assess_rain_risk, build_rain_prompt, format_rain_warning
+
+    session_start = datetime.fromisoformat(session["start_at"])
+    assessment = assess_rain_risk(
+        session_start,
+        weather_service.travel_conditions(),
+        departure_buffer_minutes=30,
+    )
+    if not assessment.at_risk:
+        return None
+    # Mark that the athlete was prompted (does not cancel the session).
+    logging_service = getattr(request.app.state, "workout_logging_service", None)
+    if logging_service is not None and hasattr(logging_service, "set_rain_prompted"):
+        try:
+            logging_service.set_rain_prompted(session["id"])
+        except Exception:  # noqa: BLE001
+            logger.exception("Could not mark rain_prompted_at for %s", session.get("id"))
+    prompt = build_rain_prompt(
+        session["id"],
+        session.get("title") or "Session",
+        session_start,
+        assessment,
+    )
+    return format_rain_warning(prompt)
 
 
 # M2: Exercise-level logging endpoints (spec section 14)

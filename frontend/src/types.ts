@@ -470,6 +470,88 @@ export type WeeklyReview = {
   }
 }
 
+export type WeeklyCauseCode =
+  | 'insufficient_data'
+  | 'weather_constraint'
+  | 'execution'
+  | 'recovery'
+  | 'specificity'
+  | 'technical_recurrence'
+  | 'possible_program_issue'
+  | 'progressing_as_expected'
+
+export type WeeklyBottleneck = {
+  cause_code: WeeklyCauseCode | string
+  statement: string
+  evidence_keys: string[]
+}
+
+export type WeeklyDeterministicReport = {
+  summary_line: string
+  confidence: 'low' | 'medium' | 'high' | string
+  main_bottleneck: WeeklyBottleneck
+  improved: { statement: string; evidence_keys: string[] }[]
+  regressed: { statement: string; evidence_keys: string[] }[]
+  recurring_problem: { statement: string; evidence_keys: string[] } | null
+  progression_decisions?: unknown[]
+  next_week_suggestions: {
+    area: string
+    action: string
+    reason: string
+    requires_user_approval?: boolean
+  }[]
+  tests: { metric: string; target: string }[]
+  missing_data: string[]
+  rule_findings?: WeeklyBottleneck[]
+}
+
+export type WeeklyCoachReport = {
+  verdict: string
+  confidence: string
+  main_bottleneck: WeeklyBottleneck
+  improved: { statement: string; evidence_keys: string[] }[]
+  regressed: { statement: string; evidence_keys: string[] }[]
+  recurring_problem: { statement: string; evidence_keys: string[] } | null
+  next_week_actions: {
+    area: string
+    action: string
+    reason: string
+    requires_user_approval: boolean
+  }[]
+  tests: { metric: string; target: string }[]
+  missing_data: string[]
+  dry_run?: boolean
+}
+
+export type TrainingWeeklyAnalysis = {
+  id: string
+  week_start: string
+  week_end: string
+  status: string
+  data_confidence: string
+  facts: {
+    adherence?: {
+      ordinary_adherence_pct?: number
+      controllable_adherence_pct?: number
+      has_weather_blocks?: boolean
+      targets?: {
+        bjj?: { planned: number; completed: number; weather_blocked?: number }
+        strength?: { planned: number; completed: number }
+        easy_cardio?: { planned: number; completed: number }
+        rest_days?: { count: number }
+      }
+    }
+    [key: string]: unknown
+  }
+  deterministic_report: WeeklyDeterministicReport
+  rule_version: string
+  coach_report: WeeklyCoachReport | null
+  coach_model_name: string | null
+  coach_prompt_version: string | null
+  coach_generated_at: string | null
+  schedule_change_prefill?: string
+}
+
 export type DailyWeekSession = {
   date: string
   kind: TrainingKind

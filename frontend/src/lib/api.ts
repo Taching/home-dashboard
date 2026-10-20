@@ -21,6 +21,7 @@ import type {
   WellbeingHistory,
   TrainingSession,
   WeeklyReview,
+  TrainingWeeklyAnalysis,
   PlanAdjustment,
   TrainingPreferences,
 } from '../types'
@@ -161,6 +162,47 @@ export async function runWeeklyReview(weekStart: string) {
   }))
   announcePlanningChange()
   return result
+}
+
+export async function fetchTrainingWeeklyAnalysis(weekStart: string, signal?: AbortSignal) {
+  return requireJson<TrainingWeeklyAnalysis>(
+    await freshGet(`/api/v1/weekly-reviews/${weekStart}`, signal),
+  )
+}
+
+export async function recomputeWeeklyAnalysis(weekStart: string) {
+  return requireJson<TrainingWeeklyAnalysis>(
+    await fetch(`/api/v1/weekly-reviews/${weekStart}/recompute`, { method: 'POST' }),
+  )
+}
+
+export async function askWeeklyCoach(weekStart: string) {
+  return requireJson<{ status: string; message?: string; analysis: TrainingWeeklyAnalysis }>(
+    await fetch(`/api/v1/weekly-reviews/${weekStart}/ask-coach`, { method: 'POST' }),
+  )
+}
+
+export async function putExerciseResults(
+  sessionId: string,
+  exercises: Array<Record<string, unknown>>,
+) {
+  return requireJson<{ status: string }>(
+    await fetch(`/api/v1/training-sessions/${sessionId}/exercise-results`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ exercises }),
+    }),
+  )
+}
+
+export async function putBjjAnalysis(sessionId: string, payload: Record<string, unknown>) {
+  return requireJson<{ status: string }>(
+    await fetch(`/api/v1/training-sessions/${sessionId}/bjj-analysis`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  )
 }
 
 export async function postDailyConstraint(day: string, payload: { kind: 'cannot_train' | 'holiday' | 'no_class' | 'miss'; miss_reason?: string; note?: string }) {

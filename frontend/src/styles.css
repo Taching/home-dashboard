@@ -1973,6 +1973,22 @@ html.is-daily * { cursor: auto; }
 .daily-lift { display: grid; gap: .45rem; padding-top: .7rem; border-top: 1px solid color-mix(in srgb, var(--line-strong) 38%, transparent); }
 .daily-lift strong { color: var(--ink); }
 .daily-lift small { display: block; color: var(--ink-muted); font-size: .82rem; }
+.daily-lift.is-compact { gap: .4rem; }
+.daily-lift-more {
+  justify-self: start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: .15em;
+  cursor: pointer;
+}
+.daily-lift-more:active { color: var(--ink); }
 .daily-saved-lifts { margin: .7rem 0 0; padding-left: 1.1rem; color: var(--ink); line-height: 1.5; }
 .daily-rpe button { flex: 0 0 auto; min-width: 2.75rem; }
 .daily-report-hint { margin: .35rem 0 0; font-size: .82rem; }

@@ -198,19 +198,14 @@ function SessionPage({ sessionId }: { sessionId: string }) {
       {error && <p className="workout-status">{error}</p>}
       {session && (
         <>
-          {canLog ? (
-            <TrainingReport day={day} workout={session} coachSessionId={session.id} />
-          ) : (
-            <p className="workout-status">This session cannot be logged from here.</p>
-          )}
           <section className="workout-hero">
             <p>{session.estimated_minutes} min</p>
             <h1>{session.title}</h1>
             <span>{session.reason}</span>
             <IntensityPill intensity={session.intensity} deload={session.deload} />
           </section>
-          <details className="workout-section workout-program">
-            <summary>Program</summary>
+          <section className="workout-section workout-program" aria-label="Program">
+            <h2>Program</h2>
             <div className="workout-checks">
               {session.exercises.map((item) => (
                 <div key={item.name} className={`workout-check${item.done ? ' is-checked' : ''}`}>
@@ -227,7 +222,18 @@ function SessionPage({ sessionId }: { sessionId: string }) {
                 </div>
               )}
             </div>
-          </details>
+          </section>
+          {canLog ? (
+            <TrainingReport
+              day={day}
+              workout={session}
+              coachSessionId={session.id}
+              hideSessionTitle
+              compactLifts
+            />
+          ) : (
+            <p className="workout-status">This session cannot be logged from here.</p>
+          )}
         </>
       )}
     </div>

@@ -12,13 +12,18 @@ html.is-workout * {
   cursor: auto;
 }
 
-.workout-program summary {
+.workout-program h2 {
+  margin: 0 0 .55rem;
   color: var(--ink);
   font-size: 1rem;
   font-weight: 750;
-  cursor: pointer;
 }
-.workout-program .workout-checks { margin-top: .8rem; }
+.workout-program .workout-checks { margin-top: .15rem; }
+
+/* Log sits after the open program on the session page. */
+.workout-page > .daily-report {
+  margin-top: .35rem;
+}
 
 .workout-page {
   min-height: 100dvh;

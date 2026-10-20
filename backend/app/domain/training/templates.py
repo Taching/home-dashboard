@@ -3,49 +3,48 @@ from app.domain.training.types import ExercisePrescription as E
 from app.domain.training.types import WorkoutTemplate, WorkoutType
 
 # Entries inside the strength templates that the progression engine never
-# touches (conditioning, carries, isometrics — no load/rep target to track).
+# touches (warm-up and conditioning — no load/rep target to track).
 STRENGTH_SKIP = {
     "Stationary bike warm-up", "Stationary bike intervals", "Easy cardio",
-    "Suitcase Carry", "Farmer Carry", "Neck Isometric Holds", "Side Plank",
 }
 
-# March 2027 plan. Starting loads are estimates from the last logged lifts
-# (deadlift 142.5×3, back squat 122.5×3, bench 87.5×3, row 60×9); the first
-# logged actual load replaces them (TrainingService._advance_strength_progress).
-_ESTIMATE = "Starting estimate — log the load you actually used."
-_RESERVE = "Stop with about two good reps left. Never to failure."
+# October 2026 program (Heavy Strength A / Athletic Strength B). Loads are
+# starting targets, not mandatory weights; the first logged actual load
+# replaces them (TrainingService._advance_strength_progress).
+_RESERVE = "RPE 7–8: stop with 2–3 good reps left. Never to failure."
+_START = "Starting target — log the load you actually used."
 
 WORKOUT_TEMPLATES: dict[WorkoutType, WorkoutTemplate] = {
     WorkoutType.STRENGTH_A: WorkoutTemplate(
         WorkoutType.STRENGTH_A,
         "Gym (Strength A)",
-        75,
+        55,
         "hard",
         (
-            E("Stationary bike warm-up", duration_seconds=6 * 60, notes="Easy"),
-            E("Trap-bar Deadlift", 125, "kg", 3, "4–6", notes=f"{_RESERVE} {_ESTIMATE}"),
-            E("Dumbbell Bench Press", 30, "kg/hand", 3, "6–8", notes=f"Or weighted push-up. {_ESTIMATE}"),
-            E("Bulgarian Split Squat", 14, "kg/hand", 2, "6–8/leg"),
-            E("Chest-Supported Row", 24, "kg/hand", 3, "6–10", notes=_ESTIMATE),
-            E("Suitcase Carry", 28, "kg", 2, "30–40 m/side", notes="Stay tall; no lean toward the bell."),
-            E("Neck Isometric Holds", sets=2, reps="15–20 s each direction", notes="Front, back, both sides. Gentle pressure."),
-            E("Easy cardio", duration_seconds=25 * 60, notes="20–30 min conversational pace: incline walk, bike, row, or swim. No sprints."),
+            E("Stationary bike warm-up", duration_seconds=5 * 60, notes="Easy"),
+            E("Trap-bar Deadlift", 125, "kg", 3, "3–4", notes=f"Heavy strength. {_RESERVE} Up to 130 kg on a good day."),
+            E("Dumbbell Bench Press", 30, "kg/hand", 3, "6–8", notes=_RESERVE),
+            E("Bulgarian Split Squat", 14, "kg/hand", 3, "6–8/leg", notes="Unilateral stability; control the descent."),
+            E("Cable Row", None, "kg", 3, "8–10", notes=f"RPE 7–8. {_START}"),
+            E("Pallof Press", None, "kg", 3, "10/side", notes=f"Moderate; no rotation. {_START}"),
+            E("Cable Face Pull", None, "kg", 3, "12–15", notes=f"RPE 7, shoulder health. {_START}"),
+            E("Easy cardio", duration_seconds=20 * 60, notes="Optional finisher for the cut: 20–30 min conversational pace. Counts as a weekly cardio session."),
         ),
-        "20–30 minutes easy cardio after lifting; conversational pace, no intervals.",
+        "Optional 20–30 minutes easy cardio after lifting; conversational pace, no intervals.",
     ),
     WorkoutType.STRENGTH_B: WorkoutTemplate(
         WorkoutType.STRENGTH_B,
         "Gym (Strength B)",
-        55,
+        50,
         "normal",
         (
-            E("Stationary bike warm-up", duration_seconds=6 * 60, notes="Easy"),
-            E("Front Squat", 90, "kg", 3, "4–6", notes=f"Or goblet squat. {_RESERVE} {_ESTIMATE}"),
-            E("Romanian Deadlift", 100, "kg", 3, "6–8", notes=_ESTIMATE),
-            E("Military Press", 52, "kg", 3, "6–8", notes="Or landmine press."),
-            E("Pull-ups", sets=3, reps="6–10", notes="Bodyweight, or lat pulldown."),
-            E("Farmer Carry", 32, "kg/hand", 3, "30–40 m"),
-            E("Side Plank", sets=2, reps="30 s/side", notes="Or Pallof press, 2 × 10/side."),
+            E("Stationary bike warm-up", duration_seconds=5 * 60, notes="Easy"),
+            E("Kettlebell Swing", None, "kg", 3, "8", notes=f"Explosive hips, crisp reps; moderate bell. {_START}"),
+            E("Front Squat", 90, "kg", 3, "4–5", notes=f"Work up to 90 kg. {_RESERVE}"),
+            E("Military Press", 52, "kg", 3, "5", notes=f"Work up to 52 kg. {_RESERVE}"),
+            E("Weighted Pull-up", 5, "kg added", 3, "5–6", notes="Bodyweight + 5 kg."),
+            E("Romanian Deadlift", 100, "kg", 2, "6", notes="Work up to 100 kg."),
+            E("Hanging Knee Raise", sets=3, reps="8–12", notes="Bodyweight. Or lying leg raise if hanging isn't practical."),
         ),
     ),
     WorkoutType.ZONE_2: WorkoutTemplate(
@@ -128,8 +127,8 @@ def apply_adaptation(template: WorkoutTemplate, adaptation) -> WorkoutTemplate:
 # Taper keeps the main lifts moderately heavy at low volume; accessories,
 # carries and the cardio finisher drop out.
 TAPER_KEEP = {
-    WorkoutType.STRENGTH_A: {"Stationary bike warm-up", "Trap-bar Deadlift", "Dumbbell Bench Press", "Chest-Supported Row"},
-    WorkoutType.STRENGTH_B: {"Stationary bike warm-up", "Front Squat", "Military Press", "Pull-ups"},
+    WorkoutType.STRENGTH_A: {"Stationary bike warm-up", "Trap-bar Deadlift", "Dumbbell Bench Press", "Cable Row"},
+    WorkoutType.STRENGTH_B: {"Stationary bike warm-up", "Front Squat", "Military Press", "Weighted Pull-up"},
 }
 
 

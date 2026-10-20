@@ -27,17 +27,15 @@ const UNTRACKED = new Set([
   'Stationary bike warm-up',
   INTERVAL_NAME,
   'Easy cardio',
-  'Suitcase Carry',
-  'Farmer Carry',
-  'Neck Isometric Holds',
-  'Side Plank',
   'Zone 2 cardio',
 ])
+// Smallest real jump per exercise (dumbbells, bells, cable stack); barbells default to 2.5.
 const LOAD_STEP: Record<string, number> = {
-  'Standing Landmine Rotation': 1,
-  'Bulgarian Split Squat': 1,
   'Dumbbell Bench Press': 2,
-  'Chest-Supported Row': 2,
+  'Bulgarian Split Squat': 2,
+  'Kettlebell Swing': 4,
+  'Military Press': 1,
+  'Weighted Pull-up': 1,
 }
 
 function exerciseDetail(item: PlannedExercise) {

@@ -16,7 +16,7 @@ from app.domain.training.phases import (  # noqa: F401 - re-exported for callers
     phase_for_date,
 )
 from app.domain.training.rebuild import rebuild_schedule
-from app.domain.training.strength_progress import ExerciseState
+from app.domain.training.strength_progress import ExerciseState, is_deload_week
 from app.domain.training.templates import (
     WORKOUT_TEMPLATES,
     apply_adaptation,
@@ -283,6 +283,8 @@ class TrainingScheduler:
             )
         if workout_type == WorkoutType.BJJ_TECHNICAL:
             rounds = min(rounds, 2)
+        if is_deload_week(day) and phase_for_date(day) not in TAPER_PHASES:
+            focuses = ("Deload week: technique first, recover between rounds.", *focuses)
         text = reason or (
             "Known BJJ calendar event takes priority." if source == "calendar" else (
                 "Saturday is the competition-specific session." if workout_type == WorkoutType.BJJ_HARD
@@ -312,7 +314,10 @@ class TrainingScheduler:
         is_strength = workout_type in {WorkoutType.STRENGTH_A, WorkoutType.STRENGTH_B}
         is_deload = False
         if is_strength:
-            is_deload = not taper and bool((strength_deload or {}).get(workout_type.value))
+            # Every fourth training week, or earlier when the weekly fatigue triggers fire.
+            is_deload = not taper and (
+                is_deload_week(day) or bool((strength_deload or {}).get(workout_type.value))
+            )
             progress_map = (strength_progress or {}).get(workout_type.value, {})
             exercises = build_strength_exercises(workout_type, progress_map, deload=is_deload)
             if taper:
@@ -349,7 +354,7 @@ class TrainingScheduler:
             )
             text = "Zone 2 stays; weather only changes the indoor modality."
         if is_deload:
-            text = f"{text} Deload week: lighter load, one fewer set per lift."
+            text = f"{text} Deload week: about half the sets at 10–15% less weight. Never to failure."
         return PlannedSession(
             workout_type, start, end, phase, text, intensity, exercises=exercises,
             preparation="Hydrate and prepare training equipment the night before.",

@@ -23,6 +23,8 @@
     "ask": [
       "Bash(git push *)",
       "Bash(git push --force *)",
+      "Bash(scripts/create-pr-stack.sh *)",
+      "Bash(gh pr *)",
       "Bash(ssh *)",
       "Bash(scp *)",
       "Bash(curl *chili-dashboard*)",

@@ -1,0 +1,33 @@
+---
+description: Create multi-PR work as one open stacked set — never draft-vs-master duplicates
+alwaysApply: true
+---
+
+# PR stacks
+
+When a change is split into ordered milestones or reviewable commits, ship them as **one stacked PR set created in a single step**.
+
+## Required behavior
+
+1. **One linear stack** — Branch N contains Branch N-1's tip. Never open two independent PRs to `master` that duplicate commits.
+2. **Create the whole stack at once** — Use `scripts/create-pr-stack.sh` after all stack branches are pushed. Do not open PR 1, wait, then open PR 2 later unless the owner asked for that.
+3. **Ready for review** — Never pass `--draft` to `gh pr create`. PRs are open when created. The stack script never drafts.
+4. **Correct bases** — PR 1 → `master` (or the given base). PR N → Branch N-1. Do not point every PR at `master`.
+5. **Merge bottom-up** — After merging a lower PR, delete its head branch **or** retarget the next PR with `gh pr edit <n> --base master` before merging. Merging a tip whose base is a already-merged feature branch leaves the work off `master`.
+
+## Single-PR work
+
+If there is only one reviewable unit, open one ready PR to `master`. No stack script needed.
+
+## Command
+
+```sh
+scripts/create-pr-stack.sh --base master <<'EOF'
+cursor/step-1|feat: step one|## Summary
+- …
+cursor/step-2|feat: step two|## Summary
+- …
+EOF
+```
+
+`--dry-run` prints the planned `gh` calls without creating PRs.

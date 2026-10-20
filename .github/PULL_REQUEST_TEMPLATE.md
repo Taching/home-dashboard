@@ -2,6 +2,14 @@
 
 <!-- What does this PR do? Keep it brief. -->
 
+## Stack
+
+<!-- Leave blank for a single PR to master. For stacked work, list the full ordered set. -->
+<!-- Example:
+1. #10 → master (M2)
+* 2. this PR → M2 branch (M3/M4)
+-->
+
 ## Testing
 
 - [ ] `make check` passes locally

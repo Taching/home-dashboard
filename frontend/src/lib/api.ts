@@ -325,3 +325,122 @@ export async function notifyChili(message: string, dedupeKey: string) {
     }),
   )
 }
+
+export interface ExerciseItem {
+  slug: string
+  name: string
+  aliases: string[]
+  category: string
+  movement_pattern: string
+  plane: string
+  training_intent: string
+  primary_region: string
+  primary_muscles: string[]
+  equipment: string[]
+  substitution_group: string
+  movement_speed: string
+  laterality: string
+  difficulty: string
+  bjj_tags: string[]
+  risk_notes: string | null
+  is_active: boolean
+}
+
+export interface AlternativeResult {
+  slug: string
+  name: string
+  score: number
+  why: string[]
+  tradeoff: string | null
+}
+
+export interface ExerciseFilters {
+  categories: string[]
+  movement_patterns: string[]
+  planes: string[]
+  training_intents: string[]
+  primary_regions: string[]
+  movement_speeds: string[]
+  lateralities: string[]
+  difficulties: string[]
+  equipment_tokens: string[]
+}
+
+export async function fetchExercises(params?: {
+  search?: string
+  pattern?: string
+  intent?: string
+  region?: string
+  equipment?: string
+  bjj_tag?: string
+  substitution_group?: string
+  category?: string
+}, signal?: AbortSignal) {
+  const query = new URLSearchParams()
+  if (params?.search) query.set('search', params.search)
+  if (params?.pattern) query.set('pattern', params.pattern)
+  if (params?.intent) query.set('intent', params.intent)
+  if (params?.region) query.set('region', params.region)
+  if (params?.equipment) query.set('equipment', params.equipment)
+  if (params?.bjj_tag) query.set('bjj_tag', params.bjj_tag)
+  if (params?.substitution_group) query.set('substitution_group', params.substitution_group)
+  if (params?.category) query.set('category', params.category)
+  const url = query.toString() ? `/api/v1/exercises?${query}` : '/api/v1/exercises'
+  return requireJson<{ exercises: ExerciseItem[]; count: number }>(await freshGet(url, signal))
+}
+
+export async function fetchExercise(slug: string, signal?: AbortSignal) {
+  return requireJson<ExerciseItem>(await freshGet(`/api/v1/exercises/${slug}`, signal))
+}
+
+export async function fetchExerciseFilters(signal?: AbortSignal) {
+  return requireJson<ExerciseFilters>(await freshGet('/api/v1/exercises/filters', signal))
+}
+
+export async function fetchExerciseAlternatives(
+  slug: string,
+  params: {
+    available_equipment: string[]
+    excluded_exercises?: string[]
+    limitations?: string[]
+    max_results?: number
+    allow_advanced?: boolean
+  },
+) {
+  return requireJson<{ source: string; alternatives: AlternativeResult[] }>(
+    await fetch(`/api/v1/exercises/${slug}/alternatives`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    }),
+  )
+}
+
+export async function setExerciseOverride(
+  source: string,
+  target: string,
+  decision: 'prefer' | 'allow' | 'exclude',
+  reason?: string,
+) {
+  return requireJson<{ source: string; target: string; decision: string; reason: string | null }>(
+    await fetch(`/api/v1/exercise-substitution-overrides/${source}/${target}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision, reason: reason || null }),
+    }),
+  )
+}
+
+export async function deleteExerciseOverride(source: string, target: string) {
+  return requireJson<{ status: string }>(
+    await fetch(`/api/v1/exercise-substitution-overrides/${source}/${target}`, {
+      method: 'DELETE',
+    }),
+  )
+}
+
+export async function fetchBjjFailureTypes(signal?: AbortSignal) {
+  return requireJson<{ failure_types: { code: string; label: string; description: string }[]; count: number }>(
+    await freshGet('/api/v1/bjj-failure-types', signal),
+  )
+}

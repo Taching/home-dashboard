@@ -5,7 +5,7 @@ import { useLiveResource } from '../hooks/useLiveResource'
 import { formatDate } from '../lib/format'
 import { canLogWorkout, doneMarkLabel, slugForType, workoutAlreadyLogged } from '../lib/workoutMatch'
 import type { PlannedExercise } from '../types'
-import { AlertIcon, ListIcon, SlidersIcon } from '../components/icons'
+import { AlertIcon, ListIcon, SlidersIcon, DumbbellIcon } from '../components/icons'
 import { TrainingReport } from '../components/TrainingReport'
 import { PageSkeleton } from '../components/PageSkeleton'
 import '../workout.css'
@@ -60,6 +60,10 @@ function WorkoutQuickActions() {
       <a className="daily-quick-action is-workout" href="/weekly" title="My workouts">
         <ListIcon size={20} />
         <span>My workouts</span>
+      </a>
+      <a className="daily-quick-action is-neutral" href="/training/exercises" title="Exercise library">
+        <DumbbellIcon size={20} />
+        <span>Exercises</span>
       </a>
     </div>
   )

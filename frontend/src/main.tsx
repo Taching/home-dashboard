@@ -23,6 +23,7 @@ const WorkoutApp = lazy(() => import('./pages/WorkoutApp').then((module) => ({ d
 const WeeklyReviewPage = lazy(() => import('./pages/WeeklyReviewPage').then((module) => ({ default: module.WeeklyReviewPage })))
 const ScheduleChangePage = lazy(() => import('./pages/ScheduleChangePage').then((module) => ({ default: module.ScheduleChangePage })))
 const TrainingPreferencesPage = lazy(() => import('./pages/TrainingPreferencesPage').then((module) => ({ default: module.TrainingPreferencesPage })))
+const ExerciseLibraryPage = lazy(() => import('./pages/ExerciseLibraryPage').then((module) => ({ default: module.ExerciseLibraryPage })))
 const WeightPage = lazy(() => import('./pages/WellbeingPages').then((module) => ({ default: module.WeightPage })))
 const SoberPage = lazy(() => import('./pages/WellbeingPages').then((module) => ({ default: module.SoberPage })))
 
@@ -152,6 +153,11 @@ function isTrainingPreferencesPath() {
   return path === '/training/preferences'
 }
 
+function isExerciseLibraryPath() {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/'
+  return path === '/training/exercises' || path.startsWith('/training/exercises/')
+}
+
 function isWeightPath() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/'
   return path === '/weight'
@@ -162,7 +168,7 @@ function isSoberPath() {
   return path === '/sober'
 }
 
-if (isWorkoutPath() || isWeeklyPath() || isScheduleChangePath() || isTrainingPreferencesPath()) {
+if (isWorkoutPath() || isWeeklyPath() || isScheduleChangePath() || isTrainingPreferencesPath() || isExerciseLibraryPath()) {
   document.documentElement.classList.add('is-workout')
 }
 if (isDailyPath() || isWeightPath() || isSoberPath()) document.documentElement.classList.add('is-daily')
@@ -176,6 +182,7 @@ function PhoneApp() {
   if (isWeeklyPath()) return <WeeklyReviewPage />
   if (isScheduleChangePath()) return <ScheduleChangePage />
   if (isTrainingPreferencesPath()) return <TrainingPreferencesPage />
+  if (isExerciseLibraryPath()) return <ExerciseLibraryPage />
   if (isWeightPath()) return <WeightPage />
   if (isSoberPath()) return <SoberPage />
   return <WorkoutApp />
@@ -184,7 +191,7 @@ function PhoneApp() {
 createRoot(document.getElementById('root')!).render(
   <AppErrorBoundary>
     <QueryClientProvider client={queryClient}>
-      {isWorkoutPath() || isDailyPath() || isWeeklyPath() || isScheduleChangePath() || isTrainingPreferencesPath() || isWeightPath() || isSoberPath() ? (
+      {isWorkoutPath() || isDailyPath() || isWeeklyPath() || isScheduleChangePath() || isTrainingPreferencesPath() || isExerciseLibraryPath() || isWeightPath() || isSoberPath() ? (
         <Suspense fallback={<PageSkeleton />}><PhoneApp /></Suspense>
       ) : <AppShell />}
     </QueryClientProvider>

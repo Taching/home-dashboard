@@ -14,11 +14,13 @@ from app.core.settings import settings
 from app.api.activity_log import log_activity, preview
 from app.api.daily import daily_router, review_logged_workout
 from app.api.training import training_router
+from app.api.exercises import exercises_router
 from app.domain.training_logs import ExerciseDone
 
 api_router = APIRouter()
 api_router.include_router(training_router)
 api_router.include_router(daily_router)
+api_router.include_router(exercises_router)
 logger = logging.getLogger(__name__)
 
 ALLOWED_INTENTS = {

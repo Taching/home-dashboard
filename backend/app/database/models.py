@@ -423,3 +423,57 @@ class GarminDailySnapshot(Base):
     body_battery_latest: Mapped[int | None] = mapped_column(Integer, nullable=True)
     stress_avg: Mapped[int | None] = mapped_column(Integer, nullable=True)
     activities: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+
+class Exercise(Base):
+    """Exercise library entry. See spec section 6.1."""
+    __tablename__ = "exercises"
+
+    slug: Mapped[str] = mapped_column(String(80), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    aliases: Mapped[list[str]] = mapped_column(JSON, default=list)
+    category: Mapped[str] = mapped_column(String(20), nullable=False)
+    movement_pattern: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    plane: Mapped[str] = mapped_column(String(20), nullable=False)
+    training_intent: Mapped[str] = mapped_column(String(20), nullable=False)
+    primary_region: Mapped[str] = mapped_column(String(20), nullable=False)
+    primary_muscles: Mapped[list[str]] = mapped_column(JSON, default=list)
+    equipment: Mapped[list[str]] = mapped_column(JSON, default=list)
+    substitution_group: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    movement_speed: Mapped[str] = mapped_column(String(20), nullable=False)
+    laterality: Mapped[str] = mapped_column(String(20), nullable=False)
+    difficulty: Mapped[str] = mapped_column(String(16), default="intermediate")
+    bjj_tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    risk_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class BjjFailureType(Base):
+    """BJJ failure classification. See spec section 7.2."""
+    __tablename__ = "bjj_failure_types"
+
+    code: Mapped[str] = mapped_column(String(32), primary_key=True)
+    label: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class ExerciseSubstitutionOverride(Base):
+    """User preference for exercise alternatives. See spec section 6.1."""
+    __tablename__ = "exercise_substitution_overrides"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_exercise_slug: Mapped[str] = mapped_column(
+        String(80), ForeignKey("exercises.slug"), nullable=False, index=True
+    )
+    target_exercise_slug: Mapped[str] = mapped_column(
+        String(80), ForeignKey("exercises.slug"), nullable=False, index=True
+    )
+    decision: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("source_exercise_slug", "target_exercise_slug", name="uq_substitution_override"),
+    )

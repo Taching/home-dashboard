@@ -10,6 +10,7 @@ import {
 import { useLiveResource } from '../hooks/useLiveResource'
 import { doneMarkLabel } from '../lib/workoutMatch'
 import { PageSkeleton } from '../components/PageSkeleton'
+import { PhoneNav } from '../components/PhoneNav'
 import type { TrainingWeeklyAnalysis } from '../types'
 import '../workout.css'
 
@@ -311,6 +312,7 @@ export function WeeklyReviewPage() {
           </div>
         </details>
       )}
+      <PhoneNav />
     </div>
   )
 }

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import chiliLogo from '../assets/chili-logo.svg'
 import { fetchTrainingPreferences, saveTrainingPreferences } from '../lib/api'
 import { useLiveResource } from '../hooks/useLiveResource'
+import { PhoneNav } from '../components/PhoneNav'
+import { PageSkeleton } from '../components/PageSkeleton'
 import '../workout.css'
 
 function todayStamp() {
@@ -15,6 +17,7 @@ export function TrainingPreferencesPage() {
   const [loadedNotes, setLoadedNotes] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
     document.documentElement.classList.add('is-workout')
@@ -32,10 +35,14 @@ export function TrainingPreferencesPage() {
     if (pending) return
     setPending(true)
     setSaved(false)
+    setSaveError(null)
     void saveTrainingPreferences(notes)
       .then(() => setSaved(true))
+      .catch(() => setSaveError('Could not save preferences. Try again.'))
       .finally(() => setPending(false))
   }
+
+  if (!data && !error) return <PageSkeleton />
 
   return (
     <div className="workout-page">
@@ -62,11 +69,12 @@ export function TrainingPreferencesPage() {
               rows={8}
             />
           </label>
-          <button type="submit" disabled={pending}>{pending ? 'Saving…' : 'Save'}</button>
+          <button type="submit" className="workout-primary-button" disabled={pending}>{pending ? 'Saving…' : 'Save'}</button>
         </form>
         {saved && <p className="workout-status">Saved.</p>}
-        {error && <p className="workout-status" role="alert">{error}</p>}
+        {(error || saveError) && <p className="workout-status" role="alert">{saveError ?? error}</p>}
       </section>
+      <PhoneNav />
     </div>
   )
 }

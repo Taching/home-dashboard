@@ -7,7 +7,8 @@ Read AGENTS.md first, then docs/agent-handoff-chili.md for full product context.
 ## Quick start
 
 ```bash
-make check    # Run all verification (tests, lint, build)
+make check       # Priority gate (CI / before commit)
+make regression  # Full suite including backend/tests_regression
 ```
 
 ## Dry-run mode
@@ -23,6 +24,6 @@ Notion writes, device control, LLM calls) are blocked and logged.
 - Never commit .env or secrets
 - Never restyle the kiosk wall
 - Never collapse the two TrainingService classes
-- Always run `make check` before committing
+- Always run `make check` before committing (`make regression` for full suite)
 - Keep `docs/what-chili-does.md` in sync with visible behavior changes
 - Never open draft PRs; multi-step work → `scripts/create-pr-stack.sh` (open stacked set)

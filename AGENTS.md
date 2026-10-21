@@ -9,10 +9,12 @@ before making product decisions.
 Run before committing:
 
 ```sh
-make check   # Backend tests, frontend tests, lint, build
+make check        # Priority gate: core backend + frontend + lint + build
+make regression   # Full suite (priority + backend/tests_regression)
 ```
 
-CI uses the same command. All checks must pass.
+CI uses `make check`. All priority checks must pass before merge.
+Use `make regression` when touching peripherals (library, WalkingPad, Notion sync, rain, backfill) or before a big release.
 
 ## Dry-run mode (default)
 
@@ -33,7 +35,7 @@ The Pi's production `.env` sets `CHILI_PRODUCTION_MODE=true`.
 2. **Never commit `.env`** or secrets. Never read `.env` in agent code.
 3. **Never restyle the kiosk wall** — it's read-only, not a dashboard redesign surface.
 4. **Never collapse the two TrainingService classes** — they coexist on purpose.
-5. **Always run `make check`** before committing.
+5. **Always run `make check`** before committing. Use `make regression` for the full backend suite.
 6. **Restart the kiosk after frontend changes** — see `.cursor/rules/restart-kiosk-after-frontend.mdc`.
 7. **Never open draft PRs** — create them ready for review. Multi-step work must be one stacked set (see below).
 

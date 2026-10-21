@@ -23,6 +23,14 @@ class DryRunHelperTests(unittest.TestCase):
             self.assertFalse(is_dry_run())
 
 
+class TestEnvironmentIsDryRunTests(unittest.TestCase):
+    def test_suite_never_runs_with_production_settings(self):
+        # Guards against the Pi's production .env leaking into `make check`.
+        from app.core.settings import settings
+        self.assertFalse(settings.production_mode)
+        self.assertIsNone(settings.openai_api_key)
+
+
 class OpenClawDryRunTests(unittest.TestCase):
     @patch("app.domain.openclaw.settings")
     @patch("app.domain.openclaw.is_dry_run", return_value=True)

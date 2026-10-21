@@ -1,6 +1,6 @@
 # Chili — what this dashboard is and what it does
 
-_Last updated: 21 Oct 2026 (phone session logging UX)_
+_Last updated: 21 Oct 2026 (phone UX stack A–D)_
 
 ## What it is for
 
@@ -30,7 +30,7 @@ is never on the public internet.
 | **Phone: daily page** (`/daily/YYYY-MM-DD`) | Closing the loop for today: tick the workout, log sleep/weight, answer sober, Monday check-in. |
 | **Phone: workout** (`/workout/…`) | Today's session: open program first, then a compact log (load, reps, RPE; technique/pain under More). |
 | **Phone: schedule change** (`/schedule-change`) | Tell Chili in plain words what changed; it replans the week. |
-| **Phone: weekly** (`/weekly`) | Deterministic weekly training analysis, evidence, and optional Ask coach. |
+| **Phone: weekly** (`/weekly`) | Week verdict first, then confirm rebuild; evidence and Ask coach are secondary. |
 | **Phone: exercises** (`/training/exercises`) | Exercise library, filters, and alternatives. |
 | **Phone: weight / sober** (`/weight`, `/sober`) | History and trend pages. |
 | **Phone: training preferences** (`/training/preferences`) | Free-text notes that give the coach context. They never change the schedule. |

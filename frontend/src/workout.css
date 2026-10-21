@@ -25,6 +25,87 @@ html.is-workout * {
   margin-top: .35rem;
 }
 
+.workout-week-nav {
+  display: flex;
+  gap: .55rem;
+  margin: 0 0 1.1rem;
+}
+
+.workout-week-nav-btn,
+.workout-primary-button,
+.workout-secondary-button {
+  appearance: none;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.workout-week-nav-btn,
+.workout-secondary-button {
+  padding: .55rem 1rem;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-elevated) 70%, transparent);
+  color: var(--ink);
+}
+
+.workout-primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: .85rem;
+  padding: .85rem 1.1rem;
+  border: 0;
+  background: var(--accent);
+  color: var(--bg, #0b0f14);
+}
+
+.workout-primary-button:disabled,
+.workout-secondary-button:disabled,
+.workout-week-nav-btn:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.weekly-verdict {
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 1rem;
+  padding: 1rem 1.05rem;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated));
+}
+
+.weekly-verdict-line {
+  margin: 0 0 .55rem;
+  color: var(--ink);
+  font-size: 1.15rem;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.weekly-primary-action {
+  order: 0;
+}
+
+.weekly-details > summary,
+.weekly-evidence > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.weekly-details > summary {
+  list-style: none;
+}
+
+.weekly-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.weekly-secondary-actions .workout-secondary-button {
+  margin-top: .65rem;
+}
+
 .workout-page {
   min-height: 100dvh;
   padding: 1.1rem 1.15rem calc(2.4rem + env(safe-area-inset-bottom));

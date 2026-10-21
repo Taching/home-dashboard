@@ -50,6 +50,13 @@ fi
 echo
 echo "→ Static probes (spec boundaries)"
 
+# Probes swallow rg errors, so a missing rg would silently fail every "must"
+# probe and pass every "must_not" probe. Refuse to give a verdict instead.
+if ! command -v rg >/dev/null 2>&1; then
+  echo "ERROR: ripgrep (rg) is required for static probes (apt install ripgrep)" >&2
+  exit 2
+fi
+
 probe() {
   local label="$1" kind="$2" pattern="$3" path="$4"
   local hits

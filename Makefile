@@ -12,12 +12,16 @@ test-pr-stack:
 	@echo "→ PR stack script"
 	@scripts/tests/test_create_pr_stack.sh
 
+# Prefer the backend venv (Pi/local dev); CI has none and uses its own python3.
+PYTHON ?= $(if $(wildcard backend/.venv/bin/python),backend/.venv/bin/python,python3)
+
 # Backend: stdlib unittest (not pytest)
 # Set env vars so tests work without a configured .env/data dir (mirrors CI).
+# PYTHONPATH covers venvs where the backend is not pip-installed (-e).
 test-backend:
 	@echo "→ Backend tests"
 	DATABASE_URL="sqlite://" SENSOR_ENABLED=false TZ=Asia/Tokyo CHILI_PRODUCTION_MODE=false \
-		python3 -m unittest discover -s backend/tests -v
+		PYTHONPATH=backend $(PYTHON) -m unittest discover -s backend/tests -v
 
 # Frontend: tsx --test for lib/*.test.ts
 test-frontend:

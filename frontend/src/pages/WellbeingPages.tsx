@@ -31,13 +31,11 @@ function PageFrame({ title, kicker, children }: { title: string; kicker: string;
           </span>
           <h1>{title}</h1>
           <a className="daily-back" href={`/daily/${todayStamp()}`}>Today</a>
-          {title.includes('weight') || title.includes('Weight') || title.includes('Sober') || title.includes('sober') ? (
-            <p className="daily-plan-headline">
-              <a href="/weight">Weight</a>
-              {' · '}
-              <a href="/sober">Sober</a>
-            </p>
-          ) : null}
+          <p className="daily-plan-headline">
+            <a href="/weight">Weight</a>
+            {' · '}
+            <a href="/sober">Sober</a>
+          </p>
         </div>
       </header>
       {children}
@@ -300,7 +298,7 @@ function SoberLog({
             <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} />
           </label>
           <button className="daily-submit" type="submit" disabled={pending}>
-            {pending ? 'Saving…' : 'I drank'}
+            {pending ? 'Saving…' : 'Log a drink (resets streak)'}
           </button>
         </>
       )}

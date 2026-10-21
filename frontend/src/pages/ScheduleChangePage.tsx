@@ -14,7 +14,14 @@ function todayStamp() {
 function ThisWeek() {
   const queryKey = useMemo(() => ['training-overview'] as const, [])
   const { data: training } = useLiveResource((signal) => fetchTrainingOverview(signal), { queryKey })
-  if (!training) return null
+  if (!training) {
+    return (
+      <section className="workout-section replan-week" aria-busy="true">
+        <h2>This week</h2>
+        <p className="workout-status">Loading this week…</p>
+      </section>
+    )
+  }
 
   const sessions = [training.today, training.tomorrow, ...(training.week ?? []), ...(training.upcoming ?? [])]
     .filter((item): item is TrainingSession => Boolean(item))
@@ -151,6 +158,16 @@ export function ScheduleChangePage() {
               <ul>{decision.how.map((line) => <li key={line}>{line}</li>)}</ul>
               <strong>Why</strong>
               <ul>{decision.why.map((line) => <li key={line}>{line}</li>)}</ul>
+              <div className="replan-next-links">
+                <a className="workout-plan-link" href={`/daily/${todayStamp()}`}>
+                  <strong>Open today</strong>
+                  <span>Check the daily plan</span>
+                </a>
+                <a className="workout-plan-link" href="/workout">
+                  <strong>Open train</strong>
+                  <span>Jump into today’s session</span>
+                </a>
+              </div>
             </div>
           )}
         </section>

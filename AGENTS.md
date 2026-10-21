@@ -37,25 +37,16 @@ The Pi's production `.env` sets `CHILI_PRODUCTION_MODE=true`.
 4. **Never collapse the two TrainingService classes** — they coexist on purpose.
 5. **Always run `make check`** before committing. Use `make regression` for the full backend suite.
 6. **Restart the kiosk after frontend changes** — see `.cursor/rules/restart-kiosk-after-frontend.mdc`.
-7. **Never open draft PRs** — create them ready for review. Multi-step work must be one stacked set (see below).
+7. **One PR per request** — one ready (never draft) PR to `master`, assigned to the owner. No stacks or split PRs (see below).
 
-## Pull requests / stacks
+## Pull requests
 
-- **Single change** → one ready PR to `master` (`gh pr create`, no `--draft`).
-- **Ordered milestones** → one linear branch stack, then create **all** PRs in one go with `scripts/create-pr-stack.sh`.
-  - Branch N contains Branch N-1's tip.
-  - PR 1 bases on `master`; PR N bases on Branch N-1.
-  - Do not open duplicate PRs that each target `master` with overlapping commits.
-- **Merge bottom-up.** After merging a lower PR, delete its head (preferred) or `gh pr edit <next> --base master` before merging the tip — otherwise the tip merges into a dead feature branch and never lands on `master`.
+- **One owner request → one PR to `master`.** Put every commit for that request on one branch, even if it touches several areas. Commits inside the PR can stay separate.
+- **Ready and assigned.** Never pass `--draft`. Assign the owner so it lands in their review queue: `gh pr create --base master --assignee @me` (GitHub can't request a review from the PR author, and `gh` is authenticated as the owner).
+- **Follow-ups in the same request** (fixes, review feedback, extra commits) → push to the same branch; don't open another PR.
+- **No stacks** unless the owner explicitly asks for one. `scripts/create-pr-stack.sh` stays for that case only.
 
-```sh
-# After all stack branches are pushed:
-scripts/create-pr-stack.sh --base master \
-  --step 'cursor/m2|feat: M2 logging|## Summary'$'\n''- trustworthy logging' \
-  --step 'cursor/m3|feat: M3 analyzer|## Summary'$'\n''- weekly review'
-```
-
-See `.cursor/rules/pr-stack.mdc`.
+See `.cursor/rules/one-pr-per-request.mdc`.
 
 ## Layout
 

@@ -26,4 +26,4 @@ Notion writes, device control, LLM calls) are blocked and logged.
 - Never collapse the two TrainingService classes
 - Always run `make check` before committing (`make regression` for full suite)
 - Keep `docs/what-chili-does.md` in sync with visible behavior changes
-- Never open draft PRs; multi-step work → `scripts/create-pr-stack.sh` (open stacked set)
+- One ready PR per request to `master`, assigned to the owner (`--assignee @me`); never draft, never stacked or split

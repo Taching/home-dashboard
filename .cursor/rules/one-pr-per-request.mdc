@@ -1,0 +1,17 @@
+---
+description: One ready PR per owner request, to master, assigned to the owner — no stacks or split PRs
+alwaysApply: true
+---
+
+# One PR per request
+
+Each owner request ships as **exactly one PR to `master`**.
+
+## Required behavior
+
+1. **One branch, one PR** — Put every commit for the request on one branch, even when it touches several areas. Separate commits inside the PR are fine.
+2. **Base is `master`** — Never base a PR on another feature branch.
+3. **Ready, not draft** — Never pass `--draft`.
+4. **Assigned to the owner** — `gh pr create --base master --assignee @me`. GitHub can't request a review from the PR author, and `gh` runs as the owner, so assignment is how it reaches their queue.
+5. **Follow-ups stay in the same PR** — Fixes, review feedback, and extra work for the same request are pushed to the same branch.
+6. **No stacks** unless the owner explicitly asks. `scripts/create-pr-stack.sh` exists only for that case.

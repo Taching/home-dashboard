@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import chiliLogo from '../assets/chili-logo.svg'
 import {
   askWeeklyCoach,
   fetchTrainingWeeklyAnalysis,
@@ -10,6 +9,7 @@ import {
 import { useLiveResource } from '../hooks/useLiveResource'
 import { doneMarkLabel } from '../lib/workoutMatch'
 import { PageSkeleton } from '../components/PageSkeleton'
+import { PhoneChrome } from '../components/PhoneChrome'
 import { PhoneNav } from '../components/PhoneNav'
 import type { TrainingWeeklyAnalysis } from '../types'
 import '../workout.css'
@@ -25,10 +25,6 @@ function mondayOf(day = new Date()) {
 function weekFromPath() {
   const match = window.location.pathname.match(/^\/weekly\/(\d{4}-\d{2}-\d{2})/)
   return match?.[1] ?? mondayOf()
-}
-
-function todayStamp() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' })
 }
 
 function EvidenceList({ keys }: { keys?: string[] }) {
@@ -236,13 +232,7 @@ export function WeeklyReviewPage() {
 
   return (
     <div className="workout-page">
-      <header className="workout-top">
-        <span className="workout-brand">
-          <img src={chiliLogo} alt="" />
-          Chili
-        </span>
-        <a className="workout-back" href={`/daily/${todayStamp()}`}>Daily</a>
-      </header>
+      <PhoneChrome />
       <section className="workout-hero">
         <p>Weekly training review</p>
         <h1>Week of {heading}</h1>

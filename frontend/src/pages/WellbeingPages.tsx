@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 're
 import chiliLogo from '../assets/chili-logo.svg'
 import { fetchDailyBriefing, fetchWellbeingHistory, logSober, logWeight } from '../lib/api'
 import { useLiveResource } from '../hooks/useLiveResource'
+import { PhoneChrome } from '../components/PhoneChrome'
 import { PhoneNav } from '../components/PhoneNav'
 import type { DailyCut, WellbeingHistory } from '../types'
 
@@ -23,6 +24,7 @@ function PageFrame({ title, kicker, children }: { title: string; kicker: string;
 
   return (
     <main className="daily-briefing-shell">
+      <PhoneChrome />
       <header className="daily-hero">
         <div>
           <span className="daily-kicker">
@@ -30,7 +32,6 @@ function PageFrame({ title, kicker, children }: { title: string; kicker: string;
             {kicker}
           </span>
           <h1>{title}</h1>
-          <a className="daily-back" href={`/daily/${todayStamp()}`}>Today</a>
           <p className="daily-plan-headline">
             <a href="/weight">Weight</a>
             {' · '}

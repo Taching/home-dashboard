@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import chiliLogo from '../assets/chili-logo.svg'
 import { PageSkeleton } from '../components/PageSkeleton'
 import { useLiveResource } from '../hooks/useLiveResource'
 import {
@@ -13,6 +12,7 @@ import {
   type ExerciseFilters,
 } from '../lib/api'
 import { SearchIcon, ChevronDownIcon, ChevronUpIcon, CheckCircleIcon, XCircleIcon, StarIcon } from '../components/icons'
+import { PhoneChrome } from '../components/PhoneChrome'
 import { PhoneNav } from '../components/PhoneNav'
 import '../workout.css'
 
@@ -525,15 +525,7 @@ export function ExerciseLibraryPage() {
 
   return (
     <div className="workout-page">
-      <header className="workout-top">
-        <span className="workout-brand">
-          <img src={chiliLogo} alt="" />
-          Chili
-        </span>
-        <a className="workout-back" href={`/daily/${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' })}`}>
-          Daily
-        </a>
-      </header>
+      <PhoneChrome />
 
       <section className="workout-hero">
         <p>Exercise Library</p>

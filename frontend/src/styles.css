@@ -2182,6 +2182,135 @@ html.is-daily * { cursor: auto; }
   .daily-done .daily-card-title { align-items: center; flex-direction: row; }
 }
 
+/* Phone top chrome (Back + brand + burger) */
+.phone-chrome {
+  position: sticky;
+  top: 0;
+  z-index: 45;
+  display: grid;
+  grid-template-columns: minmax(4.5rem, 1fr) auto minmax(4.5rem, 1fr);
+  align-items: center;
+  gap: .35rem;
+  margin: 0 0 1rem;
+  padding: calc(.35rem + env(safe-area-inset-top)) .15rem .55rem;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px);
+}
+.phone-chrome-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .2rem;
+  min-height: 2.4rem;
+  padding: .35rem .55rem;
+  border: 0;
+  border-radius: .7rem;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  font-size: .88rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.phone-chrome-btn:active {
+  transform: scale(.97);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.phone-chrome-menu-btn {
+  justify-self: end;
+}
+.phone-chrome-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  justify-self: center;
+  color: var(--ink-muted);
+  font-size: .78rem;
+  font-weight: 760;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+.phone-chrome-brand img {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.phone-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  align-items: end;
+}
+.phone-menu-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: color-mix(in srgb, #000 48%, transparent);
+  cursor: pointer;
+}
+.phone-menu-sheet {
+  position: relative;
+  max-height: min(88vh, 40rem);
+  overflow: auto;
+  padding: 1rem 1rem calc(1.1rem + env(safe-area-inset-bottom));
+  border-radius: 1.1rem 1.1rem 0 0;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  background: var(--bg-elevated);
+  box-shadow: 0 -12px 40px color-mix(in srgb, #000 35%, transparent);
+}
+.phone-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-bottom: .85rem;
+}
+.phone-menu-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: .02em;
+}
+.phone-menu-nav {
+  display: grid;
+  gap: 1rem;
+}
+.phone-menu-section-title {
+  margin: 0 0 .4rem;
+  color: var(--ink-muted);
+  font-size: .72rem;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.phone-menu-section ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: .25rem;
+}
+.phone-menu-link {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  min-height: 2.75rem;
+  padding: .55rem .7rem;
+  border-radius: .8rem;
+  color: var(--ink);
+  font-size: .95rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+.phone-menu-link.is-active {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.phone-menu-link:active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
 /* Phone hub bottom nav (Today / Train / Week / Body) */
 .phone-nav {
   position: fixed;

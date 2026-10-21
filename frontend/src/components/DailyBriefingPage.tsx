@@ -6,8 +6,8 @@ import { useLiveResource } from '../hooks/useLiveResource'
 import { doneMarkLabel, workoutFormLocked } from '../lib/workoutMatch'
 import type { DailyAnswerItem, DailyBriefing, DailyWatch } from '../types'
 import { AskCoachButton } from './AskCoachButton'
-import { AlertIcon, DumbbellIcon, SlidersIcon } from './icons'
 import { PageSkeleton } from './PageSkeleton'
+import { PhoneChrome } from './PhoneChrome'
 import { PhoneNav } from './PhoneNav'
 import { TrainingReport } from './TrainingReport'
 
@@ -27,25 +27,6 @@ function liveAdjustment(adjustment: { how?: string[]; why?: string[]; banner?: s
 
 function DoneBadge() {
   return <span className="daily-done-badge" aria-label="Done">✓</span>
-}
-
-function DailyQuickActions() {
-  return (
-    <div className="daily-quick-actions" aria-label="Quick actions">
-      <a className="daily-quick-action is-alert" href="/schedule-change" title="Something changed?">
-        <AlertIcon size={20} />
-        <span>Change plan</span>
-      </a>
-      <a className="daily-quick-action is-neutral" href="/training/preferences" title="Training preferences">
-        <SlidersIcon size={20} />
-        <span>Preferences</span>
-      </a>
-      <a className="daily-quick-action is-neutral" href="/training/exercises" title="Exercise library">
-        <DumbbellIcon size={20} />
-        <span>Exercises</span>
-      </a>
-    </div>
-  )
 }
 
 function verifyLabel(delivery: string | null | undefined, reply: string | null | undefined, waiting: boolean) {
@@ -165,6 +146,7 @@ export function DailyBriefingPage({ day }: { day: string }) {
 
   return (
     <main className="daily-briefing-shell">
+      <PhoneChrome />
       <header className="daily-hero">
         <div>
           <span className="daily-kicker">
@@ -175,7 +157,6 @@ export function DailyBriefingPage({ day }: { day: string }) {
           {briefing.today?.headline && <p className="daily-plan-headline">{briefing.today.headline}</p>}
           <AnswerProgress items={answers.items} />
           {briefing.preview && <span className="daily-preview-badge">Dry run · saved plan unchanged</span>}
-          <DailyQuickActions />
         </div>
         <a className="daily-streak" href="/sober"><strong>{briefing.sobriety.days}</strong><span>sober days</span></a>
       </header>
@@ -333,13 +314,13 @@ function CompleteDayPage({
   const workout = briefing.workout
   return (
     <main className="daily-briefing-shell daily-complete-shell">
+      <PhoneChrome />
       <header className="daily-complete-hero">
         <img src={chiliLogo} alt="" className="daily-complete-mark" />
         <span className="daily-kicker">All answered</span>
         <h1>Good job</h1>
         <p>{title} is closed. Chili has the day.</p>
         <AnswerProgress items={answers} />
-        <DailyQuickActions />
       </header>
 
       <section className="daily-card daily-complete-recap">

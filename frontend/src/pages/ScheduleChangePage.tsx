@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import chiliLogo from '../assets/chili-logo.svg'
 import { fetchTrainingOverview, requestScheduleChange } from '../lib/api'
 import { AlertIcon } from '../components/icons'
+import { PhoneChrome } from '../components/PhoneChrome'
 import { localDateKey, timeLabel, typeTitle } from '../components/TrainingPlanner'
 import { useLiveResource } from '../hooks/useLiveResource'
 import type { PlanAdjustment, TrainingSession } from '../types'
@@ -114,13 +114,7 @@ export function ScheduleChangePage() {
 
   return (
     <div className="workout-page">
-      <header className="workout-top">
-        <span className="workout-brand">
-          <img src={chiliLogo} alt="" />
-          Chili
-        </span>
-        <a className="workout-back" href={`/daily/${todayStamp()}`}>Daily</a>
-      </header>
+      <PhoneChrome />
       <section className="workout-hero">
         <p>Something changed</p>
         <h1>Change my schedule</h1>

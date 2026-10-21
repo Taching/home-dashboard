@@ -1,14 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import chiliLogo from '../assets/chili-logo.svg'
 import { fetchTrainingPreferences, saveTrainingPreferences } from '../lib/api'
 import { useLiveResource } from '../hooks/useLiveResource'
+import { PhoneChrome } from '../components/PhoneChrome'
 import { PhoneNav } from '../components/PhoneNav'
 import { PageSkeleton } from '../components/PageSkeleton'
 import '../workout.css'
-
-function todayStamp() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' })
-}
 
 export function TrainingPreferencesPage() {
   const queryKey = useMemo(() => ['training-preferences'] as const, [])
@@ -46,13 +42,7 @@ export function TrainingPreferencesPage() {
 
   return (
     <div className="workout-page">
-      <header className="workout-top">
-        <span className="workout-brand">
-          <img src={chiliLogo} alt="" />
-          Chili
-        </span>
-        <a className="workout-back" href={`/daily/${todayStamp()}`}>Daily</a>
-      </header>
+      <PhoneChrome />
       <section className="workout-hero">
         <p>Settings</p>
         <h1>Training preferences</h1>

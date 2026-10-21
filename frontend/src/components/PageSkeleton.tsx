@@ -1,10 +1,9 @@
+import { PhoneChrome } from './PhoneChrome'
+
 export function PageSkeleton() {
   return (
     <main className="workout-page page-skeleton" aria-label="Loading page" aria-busy="true">
-      <header className="workout-top">
-        <span className="skeleton-block is-brand" />
-        <span className="skeleton-block is-action" />
-      </header>
+      <PhoneChrome />
       <section className="workout-hero">
         <span className="skeleton-block is-kicker" />
         <span className="skeleton-block is-title" />

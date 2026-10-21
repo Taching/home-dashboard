@@ -1,13 +1,12 @@
 import { useEffect, useMemo } from 'react'
-import chiliLogo from '../assets/chili-logo.svg'
 import { fetchDailyBriefing, fetchTrainingSession } from '../lib/api'
 import { useLiveResource } from '../hooks/useLiveResource'
 import { formatDate } from '../lib/format'
 import { canLogWorkout, doneMarkLabel, slugForType, workoutAlreadyLogged } from '../lib/workoutMatch'
 import type { PlannedExercise } from '../types'
-import { AlertIcon, SlidersIcon, DumbbellIcon } from '../components/icons'
 import { TrainingReport } from '../components/TrainingReport'
 import { PageSkeleton } from '../components/PageSkeleton'
+import { PhoneChrome } from '../components/PhoneChrome'
 import { PhoneNav } from '../components/PhoneNav'
 import '../workout.css'
 
@@ -44,25 +43,6 @@ function IntensityPill({ intensity, deload }: { intensity?: string; deload?: boo
       {intensity && <span className={`workout-pill is-${intensity}`}>{intensity}</span>}
       {deload && <span className="workout-pill is-deload">Deload week</span>}
     </span>
-  )
-}
-
-function WorkoutQuickActions() {
-  return (
-    <div className="daily-quick-actions" aria-label="Quick actions">
-      <a className="daily-quick-action is-alert" href="/schedule-change" title="Something changed?">
-        <AlertIcon size={20} />
-        <span>Change plan</span>
-      </a>
-      <a className="daily-quick-action is-neutral" href="/training/preferences" title="Training preferences">
-        <SlidersIcon size={20} />
-        <span>Preferences</span>
-      </a>
-      <a className="daily-quick-action is-neutral" href="/training/exercises" title="Exercise library">
-        <DumbbellIcon size={20} />
-        <span>Exercises</span>
-      </a>
-    </div>
   )
 }
 
@@ -109,7 +89,6 @@ function TodayPage() {
     (signal) => fetchDailyBriefing(today, undefined, signal),
     { queryKey: briefingQueryKey },
   )
-  const day = briefing?.date ?? todayStamp()
   const workout = briefing?.workout
 
   if (!briefing && !error) return <PageSkeleton />
@@ -120,20 +99,13 @@ function TodayPage() {
 
   return (
     <div className="workout-page">
-      <header className="workout-top">
-        <span className="workout-brand">
-          <img src={chiliLogo} alt="" />
-          Chili
-        </span>
-        <a className="workout-back" href={`/daily/${day}`}>Daily</a>
-      </header>
+      <PhoneChrome />
       <section className="workout-hero">
         <p>Today</p>
         <h1>{headingDate}</h1>
         <span>{workout ? workout.title : 'No prescribed session'}</span>
         <IntensityPill intensity={workout?.intensity} deload={workout?.deload} />
         {logged && workout && <p className="workout-done-badge">✓ {doneMarkLabel(workout.status) ?? 'Done'}</p>}
-        <WorkoutQuickActions />
       </section>
       {error && <p className="workout-status">{error}</p>}
       <section className="workout-section">
@@ -179,13 +151,7 @@ function SessionPage({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="workout-page">
-      <header className="workout-top">
-        <span className="workout-brand">
-          <img src={chiliLogo} alt="" />
-          Chili
-        </span>
-        <a className="workout-back" href={`/daily/${day}`}>Daily</a>
-      </header>
+      <PhoneChrome />
       {error && <p className="workout-status">{error}</p>}
       {session && (
         <>

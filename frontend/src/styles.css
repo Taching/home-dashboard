@@ -15,6 +15,10 @@
   --warning: #f4b860;
   --danger: #ff8e90;
   --spotify: #1ed760;
+  /* Calendar sources: work (Asuene) vs. personal vs. Chili training. */
+  --calendar-work: var(--accent);
+  --calendar-personal: #4d7cff;
+  --calendar-training: var(--positive);
   --black: #000;
   color: var(--ink);
   background: var(--bg);
@@ -892,8 +896,9 @@ button { font: inherit; }
 .all-day-strip > span:first-child { flex-shrink: 0; color: var(--line-strong); font-size: .62rem; font-weight: 760; letter-spacing: .06em; text-transform: uppercase; }
 .all-day-strip small { color: var(--line-strong); font-size: .72rem; }
 .all-day-event { display: inline-flex; align-items: center; max-width: 100%; padding: .16rem .42rem; border-radius: 999px; color: var(--ink); background: color-mix(in srgb, var(--line) 62%, transparent); font-size: .68rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.all-day-event.is-work { background: color-mix(in srgb, var(--accent) 36%, var(--bg-elevated)); }
-.all-day-event.is-personal { background: color-mix(in srgb, var(--positive) 32%, var(--bg-elevated)); }
+.all-day-event.is-work { background: color-mix(in srgb, var(--calendar-work) 36%, var(--bg-elevated)); }
+.all-day-event.is-personal { background: color-mix(in srgb, var(--calendar-personal) 36%, var(--bg-elevated)); }
+.all-day-event.is-training { background: color-mix(in srgb, var(--calendar-training) 32%, var(--bg-elevated)); }
 .calendar-overflow { margin: .42rem 0 -.1rem 2.9rem; color: var(--ink-muted); font-size: .72rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .calendar-day-grid { display: grid; grid-template-columns: 2.7rem minmax(0, 1fr); min-height: 14rem; height: 100%; margin-top: .25rem; }
 .calendar-event.is-current {
@@ -902,10 +907,13 @@ button { font: inherit; }
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 34%, transparent), 0 .28rem .8rem color-mix(in srgb, var(--black) 28%, transparent);
 }
 .calendar-event.is-current.is-work {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 72%, var(--bg-wash)), color-mix(in srgb, var(--accent) 46%, var(--line)));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--calendar-work) 72%, var(--bg-wash)), color-mix(in srgb, var(--calendar-work) 46%, var(--line)));
 }
 .calendar-event.is-current.is-personal {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--positive) 62%, var(--bg-elevated)), color-mix(in srgb, var(--positive) 38%, var(--bg)));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--calendar-personal) 66%, var(--bg-elevated)), color-mix(in srgb, var(--calendar-personal) 42%, var(--bg)));
+}
+.calendar-event.is-current.is-training {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--calendar-training) 62%, var(--bg-elevated)), color-mix(in srgb, var(--calendar-training) 38%, var(--bg)));
 }
 .task-section {
   min-height: 0;
@@ -1195,14 +1203,22 @@ button { font: inherit; }
   background: var(--danger);
 }
 .calendar-event { position: absolute; z-index: 1; display: grid; align-content: start; gap: .16rem; overflow: hidden; padding: .4rem .5rem; border-left: 3px solid var(--accent); border-radius: .32rem; color: var(--ink); background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 58%, var(--bg-wash)), color-mix(in srgb, var(--accent) 34%, var(--line))); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent), 0 .24rem .7rem color-mix(in srgb, var(--black) 22%, transparent); font-size: .82rem; line-height: 1.18; transition: background 160ms ease, box-shadow 160ms ease; }
+.calendar-event.is-work,
+.calendar-event.is-personal,
+.calendar-event.is-training { border-left-width: 4px; }
 .calendar-event.is-work {
-  border-left-color: var(--accent);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 58%, var(--bg-wash)), color-mix(in srgb, var(--accent) 34%, var(--line)));
+  border-left-color: var(--calendar-work);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--calendar-work) 58%, var(--bg-wash)), color-mix(in srgb, var(--calendar-work) 34%, var(--line)));
 }
 .calendar-event.is-personal {
-  border-left-color: var(--positive);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--positive) 46%, var(--bg-elevated)), color-mix(in srgb, var(--positive) 26%, var(--bg)));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--positive) 20%, transparent), 0 .24rem .7rem color-mix(in srgb, var(--black) 22%, transparent);
+  border-left-color: var(--calendar-personal);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--calendar-personal) 50%, var(--bg-elevated)), color-mix(in srgb, var(--calendar-personal) 30%, var(--bg)));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--calendar-personal) 24%, transparent), 0 .24rem .7rem color-mix(in srgb, var(--black) 22%, transparent);
+}
+.calendar-event.is-training {
+  border-left-color: var(--calendar-training);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--calendar-training) 46%, var(--bg-elevated)), color-mix(in srgb, var(--calendar-training) 26%, var(--bg)));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--calendar-training) 20%, transparent), 0 .24rem .7rem color-mix(in srgb, var(--black) 22%, transparent);
 }
 .calendar-event strong { overflow: hidden; font-weight: 780; text-overflow: ellipsis; white-space: nowrap; }
 .calendar-event span { color: color-mix(in srgb, var(--ink) 82%, transparent); font-size: .7rem; font-weight: 650; }

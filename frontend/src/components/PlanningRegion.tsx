@@ -301,7 +301,6 @@ function CalendarSchedule({
                 const compact = event.endMinute - event.startMinute < 45
                 const kind = calendarEventKind(event)
                 const isTraining = kind === 'training'
-                const tone = kind === 'work' ? 'work' : 'personal'
                 const isDone = Boolean(selectedDoneLabel && isTraining && (
                   !event.training_session_id
                   || !selectedSession
@@ -314,14 +313,14 @@ function CalendarSchedule({
                     : null)
                 return (
                   <article
-                    className={`calendar-event is-${tone}${isTraining ? ' is-training' : ''}${compact ? ' is-compact' : ''}${event.is_current ? ' is-current' : ''}${isDone ? ' is-done' : ''}`}
+                    className={`calendar-event is-${kind}${compact ? ' is-compact' : ''}${event.is_current ? ' is-current' : ''}${isDone ? ' is-done' : ''}`}
                     key={event.id}
                     style={{
                       top: `${top}%`, height: `${height}%`,
                       left: `calc(${(event.column / event.columns) * 100}% + 3px)`,
                       width: `calc(${100 / event.columns}% - 6px)`,
                     }}
-                    aria-label={`${event.title}, ${tone}, ${eventTime(event)}${event.is_current ? ', now' : ''}${isDone ? `, ${selectedDoneLabel}` : ''}`}
+                    aria-label={`${event.title}, ${kind}, ${eventTime(event)}${event.is_current ? ', now' : ''}${isDone ? `, ${selectedDoneLabel}` : ''}`}
                   >
                     {href ? (
                       <a href={href}>

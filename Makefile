@@ -17,10 +17,11 @@ PYTHON ?= $(if $(wildcard backend/.venv/bin/python),backend/.venv/bin/python,pyt
 
 # Backend: stdlib unittest (not pytest)
 # Set env vars so tests work without a configured .env/data dir (mirrors CI).
+# CHILI_ENV_FILE= keeps the Pi's production .env (flag + API keys) out of tests.
 # PYTHONPATH covers venvs where the backend is not pip-installed (-e).
 test-backend:
 	@echo "→ Backend tests"
-	DATABASE_URL="sqlite://" SENSOR_ENABLED=false TZ=Asia/Tokyo CHILI_PRODUCTION_MODE=false \
+	CHILI_ENV_FILE= DATABASE_URL="sqlite://" SENSOR_ENABLED=false TZ=Asia/Tokyo CHILI_PRODUCTION_MODE=false \
 		PYTHONPATH=backend $(PYTHON) -m unittest discover -s backend/tests -v
 
 # Frontend: tsx --test for lib/*.test.ts

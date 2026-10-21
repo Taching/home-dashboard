@@ -1,9 +1,13 @@
+import os
+
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # CHILI_ENV_FILE="" disables .env loading so tests never pick up the Pi's
+    # production .env (its production flag and API keys) from the repo root.
+    model_config = SettingsConfigDict(env_file=os.environ.get("CHILI_ENV_FILE", ".env") or None, extra="ignore")
 
     app_name: str = "Chili Home Dashboard"
 

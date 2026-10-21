@@ -1,3 +1,4 @@
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,7 +12,11 @@ class Settings(BaseSettings):
     # LLM calls log what they would do but do not perform the action.
     # Set CHILI_PRODUCTION_MODE=true only on the Pi's .env. Agents must never
     # set this without the owner's explicit approval.
-    production_mode: bool = False
+    # Accept CHILI_PRODUCTION_MODE (documented name) and PRODUCTION_MODE (field default).
+    production_mode: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("CHILI_PRODUCTION_MODE", "PRODUCTION_MODE", "production_mode"),
+    )
     database_url: str = "sqlite:////data/chili.db"
     timezone: str = "Asia/Tokyo"
     weather_latitude: float | None = 35.6581

@@ -160,26 +160,17 @@ class NotionService:
         if is_dry_run():
             guard_external_call("Notion", f"complete({page_id!r})")
             return
-        done_status = settings.notion_done_statuses.split(",")[0].strip() or "Done"
-        properties: JsonDict = {}
-        if settings.notion_done_property:
-            properties[settings.notion_done_property] = {"checkbox": True}
-        if settings.notion_status_property:
-            properties[settings.notion_status_property] = {"status": {"name": done_status}}
         client = self._http()
+        url = f"https://api.notion.com/v1/pages/{page_id}"
         try:
-            response = client.patch(
-                f"https://api.notion.com/v1/pages/{page_id}",
-                headers=self._headers("2022-06-28"),
-                json={"properties": properties},
-            )
-            if response.status_code >= 400 and settings.notion_status_property in properties:
-                properties[settings.notion_status_property] = {"select": {"name": done_status}}
-                response = client.patch(
-                    f"https://api.notion.com/v1/pages/{page_id}",
-                    headers=self._headers("2022-06-28"),
-                    json={"properties": properties},
-                )
+            # Read the page first so the write only names properties that exist,
+            # with their real types (the Tasks DB has a Status select, no Done box).
+            current = client.get(url, headers=self._headers("2022-06-28"))
+            current.raise_for_status()
+            properties = self._completion_properties(as_dict(as_dict(current.json()).get("properties")))
+            if not properties:
+                raise ValueError("Notion task has no Done checkbox or Status property.")
+            response = client.patch(url, headers=self._headers("2022-06-28"), json={"properties": properties})
             response.raise_for_status()
             with self._lock:
                 self._last_error = None
@@ -187,6 +178,18 @@ class NotionService:
         except (httpx.HTTPError, AttributeError, ValueError, KeyError, TypeError) as error:
             self._last_error = str(error) or "Notion could not complete the task."
             raise
+
+    def _completion_properties(self, current: JsonDict) -> JsonDict:
+        done_status = settings.notion_done_statuses.split(",")[0].strip() or "Done"
+        properties: JsonDict = {}
+        done = as_dict(current.get(settings.notion_done_property))
+        if done.get("type") == "checkbox":
+            properties[settings.notion_done_property] = {"checkbox": True}
+        status = as_dict(current.get(settings.notion_status_property))
+        status_type = status.get("type")
+        if status_type in {"status", "select"}:
+            properties[settings.notion_status_property] = {status_type: {"name": done_status}}
+        return properties
 
     def today(self) -> tuple[NotionStatus, datetime | None, list[NotionTask]]:
         if not self.configured():

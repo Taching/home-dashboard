@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 're
 import chiliLogo from '../assets/chili-logo.svg'
 import { fetchDailyBriefing, fetchWellbeingHistory, logSober, logWeight } from '../lib/api'
 import { useLiveResource } from '../hooks/useLiveResource'
+import { PhoneNav } from '../components/PhoneNav'
 import type { DailyCut, WellbeingHistory } from '../types'
 
 function todayStamp() {
@@ -30,9 +31,17 @@ function PageFrame({ title, kicker, children }: { title: string; kicker: string;
           </span>
           <h1>{title}</h1>
           <a className="daily-back" href={`/daily/${todayStamp()}`}>Today</a>
+          {title.includes('weight') || title.includes('Weight') || title.includes('Sober') || title.includes('sober') ? (
+            <p className="daily-plan-headline">
+              <a href="/weight">Weight</a>
+              {' · '}
+              <a href="/sober">Sober</a>
+            </p>
+          ) : null}
         </div>
       </header>
       {children}
+      <PhoneNav />
     </main>
   )
 }

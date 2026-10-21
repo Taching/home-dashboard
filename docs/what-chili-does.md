@@ -34,6 +34,7 @@ is never on the public internet.
 | **Phone: exercises** (`/training/exercises`) | Exercise library, filters, and alternatives. |
 | **Phone: weight / sober** (`/weight`, `/sober`) | History and trend pages. |
 | **Phone: training preferences** (`/training/preferences`) | Free-text notes that give the coach context. They never change the schedule. |
+| **Phone bottom nav** | Today · Train · Week · Body on hub screens; hidden on session log and schedule-change. |
 | **Telegram (Chili via OpenClaw)** | Morning/evening messages, reminders, and plain-language commands. |
 
 ---

@@ -13,6 +13,7 @@ import {
   type ExerciseFilters,
 } from '../lib/api'
 import { SearchIcon, ChevronDownIcon, ChevronUpIcon, CheckCircleIcon, XCircleIcon, StarIcon } from '../components/icons'
+import { PhoneNav } from '../components/PhoneNav'
 import '../workout.css'
 
 function formatEquipment(equipment: string[]): string {
@@ -507,8 +508,8 @@ export function ExerciseLibraryPage() {
           <img src={chiliLogo} alt="" />
           Chili
         </span>
-        <a className="workout-back" href="/workout">
-          Training
+        <a className="workout-back" href={`/daily/${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' })}`}>
+          Daily
         </a>
       </header>
 
@@ -598,6 +599,7 @@ export function ExerciseLibraryPage() {
           onSelectAlternative={(slug) => setView({ type: 'detail', slug })}
         />
       )}
+      <PhoneNav />
     </div>
   )
 }

@@ -6,7 +6,8 @@
 # Prefer the backend venv (Pi/local dev); CI has none and uses its own python3.
 PYTHON ?= $(if $(wildcard backend/.venv/bin/python),backend/.venv/bin/python,python3)
 
-BACKEND_ENV = DATABASE_URL="sqlite://" SENSOR_ENABLED=false TZ=Asia/Tokyo CHILI_PRODUCTION_MODE=false PYTHONPATH=backend
+# CHILI_ENV_FILE= keeps the Pi's production .env (flag + API keys) out of tests.
+BACKEND_ENV = CHILI_ENV_FILE= DATABASE_URL="sqlite://" SENSOR_ENABLED=false TZ=Asia/Tokyo CHILI_PRODUCTION_MODE=false PYTHONPATH=backend
 
 # Default: priority verification (what CI runs)
 check: test-backend test-frontend lint build test-pr-stack

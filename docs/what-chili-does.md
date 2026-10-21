@@ -50,8 +50,10 @@ Phone polish: exercise search uses shared styles and deep links (`/training/exer
 - **Today hero + Chili's advice:** one lead line for the morning, lunch or
   evening window, plus a few points (walk, the next meeting, one task,
   tomorrow).
-- **Schedule:** Apple Calendar meetings and training on an hourly grid. If the
-  Mac stops syncing, the **cached events stay up** with "Last updated HH:MM".
+- **Schedule:** Apple Calendar meetings and training on an hourly grid,
+  colour-coded by source: **work** (Asuene calendars) in cyan, **personal** in
+  blue, **training** in green. If the Mac stops syncing, the **cached events
+  stay up** with "Last updated HH:MM".
 - **Tasks:** priority Notion tasks.
 - **Training planner:** this week's sessions and status.
 - **Banners:** a 10-minute heads-up before meetings, a walk nudge, plan

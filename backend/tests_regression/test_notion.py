@@ -14,6 +14,7 @@ class FakeClient:
         self.pages = pages
         self.posts = 0
         self.patches = 0
+        self.patch_payloads = []
         self.fail_after = fail_after
         self.patch_status = patch_status
         self._lock = threading.Lock()
@@ -26,8 +27,17 @@ class FakeClient:
             raise httpx.ConnectError("notion down")
         return httpx.Response(200, json={"results": self.pages}, request=httpx.Request("POST", "https://api.notion.com"))
 
+    def get(self, url, *args, **kwargs):
+        page_id = url.rsplit("/", 1)[-1]
+        found = next((item for item in self.pages if item["id"] == page_id), None)
+        request = httpx.Request("GET", url)
+        if found is None:
+            return httpx.Response(404, json={"message": "not found"}, request=request)
+        return httpx.Response(200, json=found, request=request)
+
     def patch(self, *args, **kwargs):
         self.patches += 1
+        self.patch_payloads.append(kwargs.get("json"))
         request = httpx.Request("PATCH", "https://api.notion.com/v1/pages/task")
         if self.patch_status >= 400:
             return httpx.Response(self.patch_status, json={"message": "fail"}, request=request)
@@ -265,6 +275,49 @@ class NotionServiceTests(unittest.TestCase):
             fake_datetime.max = datetime.max
             service.today()
         self.assertEqual(client.posts, 2)
+
+class NotionCompleteTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch("app.domain.notion.is_dry_run", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @patch("app.domain.notion.settings.notion_token", "secret")
+    @patch("app.domain.notion.settings.notion_database_id", "database")
+    @patch("app.domain.notion.settings.notion_done_property", "Done")
+    @patch("app.domain.notion.settings.notion_status_property", "Status")
+    def test_select_status_without_done_checkbox(self):
+        # Matches the live Tasks DB: Status is a select and there is no Done box.
+        task = {"id": "task", "properties": {
+            "Name": {"type": "title", "title": [{"plain_text": "Ship"}]},
+            "Status": {"type": "select", "select": {"name": "To Do"}},
+        }}
+        client = FakeClient([task])
+        NotionService(client=client).complete("task")
+        self.assertEqual(client.patch_payloads, [{"properties": {"Status": {"select": {"name": "Done"}}}}])
+
+    @patch("app.domain.notion.settings.notion_token", "secret")
+    @patch("app.domain.notion.settings.notion_database_id", "database")
+    @patch("app.domain.notion.settings.notion_done_property", "Done")
+    @patch("app.domain.notion.settings.notion_status_property", "Status")
+    def test_checkbox_and_status_property(self):
+        client = FakeClient([page("task", "Ship", None, status="To Do")])
+        NotionService(client=client).complete("task")
+        self.assertEqual(client.patch_payloads, [{"properties": {
+            "Done": {"checkbox": True},
+            "Status": {"status": {"name": "Done"}},
+        }}])
+
+    @patch("app.domain.notion.settings.notion_token", "secret")
+    @patch("app.domain.notion.settings.notion_database_id", "database")
+    @patch("app.domain.notion.settings.notion_done_property", "Done")
+    @patch("app.domain.notion.settings.notion_status_property", "Status")
+    def test_no_completion_property_raises_without_writing(self):
+        task = {"id": "task", "properties": {"Name": {"type": "title", "title": [{"plain_text": "Ship"}]}}}
+        client = FakeClient([task])
+        with self.assertRaises(ValueError):
+            NotionService(client=client).complete("task")
+        self.assertEqual(client.patches, 0)
 
 
 if __name__ == "__main__":

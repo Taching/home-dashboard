@@ -140,12 +140,18 @@ export function TrainingReport({
   closesDay = false,
   coachSessionId,
   onLogged,
+  hideSessionTitle = false,
+  compactLifts = false,
 }: {
   day: string
   workout: PlannedWorkout
   closesDay?: boolean
   coachSessionId?: string
   onLogged?: (next?: DailyBriefing) => void
+  /** Session page already shows the title in the hero. */
+  hideSessionTitle?: boolean
+  /** Primary row = load / reps / RPE; technique + pain behind More. */
+  compactLifts?: boolean
 }) {
   const type = workout.planned_type
   const bjj = isBjj(type)
@@ -172,6 +178,7 @@ export function TrainingReport({
   const [problemPosition, setProblemPosition] = useState('')
   const [primaryFailure, setPrimaryFailure] = useState('')
   const [showBjjExtra, setShowBjjExtra] = useState(false)
+  const [liftAdvanced, setLiftAdvanced] = useState<Record<string, boolean>>({})
   const [pending, setPending] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -248,6 +255,7 @@ export function TrainingReport({
         }
         // M2 structured logs (compact reps/technique/pain + optional BJJ analysis).
         // Missing optional fields stay absent — never invent zeros.
+        const detailFailures: string[] = []
         if (!bjj && status !== 'skipped') {
           const structured = lifts.map((item, index) => {
             const included = status === 'completed' ? true : Boolean(done[item.name])
@@ -268,16 +276,27 @@ export function TrainingReport({
               status: included ? 'completed' : 'skipped',
             }
           })
-          await putExerciseResults(sessionId, structured).catch(() => undefined)
+          try {
+            await putExerciseResults(sessionId, structured)
+          } catch {
+            detailFailures.push('lift details')
+          }
         }
         if (bjj && status !== 'skipped' && (mainFocus || problemPosition || primaryFailure)) {
-          await putBjjAnalysis(sessionId, {
-            main_focus: mainFocus.trim() || undefined,
-            problem_position: problemPosition.trim() || undefined,
-            primary_failure_code: primaryFailure || undefined,
-          }).catch(() => undefined)
+          try {
+            await putBjjAnalysis(sessionId, {
+              main_focus: mainFocus.trim() || undefined,
+              problem_position: problemPosition.trim() || undefined,
+              primary_failure_code: primaryFailure || undefined,
+            })
+          } catch {
+            detailFailures.push('BJJ review')
+          }
         }
         setSaved(true)
+        if (detailFailures.length) {
+          setError(`Session saved, but ${detailFailures.join(' and ')} failed to sync. Open this workout again to retry.`)
+        }
         onLogged?.(result.briefing)
       })
       .catch(() => setError('Could not save. Try again.'))
@@ -317,6 +336,7 @@ export function TrainingReport({
         )}
         {wattLine && <p className="daily-done-note">Intervals {wattLine} W</p>}
         {note.trim() && <p className="daily-done-note">{note}</p>}
+        {error && <p className="daily-form-error" role="alert">{error}</p>}
         {coachSessionId && <AskCoachButton sessionId={coachSessionId} />}
       </section>
     )
@@ -330,7 +350,7 @@ export function TrainingReport({
           <h2>What did you do?</h2>
         </div>
       </div>
-      <p className="daily-report-session">{workout.title}</p>
+      {!hideSessionTitle && <p className="daily-report-session">{workout.title}</p>}
       <div className="daily-report-choices" role="radiogroup" aria-label="How the session went">
         {([
           ['completed', 'Did it'],
@@ -438,96 +458,124 @@ export function TrainingReport({
       )}
 
       {showDetails && lifts.some((item) => liftIncluded(item.name)) && (
-        <div className="daily-lifts">
-          <p className="daily-report-hint">Weight is what you lifted. RPE 8 keeps the next session. 6 goes up, 9 comes down.</p>
-          {lifts.filter((item) => liftIncluded(item.name)).map((item) => (
-            <div key={item.name} className="daily-lift">
-              <div>
-                <strong>{item.name}</strong>
-                <small>{exerciseDetail(item)}</small>
-              </div>
-              {item.load_value != null && (
+        <div className={`daily-lifts${compactLifts ? ' is-compact' : ''}`}>
+          <p className="daily-report-hint">
+            {compactLifts
+              ? 'Adjust load and reps. RPE 8 keeps next session; 6 goes up, 9 comes down. Technique and pain are under More.'
+              : 'Weight is what you lifted. RPE 8 keeps the next session. 6 goes up, 9 comes down.'}
+          </p>
+          {lifts.filter((item) => liftIncluded(item.name)).map((item) => {
+            const advancedOpen = !compactLifts || Boolean(liftAdvanced[item.name])
+            const hasPain = Boolean(liftReport[item.name]?.pain)
+            const technique = liftReport[item.name]?.technique ?? 'good'
+            return (
+              <div key={item.name} className={`daily-lift${compactLifts ? ' is-compact' : ''}`}>
+                <div>
+                  <strong>{item.name}</strong>
+                  <small>{exerciseDetail(item)}</small>
+                </div>
+                {item.load_value != null && (
+                  <div className="daily-field">
+                    <span>Weight{item.load_unit ? ` (${item.load_unit})` : ''}</span>
+                    <div className="daily-rounds">
+                      <button type="button" aria-label={`Lighter ${item.name}`} onClick={() => changeLoad(item, -1)}>−</button>
+                      <input
+                        inputMode="decimal"
+                        aria-label={`${item.name} weight`}
+                        value={liftReport[item.name]?.load ?? ''}
+                        onChange={(event) => {
+                          const load = event.target.value.replace(/[^\d.]/g, '').slice(0, 6)
+                          setLiftReport((current) => ({ ...current, [item.name]: { ...current[item.name], load } }))
+                        }}
+                      />
+                      <button type="button" aria-label={`Heavier ${item.name}`} onClick={() => changeLoad(item, 1)}>+</button>
+                    </div>
+                  </div>
+                )}
+                <label className="daily-field">
+                  <span>Reps (e.g. 8 / 8 / 7)</span>
+                  <input
+                    inputMode="text"
+                    aria-label={`${item.name} reps`}
+                    value={liftReport[item.name]?.reps ?? ''}
+                    placeholder={item.sets ? Array.from({ length: item.sets }, () => item.reps ?? '8').join(' / ') : '8 / 8 / 7'}
+                    onChange={(event) => {
+                      const reps = event.target.value.slice(0, 40)
+                      setLiftReport((current) => ({ ...current, [item.name]: { ...current[item.name], reps } }))
+                    }}
+                  />
+                </label>
                 <div className="daily-field">
-                  <span>Weight{item.load_unit ? ` (${item.load_unit})` : ''}</span>
-                  <div className="daily-rounds">
-                    <button type="button" aria-label={`Lighter ${item.name}`} onClick={() => changeLoad(item, -1)}>−</button>
-                    <input
-                      inputMode="decimal"
-                      aria-label={`${item.name} weight`}
-                      value={liftReport[item.name]?.load ?? ''}
-                      onChange={(event) => {
-                        const load = event.target.value.replace(/[^\d.]/g, '').slice(0, 6)
-                        setLiftReport((current) => ({ ...current, [item.name]: { ...current[item.name], load } }))
-                      }}
-                    />
-                    <button type="button" aria-label={`Heavier ${item.name}`} onClick={() => changeLoad(item, 1)}>+</button>
+                  <span>RPE</span>
+                  <div className="daily-report-choices daily-rpe" role="radiogroup" aria-label={`${item.name} RPE`}>
+                    {RPE_CHOICES.map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className={liftReport[item.name]?.rpe === String(value) ? 'is-selected' : ''}
+                        aria-pressed={liftReport[item.name]?.rpe === String(value)}
+                        onClick={() => setLiftReport((current) => ({
+                          ...current,
+                          [item.name]: { ...current[item.name], rpe: String(value) },
+                        }))}
+                      >
+                        {value}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              )}
-              <label className="daily-field">
-                <span>Reps (e.g. 8 / 8 / 7)</span>
-                <input
-                  inputMode="text"
-                  aria-label={`${item.name} reps`}
-                  value={liftReport[item.name]?.reps ?? ''}
-                  placeholder={item.sets ? Array.from({ length: item.sets }, () => item.reps ?? '8').join(' / ') : '8 / 8 / 7'}
-                  onChange={(event) => {
-                    const reps = event.target.value.slice(0, 40)
-                    setLiftReport((current) => ({ ...current, [item.name]: { ...current[item.name], reps } }))
-                  }}
-                />
-              </label>
-              <div className="daily-field">
-                <span>RPE</span>
-                <div className="daily-report-choices daily-rpe" role="radiogroup" aria-label={`${item.name} RPE`}>
-                  {RPE_CHOICES.map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={liftReport[item.name]?.rpe === String(value) ? 'is-selected' : ''}
-                      aria-pressed={liftReport[item.name]?.rpe === String(value)}
-                      onClick={() => setLiftReport((current) => ({
-                        ...current,
-                        [item.name]: { ...current[item.name], rpe: String(value) },
-                      }))}
-                    >
-                      {value}
-                    </button>
-                  ))}
-                </div>
+                {compactLifts && (
+                  <button
+                    type="button"
+                    className="daily-report-hint daily-lift-more"
+                    aria-expanded={advancedOpen}
+                    onClick={() => setLiftAdvanced((current) => ({
+                      ...current,
+                      [item.name]: !current[item.name],
+                    }))}
+                  >
+                    {advancedOpen
+                      ? 'Hide technique / pain'
+                      : `More${technique !== 'good' || hasPain ? ` · ${technique}${hasPain ? ' · pain' : ''}` : ''}`}
+                  </button>
+                )}
+                {advancedOpen && (
+                  <>
+                    <div className="daily-field">
+                      <span>Technique</span>
+                      <div className="daily-report-choices" role="radiogroup" aria-label={`${item.name} technique`}>
+                        {TECHNIQUE.map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            className={liftReport[item.name]?.technique === value ? 'is-selected' : ''}
+                            aria-pressed={liftReport[item.name]?.technique === value}
+                            onClick={() => setLiftReport((current) => ({
+                              ...current,
+                              [item.name]: { ...current[item.name], technique: value },
+                            }))}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <label className="daily-check">
+                      <input
+                        type="checkbox"
+                        checked={hasPain}
+                        onChange={(event) => setLiftReport((current) => ({
+                          ...current,
+                          [item.name]: { ...current[item.name], pain: event.target.checked },
+                        }))}
+                      />
+                      <span>Pain during this exercise</span>
+                    </label>
+                  </>
+                )}
               </div>
-              <div className="daily-field">
-                <span>Technique</span>
-                <div className="daily-report-choices" role="radiogroup" aria-label={`${item.name} technique`}>
-                  {TECHNIQUE.map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={liftReport[item.name]?.technique === value ? 'is-selected' : ''}
-                      aria-pressed={liftReport[item.name]?.technique === value}
-                      onClick={() => setLiftReport((current) => ({
-                        ...current,
-                        [item.name]: { ...current[item.name], technique: value },
-                      }))}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <label className="daily-check">
-                <input
-                  type="checkbox"
-                  checked={Boolean(liftReport[item.name]?.pain)}
-                  onChange={(event) => setLiftReport((current) => ({
-                    ...current,
-                    [item.name]: { ...current[item.name], pain: event.target.checked },
-                  }))}
-                />
-                <span>Pain during this exercise</span>
-              </label>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 

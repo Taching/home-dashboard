@@ -1,6 +1,6 @@
 # Chili — what this dashboard is and what it does
 
-_Last updated: 20 Oct 2026 (weekly analyzer + Ask coach)_
+_Last updated: 21 Oct 2026 (phone session logging UX)_
 
 ## What it is for
 
@@ -28,7 +28,7 @@ is never on the public internet.
 | --- | --- |
 | **Wall** (`/`) | Read-only glance. A Today hero, Chili's advice, the day's schedule, tasks and training. |
 | **Phone: daily page** (`/daily/YYYY-MM-DD`) | Closing the loop for today: tick the workout, log sleep/weight, answer sober, Monday check-in. |
-| **Phone: workout** (`/workout/…`) | The gym program for today's session, logged per exercise (load, RPE, technique, pain). |
+| **Phone: workout** (`/workout/…`) | Today's session: open program first, then a compact log (load, reps, RPE; technique/pain under More). |
 | **Phone: schedule change** (`/schedule-change`) | Tell Chili in plain words what changed; it replans the week. |
 | **Phone: weekly** (`/weekly`) | Deterministic weekly training analysis, evidence, and optional Ask coach. |
 | **Phone: exercises** (`/training/exercises`) | Exercise library, filters, and alternatives. |
@@ -143,13 +143,14 @@ forward. The taper replaces deloads from 21 Feb.
 
 ### Workout logging
 
-Each exercise has **one compact result** (not set-by-set):
+On `/workout/:id` the **program is shown open above the log** so I see the prescription before filling fields. Each exercise has **one compact result** (not set-by-set):
 - Load in kg, or a note like "BW + 5 kg" or "stack 8"
 - Reps per set as a compact list: `8 / 8 / 7`
-- Overall exercise RPE (optional)
-- Technique: good, shaky, or breakdown
-- Pain flag
+- Overall exercise RPE (drives next-session load)
+- Technique and pain sit under **More** (optional mid-set)
 - Status: completed, partial, or skipped
+
+If lift or BJJ detail sync fails after the session status saves, the phone shows a clear error so I can retry — it no longer fails silently.
 
 If I swap an exercise using the alternatives engine, both the **planned** and
 **performed** exercise are recorded together with the substitution reason.

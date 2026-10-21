@@ -272,6 +272,7 @@ export function DailyBriefingPage({ day }: { day: string }) {
             workout={workout}
             closesDay={remaining.length === 1 && remaining[0].id === 'workout'}
             onLogged={applyBriefing}
+            compactLifts
           />
         )}
         <div className="daily-actions">

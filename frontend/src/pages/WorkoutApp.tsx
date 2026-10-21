@@ -5,9 +5,10 @@ import { useLiveResource } from '../hooks/useLiveResource'
 import { formatDate } from '../lib/format'
 import { canLogWorkout, doneMarkLabel, slugForType, workoutAlreadyLogged } from '../lib/workoutMatch'
 import type { PlannedExercise } from '../types'
-import { AlertIcon, ListIcon, SlidersIcon, DumbbellIcon } from '../components/icons'
+import { AlertIcon, SlidersIcon, DumbbellIcon } from '../components/icons'
 import { TrainingReport } from '../components/TrainingReport'
 import { PageSkeleton } from '../components/PageSkeleton'
+import { PhoneNav } from '../components/PhoneNav'
 import '../workout.css'
 
 function workoutPath() {
@@ -56,10 +57,6 @@ function WorkoutQuickActions() {
       <a className="daily-quick-action is-neutral" href="/training/preferences" title="Training preferences">
         <SlidersIcon size={20} />
         <span>Preferences</span>
-      </a>
-      <a className="daily-quick-action is-workout" href="/weekly" title="My workouts">
-        <ListIcon size={20} />
-        <span>My workouts</span>
       </a>
       <a className="daily-quick-action is-neutral" href="/training/exercises" title="Exercise library">
         <DumbbellIcon size={20} />
@@ -156,13 +153,7 @@ function TodayPage() {
           <p className="workout-advice">{briefing.advice}</p>
         </section>
       )}
-      <section className="workout-section">
-        <h2>Review</h2>
-        <a className="workout-plan-link" href="/weekly">
-          <strong>Weekly training review</strong>
-          <span>Planned vs actual and next week’s load.</span>
-        </a>
-      </section>
+      <PhoneNav />
     </div>
   )
 }

@@ -8,6 +8,7 @@ import type { DailyAnswerItem, DailyBriefing, DailyWatch } from '../types'
 import { AskCoachButton } from './AskCoachButton'
 import { AlertIcon, DumbbellIcon, SlidersIcon } from './icons'
 import { PageSkeleton } from './PageSkeleton'
+import { PhoneNav } from './PhoneNav'
 import { TrainingReport } from './TrainingReport'
 
 function formatTime(value: string, allDay = false) {
@@ -39,9 +40,9 @@ function DailyQuickActions() {
         <SlidersIcon size={20} />
         <span>Preferences</span>
       </a>
-      <a className="daily-quick-action is-workout" href="/workout" title="Today's workout">
+      <a className="daily-quick-action is-neutral" href="/training/exercises" title="Exercise library">
         <DumbbellIcon size={20} />
-        <span>Workout</span>
+        <span>Exercises</span>
       </a>
     </div>
   )
@@ -304,6 +305,7 @@ export function DailyBriefingPage({ day }: { day: string }) {
           {error && <p className="daily-form-error" role="alert">{error}</p>}
         </div>
       </div>
+      <PhoneNav />
     </main>
   )
 }
@@ -387,6 +389,7 @@ function CompleteDayPage({
         )}
         {error && <p className="daily-form-error" role="alert">{error}</p>}
       </section>
+      <PhoneNav />
     </main>
   )
 }

@@ -2181,3 +2181,38 @@ html.is-daily * { cursor: auto; }
   .daily-card-title { align-items: flex-start; flex-direction: column; gap: .2rem; }
   .daily-done .daily-card-title { align-items: center; flex-direction: row; }
 }
+
+/* Phone hub bottom nav (Today / Train / Week / Body) */
+.phone-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .15rem;
+  padding: .45rem .55rem calc(.45rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  backdrop-filter: blur(10px);
+}
+.phone-nav-item {
+  display: grid;
+  justify-items: center;
+  gap: .15rem;
+  padding: .35rem .2rem;
+  border-radius: .7rem;
+  color: var(--ink-muted);
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+.phone-nav-item.is-active {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+html.is-workout .workout-page,
+html.is-daily .daily-briefing-shell {
+  padding-bottom: calc(5.2rem + env(safe-area-inset-bottom));
+}

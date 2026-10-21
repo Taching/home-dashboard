@@ -60,6 +60,28 @@ export function ListIcon({ size = 18 }: IconProps) {
   )
 }
 
+export function CalendarIcon({ size = 18 }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width={size} height={size} aria-hidden="true">
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  )
+}
+
+export function ScaleIcon({ size = 18 }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width={size} height={size} aria-hidden="true">
+      <path d="M12 3v18" />
+      <path d="M5 7h14" />
+      <path d="M5 7l-2 6a3 3 0 0 0 6 0Z" />
+      <path d="M19 7l-2 6a3 3 0 0 0 6 0Z" />
+    </svg>
+  )
+}
+
 export function SearchIcon({ size = 18, style }: IconProps & { style?: React.CSSProperties }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width={size} height={size} style={style} aria-hidden="true">

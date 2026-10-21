@@ -285,9 +285,10 @@ function AlternativesView({
   const handleOverride = async (target: string, decision: 'prefer' | 'exclude') => {
     try {
       await setExerciseOverride(sourceExercise.slug, target, decision)
+      setError(null)
       handleSearch()
     } catch (err) {
-      console.error('Failed to set override:', err)
+      setError(err instanceof Error ? err.message : 'Could not save prefer/exclude.')
     }
   }
 
@@ -450,10 +451,31 @@ type ViewState =
   | { type: 'detail'; slug: string }
   | { type: 'alternatives'; sourceSlug: string }
 
+function viewFromPath(): ViewState {
+  const match = window.location.pathname.match(/^\/training\/exercises\/([^/]+)\/?$/)
+  if (match?.[1]) return { type: 'detail', slug: decodeURIComponent(match[1]) }
+  return { type: 'list' }
+}
+
+function setPathForView(next: ViewState) {
+  if (next.type === 'list') {
+    window.history.replaceState(null, '', '/training/exercises')
+    return
+  }
+  if (next.type === 'detail') {
+    window.history.replaceState(null, '', `/training/exercises/${encodeURIComponent(next.slug)}`)
+  }
+}
+
 export function ExerciseLibraryPage() {
-  const [view, setView] = useState<ViewState>({ type: 'list' })
+  const [view, setView] = useState<ViewState>(viewFromPath)
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<Record<string, string>>({})
+
+  const go = (next: ViewState) => {
+    setView(next)
+    if (next.type !== 'alternatives') setPathForView(next)
+  }
 
   const filterQueryKey = useMemo(() => ['exercise-filters'] as const, [])
   const { data: filterOptions } = useLiveResource(
@@ -522,33 +544,15 @@ export function ExerciseLibraryPage() {
       {view.type === 'list' && (
         <>
           <div className="workout-section">
-            <div style={{ position: 'relative' }}>
-              <SearchIcon
-                size={18}
-                style={{
-                  position: 'absolute',
-                  left: '0.75rem',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  opacity: 0.5,
-                }}
-              />
+            <label className="exercise-search">
+              <SearchIcon size={18} />
               <input
                 type="search"
                 placeholder="Search exercises..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem 0.75rem 0.75rem 2.5rem',
-                  borderRadius: '0.5rem',
-                  border: '1px solid var(--color-border)',
-                  background: 'var(--color-bg)',
-                  color: 'var(--color-text)',
-                  fontSize: '1rem',
-                }}
               />
-            </div>
+            </label>
           </div>
 
           {filterOptions && (
@@ -560,7 +564,7 @@ export function ExerciseLibraryPage() {
           )}
 
           {exercisesError && (
-            <p className="workout-status" style={{ color: 'red' }}>
+            <p className="workout-status is-error" role="alert">
               {exercisesError}
             </p>
           )}
@@ -570,12 +574,12 @@ export function ExerciseLibraryPage() {
             {exercisesData?.exercises.length === 0 ? (
               <p className="workout-empty">No exercises match your search.</p>
             ) : (
-              <div className="workout-checks" style={{ gap: '0.5rem' }}>
+              <div className="workout-checks exercise-list">
                 {exercisesData?.exercises.map((exercise) => (
                   <ExerciseCard
                     key={exercise.slug}
                     exercise={exercise}
-                    onSelect={() => setView({ type: 'detail', slug: exercise.slug })}
+                    onSelect={() => go({ type: 'detail', slug: exercise.slug })}
                   />
                 ))}
               </div>
@@ -587,7 +591,7 @@ export function ExerciseLibraryPage() {
       {view.type === 'detail' && selectedExercise && (
         <ExerciseDetail
           exercise={selectedExercise}
-          onBack={() => setView({ type: 'list' })}
+          onBack={() => go({ type: 'list' })}
           onFindAlternatives={() => setView({ type: 'alternatives', sourceSlug: selectedExercise.slug })}
         />
       )}
@@ -595,8 +599,8 @@ export function ExerciseLibraryPage() {
       {view.type === 'alternatives' && selectedExercise && (
         <AlternativesView
           sourceExercise={selectedExercise}
-          onBack={() => setView({ type: 'detail', slug: view.sourceSlug })}
-          onSelectAlternative={(slug) => setView({ type: 'detail', slug })}
+          onBack={() => go({ type: 'detail', slug: view.sourceSlug })}
+          onSelectAlternative={(slug) => go({ type: 'detail', slug })}
         />
       )}
       <PhoneNav />

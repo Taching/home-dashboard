@@ -34,6 +34,9 @@ is never on the public internet.
 | **Phone: exercises** (`/training/exercises`) | Exercise library, filters, and alternatives. |
 | **Phone: weight / sober** (`/weight`, `/sober`) | History and trend pages. |
 | **Phone: training preferences** (`/training/preferences`) | Free-text notes that give the coach context. They never change the schedule. |
+| **Phone bottom nav** | Today · Train · Week · Body on hub screens; hidden on session log and schedule-change. |
+
+Phone polish: exercise search uses shared styles and deep links (`/training/exercises/:slug`); schedule-change shows a week skeleton and “Open today / Open train” after a successful replan; sober’s only button is labeled **Log a drink (resets streak)**.
 | **Telegram (Chili via OpenClaw)** | Morning/evening messages, reminders, and plain-language commands. |
 
 ---

@@ -26,6 +26,10 @@ function weekFromPath() {
   return match?.[1] ?? mondayOf()
 }
 
+function todayStamp() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' })
+}
+
 function EvidenceList({ keys }: { keys?: string[] }) {
   if (!keys?.length) return null
   return (
@@ -40,69 +44,56 @@ function EvidenceList({ keys }: { keys?: string[] }) {
   )
 }
 
-function AnalyzerSections({ analysis }: { analysis: TrainingWeeklyAnalysis }) {
+function VerdictSummary({ analysis }: { analysis: TrainingWeeklyAnalysis }) {
   const report = analysis.deterministic_report
-  const coach = analysis.coach_report
   const adherence = analysis.facts?.adherence
   const targets = adherence?.targets
+  return (
+    <section className="workout-section weekly-verdict" aria-label="Week verdict">
+      <p className="weekly-verdict-line">{report.summary_line || 'No report yet.'}</p>
+      <p className="workout-advice">
+        <strong>{report.main_bottleneck?.cause_code ?? '—'}</strong>
+        {' · '}
+        {report.main_bottleneck?.statement ?? 'No main bottleneck'}
+      </p>
+      {targets && (
+        <ul className="weekly-stats">
+          <li>
+            <strong>BJJ</strong>
+            <span>
+              {targets.bjj?.completed ?? 0}/{targets.bjj?.planned ?? 0}
+              {(targets.bjj?.weather_blocked ?? 0) > 0
+                ? ` · ${targets.bjj?.weather_blocked} weather-blocked`
+                : ''}
+            </span>
+          </li>
+          <li>
+            <strong>Strength</strong>
+            <span>{targets.strength?.completed ?? 0}/{targets.strength?.planned ?? 0}</span>
+          </li>
+          <li>
+            <strong>Adherence</strong>
+            <span>{adherence?.ordinary_adherence_pct ?? '—'}%</span>
+          </li>
+        </ul>
+      )}
+      <p className="workout-empty">
+        Confidence: {analysis.data_confidence}
+        {report.missing_data?.length ? ` · ${report.missing_data.join(' ')}` : ''}
+      </p>
+      <EvidenceList keys={report.main_bottleneck?.evidence_keys} />
+    </section>
+  )
+}
 
+function DetailSections({ analysis }: { analysis: TrainingWeeklyAnalysis }) {
+  const report = analysis.deterministic_report
+  const coach = analysis.coach_report
   return (
     <>
-      <section className="workout-section">
-        <h2>Data confidence</h2>
-        <p className="workout-advice">
-          {analysis.data_confidence}
-          {report.missing_data?.length
-            ? ` · ${report.missing_data.join(' ')}`
-            : ' · required fields look complete enough for the claims below.'}
-        </p>
-      </section>
-
-      <section className="workout-section">
-        <h2>Deterministic verdict</h2>
-        <p className="workout-advice">{report.summary_line || 'No report yet.'}</p>
-        {targets && (
-          <ul className="weekly-stats">
-            <li>
-              <strong>BJJ</strong>
-              <span>
-                {targets.bjj?.completed ?? 0}/{targets.bjj?.planned ?? 0}
-                {(targets.bjj?.weather_blocked ?? 0) > 0
-                  ? ` · ${targets.bjj?.weather_blocked} weather-blocked`
-                  : ''}
-              </span>
-            </li>
-            <li>
-              <strong>Strength</strong>
-              <span>{targets.strength?.completed ?? 0}/{targets.strength?.planned ?? 0}</span>
-            </li>
-            <li>
-              <strong>Ordinary adherence</strong>
-              <span>{adherence?.ordinary_adherence_pct ?? '—'}%</span>
-            </li>
-            {adherence?.has_weather_blocks && (
-              <li>
-                <strong>Controllable adherence</strong>
-                <span>{adherence?.controllable_adherence_pct ?? '—'}%</span>
-              </li>
-            )}
-          </ul>
-        )}
-      </section>
-
-      <section className="workout-section">
-        <h2>Main bottleneck</h2>
-        <p className="workout-advice">
-          <strong>{report.main_bottleneck?.cause_code ?? '—'}</strong>
-          {' · '}
-          {report.main_bottleneck?.statement ?? 'None'}
-        </p>
-        <EvidenceList keys={report.main_bottleneck?.evidence_keys} />
-      </section>
-
       {(report.improved?.length || report.regressed?.length) ? (
-        <section className="workout-section">
-          <h2>Improved / regressed</h2>
+        <details className="workout-section weekly-details">
+          <summary>Improved / regressed</summary>
           <ul className="weekly-stats">
             {(report.improved ?? []).map((item) => (
               <li key={`up-${item.statement}`}>
@@ -117,19 +108,19 @@ function AnalyzerSections({ analysis }: { analysis: TrainingWeeklyAnalysis }) {
               </li>
             ))}
           </ul>
-        </section>
+        </details>
       ) : null}
 
       {report.recurring_problem && (
-        <section className="workout-section">
-          <h2>Recurring BJJ problem</h2>
+        <details className="workout-section weekly-details" open>
+          <summary>Recurring BJJ problem</summary>
           <p className="workout-advice">{report.recurring_problem.statement}</p>
           <EvidenceList keys={report.recurring_problem.evidence_keys} />
-        </section>
+        </details>
       )}
 
-      <section className="workout-section">
-        <h2>Next-week suggestions</h2>
+      <details className="workout-section weekly-details">
+        <summary>Next-week suggestions ({(report.next_week_suggestions ?? []).length})</summary>
         {(report.next_week_suggestions ?? []).length === 0 && (
           <p className="workout-empty">No suggestions this week.</p>
         )}
@@ -150,10 +141,10 @@ function AnalyzerSections({ analysis }: { analysis: TrainingWeeklyAnalysis }) {
             <span>Prefills the form only. Does not submit.</span>
           </a>
         )}
-      </section>
+      </details>
 
-      <section className="workout-section">
-        <h2>Tests for next week</h2>
+      <details className="workout-section weekly-details">
+        <summary>Tests for next week ({(report.tests ?? []).length})</summary>
         <ul className="weekly-stats">
           {(report.tests ?? []).map((item) => (
             <li key={item.metric}>
@@ -162,7 +153,7 @@ function AnalyzerSections({ analysis }: { analysis: TrainingWeeklyAnalysis }) {
             </li>
           ))}
         </ul>
-      </section>
+      </details>
 
       {coach && (
         <section className="workout-section workout-chili">
@@ -239,7 +230,8 @@ export function WeeklyReviewPage() {
     window.history.replaceState(null, '', `/weekly/${next}`)
   }
 
-  if ((!review && !error) || (!analysis && !analysisError)) return <PageSkeleton />
+  // Show analyzer as soon as it is ready; do not block on load-cap review.
+  if (!analysis && !analysisError) return <PageSkeleton />
 
   return (
     <div className="workout-page">
@@ -248,65 +240,76 @@ export function WeeklyReviewPage() {
           <img src={chiliLogo} alt="" />
           Chili
         </span>
-        <a className="workout-back" href="/workout">Today</a>
+        <a className="workout-back" href={`/daily/${todayStamp()}`}>Daily</a>
       </header>
       <section className="workout-hero">
         <p>Weekly training review</p>
         <h1>Week of {heading}</h1>
-        <span>Deterministic facts first. Ask coach only when you press the button.</span>
+        <span>Facts first. Confirm rebuild is the main action; Ask coach is optional.</span>
       </section>
-      <div className="workout-status-row">
-        <button type="button" onClick={() => shift(-7)}>Previous</button>
-        <button type="button" onClick={() => shift(7)}>Next</button>
+      <div className="workout-week-nav" role="navigation" aria-label="Week">
+        <button type="button" className="workout-week-nav-btn" onClick={() => shift(-7)}>Previous</button>
+        <button type="button" className="workout-week-nav-btn" onClick={() => shift(7)}>Next</button>
       </div>
       {(error || analysisError || actionError) && (
         <p className="workout-status">{actionError ?? analysisError ?? error}</p>
       )}
 
-      {analysis && <AnalyzerSections analysis={analysis} />}
+      {analysis && <VerdictSummary analysis={analysis} />}
 
-      <section className="workout-section">
+      {review && (
+        <section className="workout-section weekly-primary-action">
+          <h2>What changes next week</h2>
+          <p className="workout-advice">{review.what_changes}</p>
+          <ul className="weekly-stats">
+            <li><strong>Strength load</strong><span>{Math.round((Number(review.adaptation.strength_load_delta) || 0) * 100)}%</span></li>
+            <li><strong>Strength volume</strong><span>{String(review.adaptation.strength_volume_delta ?? 0)}</span></li>
+            <li><strong>Zone 2 minutes</strong><span>{String(review.adaptation.zone2_minutes_delta ?? 0)}</span></li>
+            <li><strong>Grip sets</strong><span>{String(review.adaptation.grip_sets_delta ?? 0)}</span></li>
+          </ul>
+          <button type="button" className="workout-primary-button" disabled={pending} onClick={run}>
+            {pending ? 'Saving…' : 'Confirm review and rebuild next week'}
+          </button>
+        </section>
+      )}
+      {!review && !error && (
+        <p className="workout-status">Loading load-cap review…</p>
+      )}
+
+      {analysis && <DetailSections analysis={analysis} />}
+
+      <section className="workout-section weekly-secondary-actions">
         <h2>Ask coach about this week</h2>
         <p className="workout-advice">
           Uses the saved facts only. Does not invent metrics or change the schedule.
         </p>
-        <button type="button" disabled={coachPending || !analysis} onClick={askCoach}>
+        <button
+          type="button"
+          className="workout-secondary-button"
+          disabled={coachPending || !analysis}
+          onClick={askCoach}
+        >
           {coachPending ? 'Asking…' : 'Ask coach about this week'}
         </button>
       </section>
 
       {review && (
-        <>
-          <section className="workout-section">
-            <h2>Sessions</h2>
-            <div className="workout-checks">
-              {review.sessions.map((item) => (
-                <a key={item.id} className="workout-plan-link" href={`/workout/${item.id}`}>
-                  <strong>{item.title}</strong>
-                  <span>
-                    {item.status}
-                    {item.miss_reason ? ` · ${item.miss_reason}` : ''}
-                    {doneMarkLabel(item.status) ? ` · ${doneMarkLabel(item.status)}` : ''}
-                  </span>
-                </a>
-              ))}
-              {!review.sessions.length && <p className="workout-empty">No sessions this week.</p>}
-            </div>
-          </section>
-          <section className="workout-section">
-            <h2>What changes next week (load caps)</h2>
-            <p className="workout-advice">{review.what_changes}</p>
-            <ul className="weekly-stats">
-              <li><strong>Strength load</strong><span>{Math.round((Number(review.adaptation.strength_load_delta) || 0) * 100)}%</span></li>
-              <li><strong>Strength volume</strong><span>{String(review.adaptation.strength_volume_delta ?? 0)}</span></li>
-              <li><strong>Zone 2 minutes</strong><span>{String(review.adaptation.zone2_minutes_delta ?? 0)}</span></li>
-              <li><strong>Grip sets</strong><span>{String(review.adaptation.grip_sets_delta ?? 0)}</span></li>
-            </ul>
-            <button type="button" disabled={pending} onClick={run}>
-              {pending ? 'Saving…' : 'Confirm review and rebuild next week'}
-            </button>
-          </section>
-        </>
+        <details className="workout-section weekly-details">
+          <summary>Sessions ({review.sessions.length})</summary>
+          <div className="workout-checks">
+            {review.sessions.map((item) => (
+              <a key={item.id} className="workout-plan-link" href={`/workout/${item.id}`}>
+                <strong>{item.title}</strong>
+                <span>
+                  {item.status}
+                  {item.miss_reason ? ` · ${item.miss_reason}` : ''}
+                  {doneMarkLabel(item.status) ? ` · ${doneMarkLabel(item.status)}` : ''}
+                </span>
+              </a>
+            ))}
+            {!review.sessions.length && <p className="workout-empty">No sessions this week.</p>}
+          </div>
+        </details>
       )}
     </div>
   )

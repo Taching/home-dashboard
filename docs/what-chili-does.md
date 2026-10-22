@@ -64,7 +64,8 @@ Phone polish: exercise search uses shared styles and deep links (`/training/exer
 
 ## The daily page (phone)
 
-- Today's workout with tick-off, or a BJJ log (rounds, intensity).
+- Today's workout with tick-off, or a BJJ log (rounds, intensity). No
+  scheduler reason text under the title.
 - **Fenix card:** sleep, resting HR, HRV, Body Battery, steps, and the day's
   activities. On a rough night it adds one gentle recovery hint.
 - Optional **sleep** and **morning weight** fields. They are never required.

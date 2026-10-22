@@ -180,7 +180,6 @@ export function DailyBriefingPage({ day }: { day: string }) {
                 {workoutDone && (
                   <span>{workoutDone}{workout.is_all_day ? '' : ` · ${workout.estimated_minutes} min · ${workout.intensity}`}</span>
                 )}
-                <p>{workout.reason}</p>
                 {workout.planned_type !== 'rest' && (
                   <p><a className="daily-session-link" href={`/workout/${workout.id}`}>Program</a></p>
                 )}

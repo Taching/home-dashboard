@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
-import chiliLogo from '../assets/chili-logo.svg'
 import { fetchDailyBriefing, fetchWellbeingHistory, logSober, logWeight } from '../lib/api'
 import { useLiveResource } from '../hooks/useLiveResource'
 import { PhoneChrome } from '../components/PhoneChrome'
@@ -15,7 +14,29 @@ function dayLabel(value: string) {
     .format(new Date(`${value}T12:00:00+09:00`))
 }
 
-function PageFrame({ title, kicker, children }: { title: string; kicker: string; children: ReactNode }) {
+type BodyPage = 'weight' | 'sober'
+
+const BODY_PAGES: { page: BodyPage; href: string; label: string }[] = [
+  { page: 'weight', href: '/weight', label: 'Weight' },
+  { page: 'sober', href: '/sober', label: 'Sober' },
+]
+
+function BodySwitch({ current }: { current: BodyPage }) {
+  return (
+    <nav className="wellbeing-switch" aria-label="Body">
+      {BODY_PAGES.map(({ page, href, label }) => {
+        const active = page === current
+        return (
+          <a key={page} href={href} className={active ? 'is-active' : undefined} aria-current={active ? 'page' : undefined}>
+            {label}
+          </a>
+        )
+      })}
+    </nav>
+  )
+}
+
+function PageFrame({ title, page, children }: { title: string; page: BodyPage; children: ReactNode }) {
   useEffect(() => {
     document.documentElement.classList.add('is-daily')
     document.title = `${title} · Chili`
@@ -25,20 +46,7 @@ function PageFrame({ title, kicker, children }: { title: string; kicker: string;
   return (
     <main className="daily-briefing-shell">
       <PhoneChrome />
-      <header className="daily-hero">
-        <div>
-          <span className="daily-kicker">
-            <img src={chiliLogo} alt="" className="daily-kicker-mark" />
-            {kicker}
-          </span>
-          <h1>{title}</h1>
-          <p className="daily-plan-headline">
-            <a href="/weight">Weight</a>
-            {' · '}
-            <a href="/sober">Sober</a>
-          </p>
-        </div>
-      </header>
+      <BodySwitch current={page} />
       {children}
       <PhoneNav />
     </main>
@@ -116,7 +124,7 @@ export function WeightPage() {
   const cut = briefing?.cut ?? null
 
   return (
-    <PageFrame title="Morning weight" kicker="Chili">
+    <PageFrame title="Morning weight" page="weight">
       <WeightLog day={day} cut={cut} onLogged={() => { void refreshHistory(); void refreshBriefing() }} />
       <section className="daily-card">
         <span className="daily-card-label">90 days</span>
@@ -227,7 +235,7 @@ export function SoberPage() {
     { queryKey: historyKey },
   )
   return (
-    <PageFrame title="Sober" kicker="Chili">
+    <PageFrame title="Sober" page="sober">
       <SoberLog day={day} history={history} onLogged={() => { void refresh() }} />
       <section className="daily-card">
         <span className="daily-card-label">90 days</span>

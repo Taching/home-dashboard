@@ -1,5 +1,6 @@
 services:
-  # Deliberately exposes only the authenticated calendar sync endpoint to the LAN.
+  # Deliberately exposes only the authenticated calendar sync and training-plan
+  # endpoints to the LAN.
   # The dashboard UI and its command API remain bound to 127.0.0.1:8080.
   calendar-bridge:
     image: nginx:1.27-alpine

@@ -12,6 +12,9 @@ from app.database.models import TrainingSession
 from app.database.session import Base
 from app.domain.training.notion_sync import TrainingNotionSync
 
+TRASHED = {"object": "error", "status": 400, "code": "validation_error",
+           "message": "Can't edit block that is archived. You must unarchive the block before editing."}
+
 
 def _row(session_id: str, status: str, page_id: str | None, start: datetime) -> TrainingSession:
     return TrainingSession(
@@ -83,6 +86,64 @@ class TrainingNotionSyncTests(unittest.TestCase):
             old = session.get(TrainingSession, "old")
             self.assertIsNone(old.notion_page_id)
             self.assertIsNotNone(old.notion_synced_at)
+
+    def _sync_with(self, rows, deleted_response):
+        engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        Base.metadata.create_all(engine)
+        factory = sessionmaker(bind=engine, expire_on_commit=False)
+        with factory() as session:
+            session.add_all(rows)
+            session.commit()
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("deleted-page"):
+                return deleted_response
+            return httpx.Response(200, json={"id": "live-page", "results": []})
+
+        sync = TrainingNotionSync(factory, client=httpx.Client(transport=httpx.MockTransport(handler)))
+        return factory, sync.sync_due
+
+    def test_updated_session_whose_page_is_in_trash_is_unlinked(self) -> None:
+        start = datetime(2026, 10, 22, 0, tzinfo=UTC)
+        factory, sync_due = self._sync_with(
+            [_row("trashed", "planned", "deleted-page", start), _row("next", "planned", "live-page", start + timedelta(days=1))],
+            httpx.Response(400, json=TRASHED),
+        )
+        with patch("app.domain.training.notion_sync.settings") as settings:
+            settings.notion_token = "token"
+            settings.notion_training_data_source_id = "source"
+            settings.timezone = "Asia/Tokyo"
+            self.assertEqual(sync_due(), 2)
+        with factory() as session:
+            trashed = session.get(TrainingSession, "trashed")
+            self.assertIsNone(trashed.notion_page_id)
+            self.assertIsNotNone(trashed.notion_synced_at)
+            self.assertIsNotNone(session.get(TrainingSession, "next").notion_synced_at)
+
+    def test_cancelled_session_whose_page_is_in_trash_does_not_block_the_batch(self) -> None:
+        start = datetime(2026, 10, 22, 0, tzinfo=UTC)
+        factory, sync_due = self._sync_with(
+            [_row("gone", "cancelled", "deleted-page", start), _row("live", "planned", "live-page", start + timedelta(minutes=1))],
+            httpx.Response(400, json=TRASHED),
+        )
+        with patch("app.domain.training.notion_sync.settings") as settings:
+            settings.notion_token = "token"
+            settings.notion_training_data_source_id = "source"
+            settings.timezone = "Asia/Tokyo"
+            self.assertEqual(sync_due(), 2)
+
+    def test_other_bad_request_still_stops_the_batch(self) -> None:
+        start = datetime(2026, 10, 22, 0, tzinfo=UTC)
+        _, sync_due = self._sync_with(
+            [_row("bad", "planned", "deleted-page", start)],
+            httpx.Response(400, json={"code": "validation_error", "message": "Status is not a property that exists."}),
+        )
+        with patch("app.domain.training.notion_sync.settings") as settings:
+            settings.notion_token = "token"
+            settings.notion_training_data_source_id = "source"
+            settings.timezone = "Asia/Tokyo"
+            with self.assertRaises(httpx.HTTPStatusError):
+                sync_due()
 
 
 if __name__ == "__main__":

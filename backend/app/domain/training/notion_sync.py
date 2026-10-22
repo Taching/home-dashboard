@@ -47,7 +47,7 @@ class TrainingNotionSync:
                     except httpx.HTTPStatusError as error:
                         # Already deleted in Notion: nothing left to trash. Any
                         # other failure still stops the batch for a retry.
-                        if error.response.status_code != 404:
+                        if not self._page_gone(error):
                             raise
                 self._mark_synced(row.id, page_id)
                 synced += 1
@@ -58,7 +58,7 @@ class TrainingNotionSync:
                 try:
                     self._request("PATCH", f"https://api.notion.com/v1/pages/{page_id}", payload)
                 except httpx.HTTPStatusError as error:
-                    if error.response.status_code != 404:
+                    if not self._page_gone(error):
                         raise
                     # Deleted in Notion by hand: respect that, forget the link
                     # and keep the rest of the queue moving.
@@ -176,6 +176,21 @@ class TrainingNotionSync:
         finally:
             if close:
                 client.close()
+
+    @staticmethod
+    def _page_gone(error: httpx.HTTPStatusError) -> bool:
+        # A hard-deleted page is a 404; one moved to Notion's trash is a 400
+        # validation_error ("Can't edit block that is archived").
+        response = error.response
+        if response.status_code == 404:
+            return True
+        if response.status_code != 400:
+            return False
+        try:
+            message = str(response.json().get("message", "")).lower()
+        except ValueError:
+            return False
+        return "archived" in message or "in trash" in message
 
     @staticmethod
     def _exercise_text(item: TrainingExercise) -> str:

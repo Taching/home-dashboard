@@ -1,9 +1,8 @@
 import { useEffect, useMemo } from 'react'
 import { fetchDailyBriefing, fetchTrainingSession } from '../lib/api'
 import { useLiveResource } from '../hooks/useLiveResource'
-import { formatDate } from '../lib/format'
-import { canLogWorkout, doneMarkLabel, slugForType, workoutAlreadyLogged } from '../lib/workoutMatch'
-import type { PlannedExercise } from '../types'
+import { canLogWorkout, doneMarkLabel, slugForType } from '../lib/workoutMatch'
+import type { PlannedExercise, TrainingSession } from '../types'
 import { TrainingReport } from '../components/TrainingReport'
 import { PageSkeleton } from '../components/PageSkeleton'
 import { PhoneChrome } from '../components/PhoneChrome'
@@ -25,6 +24,11 @@ function isSessionId(value: string) {
 
 function todayStamp() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' })
+}
+
+function shortDate(stamp: string) {
+  return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Tokyo' })
+    .format(new Date(`${stamp}T12:00:00+09:00`))
 }
 
 function exerciseLine(item: PlannedExercise) {
@@ -82,6 +86,66 @@ function LegacySlugRedirect({ slug }: { slug: string }) {
   return <div className="workout-page"><p className="workout-status">Opening today’s session…</p></div>
 }
 
+/** Title, length and intensity. The scheduler's reason sentence is deliberately not shown here. */
+const STATUS_GLYPH: Record<string, string> = { completed: '✓', partial: '◐', skipped: '✕' }
+
+function SessionHero({ session, kicker }: { session: TrainingSession; kicker: string }) {
+  const label = doneMarkLabel(session.status)
+  return (
+    <section className="workout-hero">
+      <p>{kicker}</p>
+      <h1>{session.title}</h1>
+      <span>{session.estimated_minutes} min</span>
+      <IntensityPill intensity={session.intensity} deload={session.deload} />
+      {label && (
+        <p className={`workout-done-badge is-${session.status}`}>
+          {STATUS_GLYPH[session.status] ?? ''} {label}
+        </p>
+      )}
+    </section>
+  )
+}
+
+/** Program first, then the log. Shared by /workout (today) and /workout/{id}. */
+function SessionBody({ session, day }: { session: TrainingSession; day: string }) {
+  const type = session.planned_type ?? ''
+  const canLog = canLogWorkout(type, type)
+  return (
+    <>
+      <section className="workout-section workout-program" aria-label="Program">
+        <h2>Program</h2>
+        <div className="workout-checks">
+          {session.exercises.map((item) => (
+            <div key={item.name} className={`workout-check${item.done ? ' is-checked' : ''}`}>
+              <span>
+                <strong>{item.name}</strong>
+                <em>{exerciseLine(item)}</em>
+                {item.notes && <small>{item.notes}</small>}
+              </span>
+            </div>
+          ))}
+          {type.startsWith('bjj_') && session.target_rounds != null && (
+            <div className="workout-check">
+              <span><strong>Round target</strong><em>{session.target_rounds} × 5 min</em></span>
+            </div>
+          )}
+        </div>
+      </section>
+      {canLog ? (
+        <TrainingReport
+          day={day}
+          workout={session}
+          coachSessionId={session.id}
+          hideSessionTitle
+          compactLifts
+        />
+      ) : (
+        <p className="workout-status">This session cannot be logged from here.</p>
+      )}
+    </>
+  )
+}
+
 function TodayPage() {
   const today = todayStamp()
   const briefingQueryKey = useMemo(() => ['daily-briefing', today, null] as const, [today])
@@ -90,39 +154,38 @@ function TodayPage() {
     { queryKey: briefingQueryKey },
   )
   const workout = briefing?.workout
+  const sessionId = workout && workout.planned_type !== 'rest' ? workout.id : null
+  const sessionQueryKey = useMemo(() => ['training-session', sessionId] as const, [sessionId])
+  const { data: session, error: sessionError } = useLiveResource(
+    (signal) => fetchTrainingSession(sessionId ?? '', signal),
+    { queryKey: sessionQueryKey, enabled: Boolean(sessionId) },
+  )
+
+  useEffect(() => {
+    if (session) document.title = `${session.title} · Chili`
+  }, [session])
 
   if (!briefing && !error) return <PageSkeleton />
+  if (sessionId && !session && !sessionError) return <PageSkeleton />
 
-  const headingDate = briefing ? formatDate(new Date(`${briefing.date}T12:00:00`)) : 'Today'
-  const logged = workout && workoutAlreadyLogged(workout.status)
-  const openSession = workout && workout.planned_type !== 'rest'
+  const kicker = `Today · ${shortDate(briefing?.date ?? today)}`
+  const rest = workout?.planned_type === 'rest'
 
   return (
     <div className="workout-page">
       <PhoneChrome />
-      <section className="workout-hero">
-        <p>Today</p>
-        <h1>{headingDate}</h1>
-        <span>{workout ? workout.title : 'No prescribed session'}</span>
-        <IntensityPill intensity={workout?.intensity} deload={workout?.deload} />
-        {logged && workout && <p className="workout-done-badge">✓ {doneMarkLabel(workout.status) ?? 'Done'}</p>}
-      </section>
       {error && <p className="workout-status">{error}</p>}
-      <section className="workout-section">
-        <h2>Session</h2>
-        {openSession ? (
-          <a className="workout-plan-link" href={`/workout/${workout.id}`}>
-            <strong>{workout.title}</strong>
-            <span>{workout.estimated_minutes} min · {workout.intensity}</span>
-          </a>
-        ) : (
-          <p className="workout-empty">{workout?.planned_type === 'rest' ? 'Rest day. Nothing to log.' : 'No suggested session.'}</p>
-        )}
-      </section>
-      {briefing?.advice && (
-        <section className="workout-section workout-chili">
-          <h2>Chili</h2>
-          <p className="workout-advice">{briefing.advice}</p>
+      {sessionError && <p className="workout-status">{sessionError}</p>}
+      {session ? (
+        <>
+          <SessionHero session={session} kicker={kicker} />
+          <SessionBody session={session} day={today} />
+        </>
+      ) : (
+        <section className="workout-hero">
+          <p>{kicker}</p>
+          <h1>{rest ? 'Rest day' : 'No session'}</h1>
+          <span>{rest ? 'Nothing to log.' : 'No suggested session.'}</span>
         </section>
       )}
       <PhoneNav />
@@ -144,8 +207,6 @@ function SessionPage({ sessionId }: { sessionId: string }) {
   const day = session?.start_at
     ? new Date(session.start_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' })
     : todayStamp()
-  const type = session?.planned_type ?? ''
-  const canLog = Boolean(session && canLogWorkout(type, type))
 
   if (!session && !error) return <PageSkeleton />
 
@@ -155,42 +216,8 @@ function SessionPage({ sessionId }: { sessionId: string }) {
       {error && <p className="workout-status">{error}</p>}
       {session && (
         <>
-          <section className="workout-hero">
-            <p>{session.estimated_minutes} min</p>
-            <h1>{session.title}</h1>
-            <span>{session.reason}</span>
-            <IntensityPill intensity={session.intensity} deload={session.deload} />
-          </section>
-          <section className="workout-section workout-program" aria-label="Program">
-            <h2>Program</h2>
-            <div className="workout-checks">
-              {session.exercises.map((item) => (
-                <div key={item.name} className={`workout-check${item.done ? ' is-checked' : ''}`}>
-                  <span>
-                    <strong>{item.name}</strong>
-                    <em>{exerciseLine(item)}</em>
-                    {item.notes && <small>{item.notes}</small>}
-                  </span>
-                </div>
-              ))}
-              {type.startsWith('bjj_') && session.target_rounds != null && (
-                <div className="workout-check">
-                  <span><strong>Round target</strong><em>{session.target_rounds} × 5 min</em></span>
-                </div>
-              )}
-            </div>
-          </section>
-          {canLog ? (
-            <TrainingReport
-              day={day}
-              workout={session}
-              coachSessionId={session.id}
-              hideSessionTitle
-              compactLifts
-            />
-          ) : (
-            <p className="workout-status">This session cannot be logged from here.</p>
-          )}
+          <SessionHero session={session} kicker={shortDate(day)} />
+          <SessionBody session={session} day={day} />
         </>
       )}
     </div>

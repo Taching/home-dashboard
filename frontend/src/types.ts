@@ -523,6 +523,43 @@ export type WeeklyCoachReport = {
   dry_run?: boolean
 }
 
+export type WeeklyFactSession = {
+  id: string
+  planned_type: string
+  status: string
+  miss_reason?: string | null
+  cancellation_reason?: string | null
+  start_at: string | null
+  deload?: boolean
+  result: {
+    bjj_rounds?: number | null
+    session_rpe?: number | null
+    fatigue?: string | null
+    soreness?: string | null
+    pain?: string | boolean | null
+  } | null
+}
+
+export type WeeklyFactRecovery = {
+  average_sleep_hours?: number | null
+  sleep_samples?: number
+  rough_nights?: number
+  fatigue_counts?: Record<string, number>
+  has_pain_flag?: boolean
+  garmin?: {
+    hrv_avg?: number | null
+    resting_hr_avg?: number | null
+    body_battery_avg?: number | null
+    stress_avg?: number | null
+    days_with_data?: number
+  }
+}
+
+export type WeeklyFactBodyTrend = {
+  seven_day_average_kg?: number | null
+  waist_cm?: number | null
+}
+
 export type TrainingWeeklyAnalysis = {
   id: string
   week_start: string
@@ -535,12 +572,15 @@ export type TrainingWeeklyAnalysis = {
       controllable_adherence_pct?: number
       has_weather_blocks?: boolean
       targets?: {
-        bjj?: { planned: number; completed: number; weather_blocked?: number }
-        strength?: { planned: number; completed: number }
-        easy_cardio?: { planned: number; completed: number }
-        rest_days?: { count: number }
+        bjj?: { planned: number; completed: number; weather_blocked?: number; target?: number }
+        strength?: { planned: number; completed: number; target?: number }
+        easy_cardio?: { planned: number; completed: number; target_min?: number; target_max?: number }
+        rest_days?: { count: number; target_min?: number }
       }
     }
+    sessions?: WeeklyFactSession[]
+    recovery?: WeeklyFactRecovery
+    body_trend?: WeeklyFactBodyTrend
     [key: string]: unknown
   }
   deterministic_report: WeeklyDeterministicReport

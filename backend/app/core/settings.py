@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     apple_calendar_bridge_token: str | None = None
     notion_token: str | None = None
     notion_data_source_id: str | None = None
+    # Extra task data sources, comma-separated. Tasks from every source merge into one list.
+    notion_data_source_ids: str | None = None
     notion_database_id: str | None = None
     notion_title_property: str = "Name"
     notion_due_property: str = "Due Date"

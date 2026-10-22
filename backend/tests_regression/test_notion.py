@@ -322,3 +322,89 @@ class NotionCompleteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RoutingClient:
+    """Serves different pages per query URL and can paginate; records every post."""
+
+    def __init__(self, pages_by_url_fragment, paginated=None):
+        self.pages_by_url_fragment = pages_by_url_fragment
+        self.paginated = paginated or {}
+        self.calls = []
+
+    def post(self, url, *args, **kwargs):
+        body = kwargs.get("json") or {}
+        self.calls.append((url, body.get("start_cursor")))
+        request = httpx.Request("POST", url)
+        for fragment, pages in self.pages_by_url_fragment.items():
+            if fragment in url:
+                chunks = self.paginated.get(fragment)
+                if chunks:
+                    index = int(body.get("start_cursor") or 0)
+                    payload = {"results": chunks[index]}
+                    if index + 1 < len(chunks):
+                        payload["has_more"] = True
+                        payload["next_cursor"] = str(index + 1)
+                    return httpx.Response(200, json=payload, request=request)
+                return httpx.Response(200, json={"results": pages}, request=request)
+        return httpx.Response(404, json={"message": "unknown source"}, request=request)
+
+
+class NotionMultiSourceTests(unittest.TestCase):
+    def setUp(self):
+        self.dry_run_patcher = patch("app.domain.notion.is_dry_run", return_value=False)
+        self.dry_run_patcher.start()
+        self.addCleanup(self.dry_run_patcher.stop)
+
+    @patch("app.domain.notion.settings.notion_token", "secret")
+    @patch("app.domain.notion.settings.notion_database_id", None)
+    @patch("app.domain.notion.settings.notion_data_source_id", "primary")
+    @patch("app.domain.notion.settings.notion_data_source_ids", "second, third ,primary")
+    def test_tasks_merge_across_every_configured_data_source(self):
+        client = RoutingClient({
+            "/data_sources/primary/": [page("a", "Primary task", "2026-07-03")],
+            "/data_sources/second/": [page("b", "Second task", "2026-07-03"), page("a", "Duplicate of a", "2026-07-03")],
+            "/data_sources/third/": [page("c", "Third task", "2026-07-03", done=True)],
+        })
+        service = NotionService(client=client)
+
+        self.assertTrue(service.configured())
+        status, _, tasks = service.today()
+
+        self.assertEqual(status, "ready")
+        self.assertEqual(sorted(task.id for task in tasks), ["a", "b"])
+        self.assertEqual(
+            [url.split("/data_sources/")[1].split("/")[0] for url, _ in client.calls],
+            ["primary", "second", "third"],
+        )
+
+    @patch("app.domain.notion.settings.notion_token", "secret")
+    @patch("app.domain.notion.settings.notion_database_id", None)
+    @patch("app.domain.notion.settings.notion_data_source_id", None)
+    @patch("app.domain.notion.settings.notion_data_source_ids", "only")
+    def test_extra_ids_alone_count_as_configured(self):
+        client = RoutingClient({"/data_sources/only/": [page("x", "Only task", "2026-07-03")]})
+        service = NotionService(client=client)
+
+        self.assertTrue(service.configured())
+        _, _, tasks = service.today()
+        self.assertEqual([task.id for task in tasks], ["x"])
+
+    @patch("app.domain.notion.settings.notion_token", "secret")
+    @patch("app.domain.notion.settings.notion_database_id", None)
+    @patch("app.domain.notion.settings.notion_data_source_id", "big")
+    @patch("app.domain.notion.settings.notion_data_source_ids", None)
+    def test_query_follows_pagination_past_the_first_page(self):
+        client = RoutingClient(
+            {"/data_sources/big/": []},
+            paginated={"/data_sources/big/": [
+                [page("p1", "First page task", "2026-07-03")],
+                [page("p2", "Second page task", "2026-07-03")],
+            ]},
+        )
+        service = NotionService(client=client)
+
+        _, _, tasks = service.today()
+
+        self.assertEqual(sorted(task.id for task in tasks), ["p1", "p2"])
+        self.assertEqual([cursor for _, cursor in client.calls], [None, "1"])

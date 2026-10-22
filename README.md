@@ -121,12 +121,15 @@ events, and notify dedupe keys for that local-date range.
 ## Notion tasks
 
 The task rail reads incomplete Notion tasks due today or overdue. Create a
-Notion internal integration, share the task database or data source with that
-integration, then add the connection values to `.env`:
+Notion internal integration, share every task database or data source with
+that integration (database page → ⋯ → Connections), then add the connection
+values to `.env`:
 
 ```env
 NOTION_TOKEN=<internal integration secret>
 NOTION_DATA_SOURCE_ID=<preferred current Notion data source id>
+# More task sources, comma-separated. Tasks from every source merge into one list.
+NOTION_DATA_SOURCE_IDS=<second data source id>,<third data source id>
 # or, for older database URLs:
 NOTION_DATABASE_ID=<database id>
 NOTION_TITLE_PROPERTY=Name

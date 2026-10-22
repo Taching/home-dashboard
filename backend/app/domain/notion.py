@@ -30,6 +30,8 @@ class NotionTask:
 
 CACHE_TTL_SECONDS = 300.0
 NEGATIVE_TTL_SECONDS = 30.0
+# Query pages per task source (100 rows each). Keeps a runaway cursor bounded.
+MAX_QUERY_PAGES = 10
 
 
 class NotionService:
@@ -45,7 +47,28 @@ class NotionService:
         self._failed_at: float | None = None
 
     def configured(self) -> bool:
-        return bool(settings.notion_token and (settings.notion_data_source_id or settings.notion_database_id))
+        return bool(settings.notion_token and self._task_source_urls())
+
+    def _task_source_urls(self) -> list[tuple[str, str]]:
+        """Every task source to query, as (url, Notion-Version) pairs.
+
+        NOTION_DATA_SOURCE_ID plus any NOTION_DATA_SOURCE_IDS (comma-separated),
+        deduplicated in order. Falls back to the legacy database id when no
+        data source id is set.
+        """
+        ids: list[str] = []
+        for raw in (settings.notion_data_source_id, settings.notion_data_source_ids):
+            if not isinstance(raw, str):
+                continue
+            for item in raw.split(","):
+                item = item.strip()
+                if item and item not in ids:
+                    ids.append(item)
+        if ids:
+            return [(f"https://api.notion.com/v1/data_sources/{item}/query", "2026-03-11") for item in ids]
+        if settings.notion_database_id:
+            return [(f"https://api.notion.com/v1/databases/{settings.notion_database_id}/query", "2022-06-28")]
+        return []
 
     def status(self) -> NotionStatus:
         if not self.configured():
@@ -241,26 +264,41 @@ class NotionService:
 
     def _query_pages(self) -> list[JsonDict]:
         assert settings.notion_token
-        if settings.notion_data_source_id:
-            url = f"https://api.notion.com/v1/data_sources/{settings.notion_data_source_id}/query"
-            notion_version = "2026-03-11"
-        else:
-            url = f"https://api.notion.com/v1/databases/{settings.notion_database_id}/query"
-            notion_version = "2022-06-28"
-        response = self._http().post(
-            url,
-            headers={
-                "Authorization": f"Bearer {settings.notion_token}",
-                "Notion-Version": notion_version,
-                "Content-Type": "application/json",
-            },
-            json={"page_size": 100},
-        )
-        response.raise_for_status()
-        payload = response.json()
-        if not isinstance(payload, dict):
-            return []
-        return [page for page in as_list(payload.get("results")) if isinstance(page, dict)]
+        pages: list[JsonDict] = []
+        seen: set[str] = set()
+        for url, notion_version in self._task_source_urls():
+            cursor: str | None = None
+            for _ in range(MAX_QUERY_PAGES):
+                body: JsonDict = {"page_size": 100}
+                if cursor:
+                    body["start_cursor"] = cursor
+                response = self._http().post(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {settings.notion_token}",
+                        "Notion-Version": notion_version,
+                        "Content-Type": "application/json",
+                    },
+                    json=body,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, dict):
+                    break
+                for page in as_list(payload.get("results")):
+                    if not isinstance(page, dict):
+                        continue
+                    key = str(page.get("id") or "")
+                    if key and key in seen:
+                        continue
+                    if key:
+                        seen.add(key)
+                    pages.append(page)
+                next_cursor = payload.get("next_cursor") if payload.get("has_more") else None
+                if not isinstance(next_cursor, str) or not next_cursor:
+                    break
+                cursor = next_cursor
+        return pages
 
     def _sort_key(self, task: NotionTask) -> tuple[int, bool, datetime, str]:
         return (

@@ -282,7 +282,7 @@ advice, hints) is deterministic and runs on the Pi.
 | Thing | Source |
 | --- | --- |
 | Meetings | Apple Calendar → Mac bridge (`macos/apple-calendar-bridge/`) |
-| Tasks | Notion |
+| Tasks | Notion, one or more task databases merged into one list |
 | Training | `TrainingSession` (planner), mirrored to Notion and the "Chili Training" calendar |
 | Sleep / weight / sober | `DailyWellbeingCheckIn`, plus Garmin snapshots |
 | Code | `backend/` (FastAPI), `frontend/` (React kiosk + phone pages), `deploy/`, `openclaw-skills/` |

@@ -1,6 +1,6 @@
 # Chili — what this dashboard is and what it does
 
-_Last updated: 22 Oct 2026 (phone burger nav + back chrome)_
+_Last updated: 22 Oct 2026 (floating chrome, Body switch, weekly data view, inline workout)_
 
 ## What it is for
 
@@ -28,13 +28,13 @@ is never on the public internet.
 | --- | --- |
 | **Wall** (`/`) | Read-only glance. A Today hero, Chili's advice, the day's schedule, tasks and training. |
 | **Phone: daily page** (`/daily/YYYY-MM-DD`) | Closing the loop for today: tick the workout, log sleep/weight, answer sober, Monday check-in. |
-| **Phone: workout** (`/workout/…`) | Today's session: open program first, then a compact log (load, reps, RPE; technique/pain under More). |
+| **Phone: workout** (`/workout`) | Today's session inline: program first, then a compact log (load, reps, RPE; technique/pain under More). No advice block and no scheduler reason text. `/workout/{id}` opens another day's session. |
 | **Phone: schedule change** (`/schedule-change`) | Tell Chili in plain words what changed; it replans the week. |
-| **Phone: weekly** (`/weekly`) | Week verdict first, then confirm rebuild; evidence and Ask coach are secondary. |
+| **Phone: weekly** (`/weekly`) | Data first: adherence figure with the bottleneck chip, target meters, a Mon–Sun session strip (status icons + RPE, tap to open), recovery tiles, signed next-week deltas, then Confirm rebuild and Ask coach. All prose sits under one closed Details. |
 | **Phone: exercises** (`/training/exercises`) | Exercise library, filters, and alternatives. |
-| **Phone: weight / sober** (`/weight`, `/sober`) | History and trend pages. |
+| **Phone: weight / sober** (`/weight`, `/sober`) | History and trend pages with a Weight / Sober switch at the top; no page title or kicker. |
 | **Phone: training preferences** (`/training/preferences`) | Free-text notes that give the coach context. They never change the schedule. |
-| **Phone chrome** | Top **Back** (history, else Today) + burger menu on every phone page; bottom **Today · Train · Week · Body** on hubs (hidden on session log and schedule-change). Burger groups Today hubs, Body (Weight/Sober), and Train tools (Change plan / Preferences / Exercises). |
+| **Phone chrome** | Three floating pills at the top of every phone page, no bar: **Back** (history, else Today), Chili, burger menu. They slide away on scroll down and return on scroll up or near the top. Bottom **Today · Train · Week · Body** on hubs (hidden on another day's session and schedule-change). Burger groups Today hubs, Body (Weight/Sober), and Train tools (Change plan / Preferences / Exercises). |
 
 Phone polish: exercise search uses shared styles and deep links (`/training/exercises/:slug`); schedule-change shows a week skeleton and “Open today / Open train” after a successful replan; sober’s only button is labeled **Log a drink (resets streak)**.
 | **Telegram (Chili via OpenClaw)** | Morning/evening messages, reminders, and plain-language commands. |

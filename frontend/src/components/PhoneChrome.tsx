@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactElement } from 'react'
 import chiliLogo from '../assets/chili-logo.svg'
+import { useScrollHide } from '../hooks/useScrollHide'
 import {
   AlertIcon,
   CalendarIcon,
@@ -87,6 +88,8 @@ export function PhoneChrome() {
   const titleId = useId()
   const closeRef = useRef<HTMLButtonElement>(null)
   const current = path()
+  const scrolledAway = useScrollHide()
+  const hidden = scrolledAway && !open
 
   useEffect(() => {
     if (!open) return
@@ -105,7 +108,7 @@ export function PhoneChrome() {
 
   return (
     <>
-      <header className="phone-chrome">
+      <header className={`phone-chrome${hidden ? ' is-hidden' : ''}`}>
         <button type="button" className="phone-chrome-btn" onClick={goBack} aria-label="Back">
           <ChevronBackIcon size={22} />
           <span>Back</span>

@@ -183,6 +183,23 @@ class DailyPlanTests(unittest.TestCase):
         self.assertEqual(plan["notion"]["tasks"][0]["title"], "Prepare HMO deck")
         self.assertIsNotNone(plan["notion"]["synced_at"])
 
+    def test_notion_block_carries_every_open_task_while_today_keeps_the_glance(self):
+        tasks = [
+            SimpleNamespace(
+                id=f"task-{index}", title=f"Task {index}", due_at=None, is_overdue=False,
+                priority="Medium", task_type="Work", status="To do",
+            )
+            for index in range(8)
+        ]
+        self.app.state.notion_service.today = lambda: ("ready", datetime.now(UTC), tasks)
+
+        plan = self.client.get(f"/api/v1/plan/{self.day.isoformat()}").json()
+
+        self.assertEqual(len(plan["notion"]["tasks"]), 8)
+        self.assertEqual([item["title"] for item in plan["notion"]["tasks"]][:2], ["Task 0", "Task 1"])
+        self.assertEqual(len(plan["today"]["tasks"]), 5)
+        self.assertEqual(len(plan["tomorrow"]["tasks"]), 3)
+
     def test_rest_today_replaces_and_returns_plan(self):
         result = self.service.rest_today(self.app.state.training_service, self.day)
         self.assertEqual(result["planned_type"], "rest")

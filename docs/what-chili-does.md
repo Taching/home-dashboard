@@ -54,7 +54,7 @@ Phone polish: exercise search uses shared styles and deep links (`/training/exer
   colour-coded by source: **work** (Asuene calendars) in cyan, **personal** in
   blue, **training** in green. If the Mac stops syncing, the **cached events
   stay up** with "Last updated HH:MM".
-- **Tasks:** priority Notion tasks.
+- **Tasks:** every open Notion task, six visible and a "+N more" count for the rest.
 - **Training planner:** this week's sessions and status.
 - **Banners:** a 10-minute heads-up before meetings, a walk nudge, plan
   changes, tasks completed, and Spotify. Banners only; meetings no longer go

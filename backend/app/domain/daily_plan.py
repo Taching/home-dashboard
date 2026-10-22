@@ -353,11 +353,15 @@ class DailyPlanService:
         summary = wellbeing.summary(current)
         tasks: list[dict] = []
         tomorrow_tasks: list[dict] = []
+        open_tasks: list[dict] = []
         notion_status = "not_configured"
         notion_synced_at = None
         if notion is not None and hasattr(notion, "today"):
             notion_status, notion_synced_at, raw_tasks = notion.today()
+            # today.tasks is the glance: top five by due/urgency. The notion block
+            # carries every open task so the wall rail can count and page them.
             tasks = [_serialize_task(item) for item in _priority_tasks(raw_tasks, day, self._timezone)]
+            open_tasks = [_serialize_task(item) for item in raw_tasks]
             tomorrow_tasks = [
                 _serialize_task(item)
                 for item in _priority_tasks(raw_tasks, tomorrow, self._timezone, limit=3)
@@ -484,7 +488,7 @@ class DailyPlanService:
             "notion": {
                 "status": notion_status,
                 "synced_at": notion_synced_at.isoformat() if notion_synced_at else None,
-                "tasks": tasks,
+                "tasks": open_tasks,
             },
             "sobriety": {
                 "days": summary.sober_days,

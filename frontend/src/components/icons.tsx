@@ -176,3 +176,12 @@ export function ChevronForwardIcon({ size = 18 }: IconProps) {
     </svg>
   )
 }
+
+export function TrendIcon({ size = 18 }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width={size} height={size} aria-hidden="true">
+      <polyline points="3 17 9 11 13 15 21 7" />
+      <polyline points="15 7 21 7 21 13" />
+    </svg>
+  )
+}

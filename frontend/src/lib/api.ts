@@ -1,29 +1,30 @@
 import type {
+  ActivityEvent,
   CalendarToday,
   CommandIntent,
   CommandResult,
+  DailyBriefing,
   Dashboard,
   Display,
+  LiftHistory,
   NotionToday,
+  PlanAdjustment,
   Reading,
   SpotifyNowPlaying,
-  ActivityEvent,
-  WeatherForecast,
-  WalkReminder,
-  WalkingPadToday,
-  TrainingOverview,
-  TrainingPlan,
-  TrainingToday,
   TrainingLogPayload,
   TrainingLogResult,
-  WorkoutLogPayload,
-  DailyBriefing,
-  WellbeingHistory,
-  TrainingSession,
-  WeeklyReview,
-  TrainingWeeklyAnalysis,
-  PlanAdjustment,
+  TrainingOverview,
+  TrainingPlan,
   TrainingPreferences,
+  TrainingSession,
+  TrainingToday,
+  TrainingWeeklyAnalysis,
+  WalkReminder,
+  WalkingPadToday,
+  WeatherForecast,
+  WeeklyReview,
+  WellbeingHistory,
+  WorkoutLogPayload,
 } from '../types'
 import { announcePlanningChange } from './planningRefresh'
 
@@ -103,6 +104,10 @@ export async function fetchTrainingPlans() {
 
 export async function fetchTrainingPlan(slug: string) {
   return requireJson<TrainingPlan>(await fetch(`/api/v1/training/plans/${slug}`))
+}
+
+export async function fetchLiftHistory(signal?: AbortSignal) {
+  return requireJson<LiftHistory>(await freshGet('/api/v1/training/lifts', signal))
 }
 
 export async function fetchTrainingSession(sessionId: string, signal?: AbortSignal) {

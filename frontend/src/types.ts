@@ -828,3 +828,38 @@ export type WeatherForecast = {
   tomorrow: WeatherDay | null
   days: WeatherDay[]
 }
+
+export type LiftSession = {
+  session_id: string
+  date: string
+  workout_type: string
+  load: number | null
+  unit: string | null
+  reps: number[]
+  top_reps: number | null
+  rpe: number | null
+  deload: boolean
+  e1rm: number | null
+  is_pr: boolean
+}
+
+export type Lift = {
+  name: string
+  slug: string | null
+  sessions: LiftSession[]
+  best_e1rm: number | null
+  best_date: string | null
+  pr_count: number
+  next_target: {
+    load: number | null
+    unit: string | null
+    sets: number
+    rep_target: number | null
+    decision: string | null
+  } | null
+}
+
+export type LiftHistory = {
+  generated_at: string
+  lifts: Lift[]
+}

@@ -1,6 +1,6 @@
 # Chili — what this dashboard is and what it does
 
-_Last updated: 22 Oct 2026 (floating chrome, Body switch, weekly data view, inline workout)_
+_Last updated: 24 Oct 2026 (lift history, install to Home Screen)_
 
 ## What it is for
 
@@ -33,8 +33,9 @@ is never on the public internet.
 | **Phone: weekly** (`/weekly`) | Data first: adherence figure with the bottleneck chip, target meters, a Mon–Sun session strip (status icons + RPE, tap to open), recovery tiles, signed next-week deltas, then Confirm rebuild and Ask coach. All prose sits under one closed Details. |
 | **Phone: exercises** (`/training/exercises`) | Exercise library, filters, and alternatives. |
 | **Phone: weight / sober** (`/weight`, `/sober`) | History and trend pages with a Weight / Sober switch at the top; no page title or kicker. |
+| **Phone: lift history** (`/training/lifts`) | Every logged lift, newest first: best estimated 1RM, a trend line, the last sets, a PR badge and the next target. Tap a lift for each session. 1RM uses Epley on the best set, compares only within one load unit, and skips deloads and added-weight lifts. |
 | **Phone: training preferences** (`/training/preferences`) | Free-text notes that give the coach context. They never change the schedule. |
-| **Phone chrome** | Three floating pills at the top of every phone page, no bar: **Back** (history, else Today), Chili, burger menu. They slide away on scroll down and return on scroll up or near the top. Bottom **Today · Train · Week · Body** on hubs (hidden on another day's session and schedule-change). Burger groups Today hubs, Body (Weight/Sober), and Train tools (Change plan / Preferences / Exercises). |
+| **Phone chrome** | Three floating pills at the top of every phone page, no bar: **Back** (history, else Today), Chili, burger menu. They slide away on scroll down and return on scroll up or near the top. Bottom **Today · Train · Week · Body** on hubs (hidden on another day's session and schedule-change). Burger groups Today hubs, Body (Weight/Sober), and Train tools (Change plan / Lift history / Preferences / Exercises). Add to Home Screen in Safari installs Chili as an app that opens on today's daily page. |
 
 Phone polish: exercise search uses shared styles and deep links (`/training/exercises/:slug`); schedule-change shows a week skeleton and “Open today / Open train” after a successful replan; sober’s only button is labeled **Log a drink (resets streak)**.
 | **Telegram (Chili via OpenClaw)** | Morning/evening messages, reminders, and plain-language commands. |

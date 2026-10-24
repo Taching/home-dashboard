@@ -10,6 +10,7 @@ import {
   MenuIcon,
   ScaleIcon,
   SlidersIcon,
+  TrendIcon,
 } from './icons'
 
 export function todayStamp() {
@@ -28,6 +29,7 @@ function isActive(href: string, current: string) {
   if (href === '/sober') return current === '/sober'
   if (href === '/schedule-change') return current === '/schedule-change'
   if (href === '/training/preferences') return current === '/training/preferences'
+  if (href === '/training/lifts') return current === '/training/lifts'
   if (href === '/training/exercises') {
     return current === '/training/exercises' || current.startsWith('/training/exercises/')
   }
@@ -76,6 +78,7 @@ function menuSections(): MenuSection[] {
       title: 'Train tools',
       items: [
         { href: '/schedule-change', label: 'Change plan', Icon: AlertIcon },
+        { href: '/training/lifts', label: 'Lift history', Icon: TrendIcon },
         { href: '/training/preferences', label: 'Preferences', Icon: SlidersIcon },
         { href: '/training/exercises', label: 'Exercises', Icon: DumbbellIcon },
       ],

@@ -205,6 +205,15 @@ def _daily_briefing_url(day: date) -> str:
     return f"{settings.public_base_url()}/daily/{day.isoformat()}"
 
 
+@training_router.get("/training/lifts")
+async def training_lifts(request: Request) -> dict:
+    """Every logged session per lift with estimated 1RM and PR flags. Read-only."""
+    service = getattr(request.app.state, "lift_history_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="Lift history not configured.")
+    return await asyncio.to_thread(service.lifts)
+
+
 @training_router.get("/training/overview")
 async def training_overview(request: Request) -> dict:
     return request.app.state.training_service.overview()

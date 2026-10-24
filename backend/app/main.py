@@ -72,6 +72,8 @@ async def lifespan(application: FastAPI):
     application.state.weekly_service = WeeklyService(wellbeing=wellbeing_service, garmin=garmin_service)
     from app.domain.weekly_analyzer import WeeklyAnalyzerService
     application.state.weekly_analyzer_service = WeeklyAnalyzerService(session_factory=SessionLocal)
+    from app.domain.lift_history import LiftHistoryService
+    application.state.lift_history_service = LiftHistoryService(session_factory=SessionLocal)
     application.state.db_read_service = DbReadService()
     application.state.notion_service = NotionService()
     application.state.progress_report_service = ProgressReportService()
